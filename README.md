@@ -23,10 +23,14 @@ It lets users import their Letterboxd history, generate a personalized taste pro
 |---|---|
 | Backend | Django |
 | ORM | Django ORM |
-| Database | PostgreSQL |
+| AI / ML | Python |
+| Database | PostgreSQL (+pgvector) |
 | Frontend | React (Vite) + TypeScript |
 | Styling | Tailwind CSS |
 | Containerization | Docker |
 
+More detail and rationale behind these decisions in [`docs/tech-stack.md`](docs/tech-stack.md).
 
 ## Documentation
+
+- [Tech Stack and Rationale](docs/tech-stack.md)
