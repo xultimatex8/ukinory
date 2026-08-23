@@ -34,3 +34,4 @@ More detail and rationale behind these decisions in [`docs/tech-stack.md`](docs/
 ## Documentation
 
 - [Tech Stack and Rationale](docs/tech-stack.md)
+- [MVP functional requirements](docs/mvp-functional-requirements.md)
