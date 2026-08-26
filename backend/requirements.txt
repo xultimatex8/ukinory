@@ -1,0 +1,6 @@
+Django
+djangorestframework
+psycopg[binary]
+django-cors-headers
+python-dotenv
+debugpy
