@@ -49,6 +49,12 @@ services:
       db:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 
   frontend:
     build:
@@ -66,7 +72,8 @@ services:
       - "5173:5173"
 
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 
 volumes:
