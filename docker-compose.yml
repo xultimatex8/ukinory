@@ -44,6 +44,7 @@ services:
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_PORT: ${POSTGRES_PORT}
       DEBUG: "1"
+      PYTHONPATH: /app
 
     depends_on:
       db:
