@@ -20,7 +20,7 @@ ALL_CANONICAL: Set[str] = set(CANONICAL_FILES)
 
 EXPECTED_COLUMNS: Dict[str, set] = {
     "ratings.csv": {"Name", "Year", "Rating"},
-    "diary.csv": {"Name", "Year", "Rating", "Watch Date"},
+    "diary.csv": {"Name", "Year", "Rating", "Watched Date"},
     "watched.csv": {"Name", "Year"},
     "watchlist.csv": {"Name", "Year"},
     "liked_films.csv": {"Name", "Year"},

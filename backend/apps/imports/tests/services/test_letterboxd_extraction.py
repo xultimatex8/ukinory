@@ -400,8 +400,8 @@ def test_extract_all_canonical_files_from_zip():
             [{"Name": "Alien", "Year": "1979", "Rating": "4.5"}],
         ),
         "diary.csv": csv_bytes(
-            ["Name", "Year", "Rating", "Watch Date"],
-            [{"Name": "Arrival", "Year": "2016", "Rating": "4", "Watch Date": "2026-01-01"}],
+            ["Name", "Year", "Rating", "Watched Date"],
+            [{"Name": "Arrival", "Year": "2016", "Rating": "4", "Watched Date": "2026-01-01"}],
         ),
         "watchlist.csv": csv_bytes(["Name", "Year"], [{"Name": "Dune", "Year": "2021"}]),
         "watched.csv": csv_bytes(["Name", "Year"], [{"Name": "Heat", "Year": "1995"}]),
@@ -512,8 +512,8 @@ def test_zip_invalid_header_raises():
 
 def test_zip_required_missing_raises():
     diary = csv_bytes(
-        ["Name", "Year", "Rating", "Watch Date"],
-        [{"Name": "Alien", "Year": "1979", "Rating": "4", "Watch Date": "2026-01-01"}],
+        ["Name", "Year", "Rating", "Watched Date"],
+        [{"Name": "Alien", "Year": "1979", "Rating": "4", "Watched Date": "2026-01-01"}],
     )
     archive = zip_bytes({"diary.csv": diary})
 
@@ -527,8 +527,8 @@ def test_zip_required_missing_raises():
 
 def test_zip_missing_reports_included_files_not_found():
     diary = csv_bytes(
-        ["Name", "Year", "Rating", "Watch Date"],
-        [{"Name": "Alien", "Year": "1979", "Rating": "4", "Watch Date": "2026-01-01"}],
+        ["Name", "Year", "Rating", "Watched Date"],
+        [{"Name": "Alien", "Year": "1979", "Rating": "4", "Watched Date": "2026-01-01"}],
     )
     archive = zip_bytes({"diary.csv": diary})
 
