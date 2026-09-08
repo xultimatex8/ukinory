@@ -1,3 +1,4 @@
+from datetime import timedelta
 import os
 
 """
@@ -41,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    "apps.common",
     'apps.imports',
 ]
 
