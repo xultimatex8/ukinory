@@ -4,3 +4,5 @@ psycopg[binary]
 django-cors-headers
 python-dotenv
 debugpy
+pytest
+pytest-django
