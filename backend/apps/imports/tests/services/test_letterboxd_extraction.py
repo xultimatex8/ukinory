@@ -4,7 +4,7 @@ import zipfile
 
 import pytest
 
-from apps.imports.services.letterboxd import (
+from apps.imports.services.letterboxd_extraction import (
     ALL_CANONICAL,
     ExtractionResult,
     LetterboxdImportError,
