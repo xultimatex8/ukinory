@@ -14,18 +14,12 @@ from apps.imports.exceptions import LetterboxdImportError
 
 
 @pytest.fixture
-def api_client():
-    return APIClient()
-
-
-@pytest.fixture
 def import_url():
     return reverse("import-letterboxd")
 
 
 RATINGS_CSV = "Name,Year,Rating\nInception,2010,4.5\n"
 WATCHLIST_CSV = "Name,Year\nDune Part Two,2024\n"
-
 
 
 class TestLetterboxdImportViewUnit:
