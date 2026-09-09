@@ -7,24 +7,8 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from apps.imports.dtos.extraction_result import ExtractionResult
 from apps.imports.exceptions import LetterboxdImportError
+from apps.imports.constants import ALL_CANONICAL, CANONICAL_FILES, EXPECTED_COLUMNS
 
-
-CANONICAL_FILES: Dict[str, List[str]] = {
-    "ratings.csv": ["ratings.csv"],
-    "diary.csv": ["diary.csv"],
-    "watchlist.csv": ["watchlist.csv"],
-    "watched.csv": ["watched.csv"],
-    "liked_films.csv": ["likes/films.csv"],
-}
-ALL_CANONICAL: Set[str] = set(CANONICAL_FILES)
-
-EXPECTED_COLUMNS: Dict[str, set] = {
-    "ratings.csv": {"Name", "Year", "Rating"},
-    "diary.csv": {"Name", "Year", "Rating", "Watched Date"},
-    "watched.csv": {"Name", "Year"},
-    "watchlist.csv": {"Name", "Year"},
-    "liked_films.csv": {"Name", "Year"},
-}
 
 SingleUpload = Union[object, Tuple[object, Optional[str]]]
 
