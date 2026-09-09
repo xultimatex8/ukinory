@@ -1,0 +1,152 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date
+from typing import Mapping
+
+from django.db import transaction
+
+from apps.library.models import Rating, WatchlistEntry, WatchlistSource
+from apps.imports.dtos.extraction_result import ExtractionResult
+from apps.imports.constants import DIARY_CSV, LIKED_CSV, RATINGS_CSV, WATCHED_CSV, WATCHLIST_CSV
+
+
+@dataclass(slots=True)
+class _RatingEntry:
+    title: str
+    year: int
+    rating: float | None = None
+    watched_date: date | None = None
+    liked: bool = False
+
+FilmKey = tuple[str, int]
+
+
+def _parse_year(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _parse_rating(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _film_key(row: Mapping[str, str]) -> FilmKey | None:
+    title = (row.get("Name") or "").strip()
+    year = _parse_year(row.get("Year"))
+    if not title or year is None:
+        return None
+    
+    return title, year
+
+
+def _merge_rating_sources(csvs: Mapping[str, list]) -> dict[FilmKey, _RatingEntry]:
+    entries: dict[FilmKey, _RatingEntry] = {}
+
+    def get_or_create(key: FilmKey) -> _RatingEntry:
+        if key not in entries:
+            entries[key] = _RatingEntry(title=key[0], year=key[1])
+
+        return entries[key]
+
+    for row in csvs.get(WATCHED_CSV, []):
+        key = _film_key(row)
+        if key:
+            get_or_create(key)
+
+    for row in csvs.get(RATINGS_CSV, []):
+        key = _film_key(row)
+        if not key:
+            continue
+        rating = _parse_rating(row.get("Rating"))
+        if rating is not None:
+            get_or_create(key).rating = rating
+
+    diary_by_key: dict[FilmKey, list[Mapping[str, str]]] = defaultdict(list)
+    for row in csvs.get(DIARY_CSV, []):
+        key = _film_key(row)
+        if key:
+            diary_by_key[key].append(row)
+
+    for key, rows in diary_by_key.items():
+        latest = max(rows, key=lambda r: _parse_date(r.get("Watched Date")) or date.min)
+        entry = get_or_create(key)
+        watched_date = _parse_date(latest.get("Watched Date"))
+        rating = _parse_rating(latest.get("Rating"))
+        if watched_date is not None:
+            entry.watched_date = watched_date
+        if rating is not None:
+            entry.rating = rating
+
+    for row in csvs.get(LIKED_CSV, []):
+        key = _film_key(row)
+        if key:
+            get_or_create(key).liked = True
+
+    return entries
+
+
+def persist_ratings(user, csvs: Mapping[str, list]) -> int:
+    merged = _merge_rating_sources(csvs)
+    for (title, year), entry in merged.items():
+        Rating.objects.update_or_create(
+            user=user,
+            title=title,
+            release_year=year,
+            defaults={
+                "rating": entry.rating,
+                "watched_date": entry.watched_date,
+                "liked": entry.liked,
+            },
+        )
+
+    return len(merged)
+
+
+def persist_watchlist(user, rows: list) -> int:
+    count = 0
+    for row in rows:
+        key = _film_key(row)
+        if not key:
+            continue
+        title, year = key
+        WatchlistEntry.objects.update_or_create(
+            user=user,
+            title=title,
+            release_year=year,
+            defaults={
+                "added_date": _parse_date(row.get("Date")),
+                "source": WatchlistSource.IMPORTED,
+            },
+        )
+        count += 1
+
+    return count
+
+
+@transaction.atomic
+def persist_letterboxd_records(user, result: ExtractionResult) -> dict[str, int]:
+    persisted: dict[str, int] = {"ratings": persist_ratings(user, result.csvs)}
+    if WATCHLIST_CSV in result.csvs:
+        persisted["watchlist"] = persist_watchlist(user, result.csvs[WATCHLIST_CSV])
+
+    return persisted

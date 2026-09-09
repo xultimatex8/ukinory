@@ -33,7 +33,7 @@ class TestLetterboxdImportViewUnit:
     def test_single_zip_field_is_collected_as_one_upload(
         self, mock_import, api_client, import_url
     ):
-        mock_import.return_value = ImportSummary(imported={"ratings.csv": 1}, missing=[])
+        mock_import.return_value = ImportSummary(imported={"ratings": 1}, missing=[])
         zip_file = SimpleUploadedFile("export.zip", b"PK\x03\x04fake", content_type="application/zip")
 
         response = api_client.post(import_url, data={"file": zip_file}, format="multipart")
@@ -74,7 +74,7 @@ class TestLetterboxdImportViewUnit:
     @patch("apps.imports.views.import_letterboxd_export")
     def test_response_shape(self, mock_import, api_client, import_url):
         mock_import.return_value = ImportSummary(
-            imported={"ratings.csv": 812, "diary.csv": 340},
+            imported={"ratings": 812, "diary": 340},
             missing=["watched.csv"],
         )
         ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
@@ -83,7 +83,7 @@ class TestLetterboxdImportViewUnit:
 
         assert response.data == {
             "userId": response.wsgi_request.user.id,
-            "imported": {"ratings.csv": 812, "diary.csv": 340},
+            "imported": {"ratings": 812, "diary": 340},
             "missing": ["watched.csv"],
         }
 
@@ -105,7 +105,7 @@ class TestLetterboxdImportViewIntegration:
         response = api_client.post(import_url, data={"file": zip_file}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["imported"] == {"ratings.csv": 1, "watchlist.csv": 1}
+        assert response.data["imported"] == {"ratings": 1, "watchlist": 1}
         assert set(response.data["missing"]) == {"diary.csv", "watched.csv", "liked_films.csv"}
 
     def test_real_csvs_without_zip(self, api_client, import_url):
@@ -114,7 +114,7 @@ class TestLetterboxdImportViewIntegration:
         response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["imported"] == {"ratings.csv": 1}
+        assert response.data["imported"] == {"ratings": 1}
 
     def test_malformed_csv_returns_422(self, api_client, import_url):
         broken = SimpleUploadedFile(
@@ -128,10 +128,9 @@ class TestLetterboxdImportViewIntegration:
 
     def test_zip_detected_by_content_even_with_wrong_extension(self, api_client, import_url):
         zip_bytes = _build_zip({"ratings.csv": RATINGS_CSV})
-        # Wrong extension on purpose — detection must fall back to the "PK" magic bytes.
         mislabeled = SimpleUploadedFile("export.dat", zip_bytes, content_type="application/octet-stream")
 
         response = api_client.post(import_url, data={"file": mislabeled}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["imported"] == {"ratings.csv": 1}
+        assert response.data["imported"] == {"ratings": 1}
