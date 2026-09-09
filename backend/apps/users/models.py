@@ -64,5 +64,13 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["username"]
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(is_guest=False) | models.Q(email__isnull=True),
+                name="guest_users_have_no_email",
+            ),
+        ]
+
     def __str__(self):
         return self.username
