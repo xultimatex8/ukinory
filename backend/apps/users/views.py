@@ -4,9 +4,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .services.guest_claim import claim_guest
 from .services.user_register import register_user
 
-from .serializers import RegisterSerializer, UserSerializer
+from .serializers import ClaimGuestSerializer, RegisterSerializer, UserSerializer
 
 
 User = get_user_model()
@@ -41,3 +42,15 @@ class RegisterView(APIView):
             {"user": UserSerializer(user).data, **_tokens_for_user(user)},
             status=status.HTTP_201_CREATED,
         )
+
+
+class ClaimGuestView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ClaimGuestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = claim_guest(request.user, **serializer.validated_data)
+
+        return Response({"user": UserSerializer(user).data, **_tokens_for_user(user)})
