@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from rest_framework import status
+from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -15,6 +15,7 @@ Uploads = List[Tuple[object, Optional[str]]]
 
 
 class LetterboxdImportView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request: Request) -> Response:
