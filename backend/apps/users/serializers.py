@@ -17,6 +17,10 @@ class ClaimGuestSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
 
 
+class DeleteAccountSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, required=False)
+
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User

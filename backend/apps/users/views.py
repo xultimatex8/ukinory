@@ -6,8 +6,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .services.guest_claim import claim_guest
 from .services.user_register import register_user
+from .services.delete_account import delete_account
 
-from .serializers import ClaimGuestSerializer, RegisterSerializer, UserSerializer
+from .serializers import ClaimGuestSerializer, DeleteAccountSerializer, RegisterSerializer, UserSerializer
 
 
 User = get_user_model()
@@ -54,3 +55,15 @@ class ClaimGuestView(APIView):
         user = claim_guest(request.user, **serializer.validated_data)
 
         return Response({"user": UserSerializer(user).data, **_tokens_for_user(user)})
+
+
+class DeleteAccountView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request):
+        serializer = DeleteAccountSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        delete_account(request.user, **serializer.validated_data)
+
+        return Response({"detail": "Account successfully deleted!"})

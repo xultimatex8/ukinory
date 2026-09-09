@@ -7,3 +7,7 @@ class UserRegistrationError(ValidationError):
 
 class GuestClaimError(ValidationError):
     pass
+
+
+class DeleteAccountError(ValidationError):
+    pass
