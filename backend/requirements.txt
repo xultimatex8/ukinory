@@ -6,3 +6,4 @@ python-dotenv
 debugpy
 pytest
 pytest-django
+djangorestframework_simplejwt
