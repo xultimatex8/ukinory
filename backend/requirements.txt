@@ -7,3 +7,5 @@ debugpy
 pytest
 pytest-django
 djangorestframework_simplejwt
+requests
+redis>=5.0

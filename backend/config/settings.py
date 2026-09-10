@@ -47,7 +47,12 @@ INSTALLED_APPS = [
     "apps.users",
     'apps.imports',
     'apps.library',
+    'apps.movies',
 ]
+
+TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+TMDB_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("TMDB_MIN_REQUEST_INTERVAL_SECONDS") or 0.25)
+TMDB_USE_SHARED_PACING = os.getenv("TMDB_USE_SHARED_PACING", "True") == "True"
 
 AUTH_USER_MODEL = "users.User"
 
@@ -117,6 +122,14 @@ DATABASES = {
 }
 
 
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", "redis://redis:6379/1"),
+    }
+}
+
+
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
 
@@ -160,5 +173,20 @@ STATIC_URL = 'static/'
 MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+    },
+}
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
     },
 }
