@@ -40,6 +40,7 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
 
     steps:
       - name: Checkout
@@ -99,6 +100,7 @@ jobs:
 
     env:
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
 
     steps:
       - name: Checkout
@@ -113,6 +115,7 @@ jobs:
           POSTGRES_HOST=db
           POSTGRES_PORT=5432
           DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+          TMDB_API_KEY=${TMDB_API_KEY}
           EOF
 
       - name: Validate Compose configuration
