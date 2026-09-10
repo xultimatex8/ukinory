@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from apps.imports.exceptions import LetterboxdImportError
 from apps.imports.services.letterboxd_import import import_letterboxd_export
+from apps.movies.exceptions import TMDbRateLimitedError, TMDbError
 
 Uploads = List[Tuple[object, Optional[str]]]
 
@@ -33,12 +34,28 @@ class LetterboxdImportView(APIView):
             return self._error(str(exc), status.HTTP_422_UNPROCESSABLE_ENTITY)
         except ValueError as exc:
             return self._error(str(exc), status.HTTP_400_BAD_REQUEST)
+        except TMDbRateLimitedError as exc:
+            return self._error(
+                f"TMDb is rate-limiting us right now: {exc}. Try again shortly.",
+                status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        except TMDbError as exc:
+            return self._error(
+                f"Couldn't reach TMDb to match movies: {exc}",
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(
             {
                 "userId": request.user.id,
                 "imported": summary.imported,
                 "missing": summary.missing,
+                "movies": {
+                    "matched": summary.movies.matched,
+                    "ambiguous": summary.movies.ambiguous,
+                    "unmatched": summary.movies.unmatched,
+                    "tmdbError": summary.movies.tmdb_error,
+                },
             },
             status=status.HTTP_200_OK,
         )

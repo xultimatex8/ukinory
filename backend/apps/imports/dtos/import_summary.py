@@ -1,8 +1,18 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Dict, List
 
 
-@dataclass
+@dataclass(slots=True)
+class MovieMatchSummary:
+    matched: int = 0
+    ambiguous: int = 0
+    unmatched: list[str] = field(default_factory=list)
+    tmdb_error: str | None = None
+
+
+@dataclass(slots=True)
 class ImportSummary:
-    imported: Dict[str, int] = field(default_factory=dict)
-    missing: List[str] = field(default_factory=list)
+    imported: dict[str, int]
+    missing: list[str]
+    movies: MovieMatchSummary
