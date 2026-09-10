@@ -7,11 +7,18 @@ from apps.common.models import BaseModel
 from apps.common.enums import WatchlistSource
 
 
-# Provisional until the creation of movie entity
 class ImportedFilmRecordMixin(models.Model):
     title = models.CharField(max_length=255)
     release_year = models.PositiveSmallIntegerField(null=True, blank=True)
 
+    movie = models.ForeignKey(
+        "movies.Movie",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="%(class)s_set",
+    )
+ 
     class Meta:
         abstract = True
 
