@@ -7,7 +7,7 @@ from django.utils import timezone
 from apps.movies.models import Genre, Movie
 from apps.movies.services.tmdb_matching import match_movie
 from apps.movies.services.tmdb_metadata import fetch_movie_metadata
-from apps.movies.tmdb_client import TMDbClient
+from apps.movies.services.tmdb_client import TMDbClient
 
 
 def get_or_fetch_movie(client: TMDbClient, title: str, year: Optional[int]) -> Movie:

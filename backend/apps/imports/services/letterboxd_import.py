@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from apps.imports.dtos.import_summary import ImportSummary
 from apps.imports.services.letterboxd_extraction import extract_letterboxd_csvs
 from apps.imports.services.letterboxd_persistence import persist_letterboxd_records
-from apps.movies.tmdb_client import TMDbClient
+from apps.movies.services.tmdb_client import TMDbClient
 
 Uploads = List[Tuple[object, Optional[str]]]
 

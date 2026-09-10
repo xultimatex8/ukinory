@@ -15,7 +15,7 @@ from apps.imports.constants import DIARY_CSV, LIKED_CSV, RATINGS_CSV, WATCHED_CS
 from apps.movies.exceptions import MovieMatchNotFound, TMDbError
 from apps.movies.models import Movie
 from apps.movies.services.movie_cache import get_or_fetch_movie
-from apps.movies.tmdb_client import TMDbClient
+from apps.movies.services.tmdb_client import TMDbClient
 
 logger = logging.getLogger(__name__)
 

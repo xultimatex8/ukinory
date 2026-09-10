@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from apps.movies.exceptions import MovieMatchNotFound
-from apps.movies.tmdb_client import TMDbClient
+from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.dtos.movie_match import MovieMatch
 from apps.common.helpers import extract_year
 

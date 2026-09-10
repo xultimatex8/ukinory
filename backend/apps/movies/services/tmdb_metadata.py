@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from apps.movies.tmdb_client import TMDbClient
+from apps.movies.services.tmdb_client import TMDbClient
 from apps.common.helpers import extract_year
 
 POSTER_SIZE = "w500"
