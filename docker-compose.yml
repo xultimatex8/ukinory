@@ -22,6 +22,20 @@ services:
       retries: 5
 
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+
+    ports:
+      - "6379:6379"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
   backend:
     build:
       context: ./backend
@@ -44,11 +58,17 @@ services:
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_PORT: ${POSTGRES_PORT}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      TMDB_MIN_REQUEST_INTERVAL_SECONDS: ${TMDB_MIN_REQUEST_INTERVAL_SECONDS}
+      TMDB_USE_SHARED_PACING: ${TMDB_USE_SHARED_PACING}
+      REDIS_URL: ${REDIS_URL}
       DEBUG: "1"
       PYTHONPATH: /app
 
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
     healthcheck:

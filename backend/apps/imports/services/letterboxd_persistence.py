@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -9,7 +10,14 @@ from django.db import transaction
 
 from apps.library.models import Rating, WatchlistEntry, WatchlistSource
 from apps.imports.dtos.extraction_result import ExtractionResult
+from apps.imports.dtos.import_summary import MovieMatchSummary
 from apps.imports.constants import DIARY_CSV, LIKED_CSV, RATINGS_CSV, WATCHED_CSV, WATCHLIST_CSV
+from apps.movies.exceptions import MovieMatchNotFound, TMDbError
+from apps.movies.models import Movie
+from apps.movies.services.movie_cache import get_or_fetch_movie
+from apps.movies.services.tmdb_client import TMDbClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -55,7 +63,7 @@ def _film_key(row: Mapping[str, str]) -> FilmKey | None:
     year = _parse_year(row.get("Year"))
     if not title or year is None:
         return None
-    
+
     return title, year
 
 
@@ -105,7 +113,41 @@ def _merge_rating_sources(csvs: Mapping[str, list]) -> dict[FilmKey, _RatingEntr
     return entries
 
 
-def persist_ratings(user, csvs: Mapping[str, list]) -> int:
+def _match_films(
+    client: TMDbClient, film_keys: set[FilmKey]
+) -> tuple[dict[FilmKey, Movie], MovieMatchSummary]:
+    matches: dict[FilmKey, Movie] = {}
+    summary = MovieMatchSummary()
+
+    for title, year in sorted(film_keys):
+        if summary.tmdb_error is not None:
+            summary.unmatched.append(f"{title} ({year})")
+            continue
+
+        try:
+            movie = get_or_fetch_movie(client, title, year)
+        except MovieMatchNotFound:
+            summary.unmatched.append(f"{title} ({year})")
+            continue
+        except TMDbError as exc:
+            logger.warning(
+                "Stopping TMDb matching for this import after a systemic "
+                "failure: %s",
+                exc,
+            )
+            summary.tmdb_error = str(exc)
+            summary.unmatched.append(f"{title} ({year})")
+            continue
+
+        matches[(title, year)] = movie
+        summary.matched += 1
+
+    return matches, summary
+
+
+def persist_ratings(
+    user, csvs: Mapping[str, list], movie_matches: Mapping[FilmKey, Movie]
+) -> int:
     merged = _merge_rating_sources(csvs)
     for (title, year), entry in merged.items():
         Rating.objects.update_or_create(
@@ -116,13 +158,16 @@ def persist_ratings(user, csvs: Mapping[str, list]) -> int:
                 "rating": entry.rating,
                 "watched_date": entry.watched_date,
                 "liked": entry.liked,
+                "movie": movie_matches.get((title, year)),
             },
         )
 
     return len(merged)
 
 
-def persist_watchlist(user, rows: list) -> int:
+def persist_watchlist(
+    user, rows: list, movie_matches: Mapping[FilmKey, Movie]
+) -> int:
     count = 0
     for row in rows:
         key = _film_key(row)
@@ -136,6 +181,7 @@ def persist_watchlist(user, rows: list) -> int:
             defaults={
                 "added_date": _parse_date(row.get("Date")),
                 "source": WatchlistSource.IMPORTED,
+                "movie": movie_matches.get(key),
             },
         )
         count += 1
@@ -143,10 +189,29 @@ def persist_watchlist(user, rows: list) -> int:
     return count
 
 
-@transaction.atomic
-def persist_letterboxd_records(user, result: ExtractionResult) -> dict[str, int]:
-    persisted: dict[str, int] = {"ratings": persist_ratings(user, result.csvs)}
-    if WATCHLIST_CSV in result.csvs:
-        persisted["watchlist"] = persist_watchlist(user, result.csvs[WATCHLIST_CSV])
+def _collect_film_keys(csvs: Mapping[str, list]) -> set[FilmKey]:
+    keys: set[FilmKey] = set(_merge_rating_sources(csvs).keys())
+    for row in csvs.get(WATCHLIST_CSV, []):
+        key = _film_key(row)
+        if key:
+            keys.add(key)
+    return keys
 
-    return persisted
+
+@transaction.atomic
+def persist_letterboxd_records(user, result: ExtractionResult
+) -> tuple[dict[str, int], MovieMatchSummary]:
+    client = TMDbClient()
+
+    film_keys = _collect_film_keys(result.csvs)
+    movie_matches, movie_summary = _match_films(client, film_keys)
+
+    persisted: dict[str, int] = {
+        "ratings": persist_ratings(user, result.csvs, movie_matches)
+    }
+    if WATCHLIST_CSV in result.csvs:
+        persisted["watchlist"] = persist_watchlist(
+            user, result.csvs[WATCHLIST_CSV], movie_matches
+        )
+
+    return persisted, movie_summary

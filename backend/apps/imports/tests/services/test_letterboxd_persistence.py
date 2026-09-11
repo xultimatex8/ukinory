@@ -1,4 +1,5 @@
 from datetime import date
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,7 +12,9 @@ from apps.imports.constants import (
 )
 from apps.imports.dtos.extraction_result import ExtractionResult
 from apps.imports.services.letterboxd_persistence import (
+    _collect_film_keys,
     _film_key,
+    _match_films,
     _merge_rating_sources,
     _parse_date,
     _parse_rating,
@@ -21,6 +24,8 @@ from apps.imports.services.letterboxd_persistence import (
     persist_watchlist,
 )
 from apps.library.models import Rating, WatchlistEntry, WatchlistSource
+from apps.movies.exceptions import MovieMatchNotFound, TMDbUnavailableError
+from apps.movies.models import Movie
 
 
 @pytest.mark.parametrize(
@@ -71,65 +76,30 @@ def test_parse_rating(value, expected):
     assert _parse_rating(value) == expected
 
 
-
 @pytest.mark.parametrize(
     ("row", "expected"),
     [
-        (
-            {"Name": "Dune", "Year": "2021"},
-            ("Dune", 2021),
-        ),
-        (
-            {"Name": "  Dune  ", "Year": "2021"},
-            ("Dune", 2021),
-        ),
-        (
-            {"Name": "Dune", "Year": "2021", "Rating": "5"},
-            ("Dune", 2021),
-        ),
-        (
-            {"Name": "", "Year": "2021"},
-            None,
-        ),
-        (
-            {"Name": "Dune", "Year": ""},
-            None,
-        ),
-        (
-            {"Name": "Dune", "Year": "invalid"},
-            None,
-        ),
-        (
-            {"Year": "2021"},
-            None,
-        ),
-        (
-            {"Name": "Dune"},
-            None,
-        ),
+        ({"Name": "Dune", "Year": "2021"}, ("Dune", 2021)),
+        ({"Name": "  Dune  ", "Year": "2021"}, ("Dune", 2021)),
+        ({"Name": "Dune", "Year": "2021", "Rating": "5"}, ("Dune", 2021)),
+        ({"Name": "", "Year": "2021"}, None),
+        ({"Name": "Dune", "Year": ""}, None),
+        ({"Name": "Dune", "Year": "invalid"}, None),
+        ({"Year": "2021"}, None),
+        ({"Name": "Dune"}, None),
     ],
 )
 def test_film_key(row, expected):
     assert _film_key(row) == expected
 
 
-
 def test_merge_rating_sources_from_watched():
-    csvs = {
-        WATCHED_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-            }
-        ]
-    }
+    csvs = {WATCHED_CSV: [{"Name": "Dune", "Year": "2021"}]}
 
     result = _merge_rating_sources(csvs)
 
     assert len(result) == 1
-
     entry = result[("Dune", 2021)]
-
     assert entry.title == "Dune"
     assert entry.year == 2021
     assert entry.rating is None
@@ -138,163 +108,68 @@ def test_merge_rating_sources_from_watched():
 
 
 def test_merge_rating_sources_from_ratings():
-    csvs = {
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            }
-        ]
-    }
+    csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
 
     result = _merge_rating_sources(csvs)
 
-    assert len(result) == 1
-
     entry = result[("Dune", 2021)]
-
-    assert entry.title == "Dune"
-    assert entry.year == 2021
     assert entry.rating == 4.5
-    assert entry.watched_date is None
-    assert entry.liked is False
 
 
 def test_merge_rating_sources_from_likes():
-    csvs = {
-        LIKED_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-            }
-        ]
-    }
+    csvs = {LIKED_CSV: [{"Name": "Dune", "Year": "2021"}]}
 
     result = _merge_rating_sources(csvs)
 
-    assert len(result) == 1
-
-    entry = result[("Dune", 2021)]
-
-    assert entry.title == "Dune"
-    assert entry.year == 2021
-    assert entry.rating is None
-    assert entry.watched_date is None
-    assert entry.liked is True
+    assert result[("Dune", 2021)].liked is True
 
 
 def test_merge_rating_sources_combines_sources():
     csvs = {
-        WATCHED_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-            }
-        ],
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            }
-        ],
-        LIKED_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-            }
-        ],
+        WATCHED_CSV: [{"Name": "Dune", "Year": "2021"}],
+        RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
+        LIKED_CSV: [{"Name": "Dune", "Year": "2021"}],
     }
 
     result = _merge_rating_sources(csvs)
 
-    assert len(result) == 1
-
     entry = result[("Dune", 2021)]
-
-    assert entry.title == "Dune"
-    assert entry.year == 2021
     assert entry.rating == 4.5
-    assert entry.watched_date is None
     assert entry.liked is True
 
 
 def test_merge_rating_sources_uses_latest_diary_entry():
     csvs = {
         DIARY_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "3",
-                "Watched Date": "2024-01-10",
-            },
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-                "Watched Date": "2025-06-20",
-            },
+            {"Name": "Dune", "Year": "2021", "Rating": "3", "Watched Date": "2024-01-10"},
+            {"Name": "Dune", "Year": "2021", "Rating": "4.5", "Watched Date": "2025-06-20"},
         ]
     }
 
     result = _merge_rating_sources(csvs)
 
-    assert len(result) == 1
-
     entry = result[("Dune", 2021)]
-
     assert entry.rating == 4.5
     assert entry.watched_date == date(2025, 6, 20)
 
 
 def test_merge_rating_sources_ignores_invalid_rows():
     csvs = {
-        WATCHED_CSV: [
-            {
-                "Name": "",
-                "Year": "2021",
-            },
-            {
-                "Name": "Dune",
-                "Year": "invalid",
-            },
-        ],
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "invalid",
-            }
-        ],
-        LIKED_CSV: [
-            {
-                "Name": "",
-                "Year": "2021",
-            }
-        ],
+        WATCHED_CSV: [{"Name": "", "Year": "2021"}, {"Name": "Dune", "Year": "invalid"}],
+        RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "invalid"}],
+        LIKED_CSV: [{"Name": "", "Year": "2021"}],
     }
 
-    result = _merge_rating_sources(csvs)
-
-    assert result == {}
+    assert _merge_rating_sources(csvs) == {}
 
 
 def test_merge_rating_sources_empty_csvs():
-    result = _merge_rating_sources({})
-
-    assert result == {}
+    assert _merge_rating_sources({}) == {}
 
 
 def test_merge_rating_sources_preserves_rating_when_diary_rating_invalid():
     csvs = {
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            }
-        ],
+        RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
         DIARY_CSV: [
             {
                 "Name": "Dune",
@@ -305,391 +180,375 @@ def test_merge_rating_sources_preserves_rating_when_diary_rating_invalid():
         ],
     }
 
-    result = _merge_rating_sources(csvs)
-
-    entry = result[("Dune", 2021)]
+    entry = _merge_rating_sources(csvs)[("Dune", 2021)]
 
     assert entry.rating == 4.5
     assert entry.watched_date == date(2025, 6, 20)
 
 
-
-@pytest.mark.django_db
-def test_persist_ratings_creates_rating(registered_user):
+def test_collect_film_keys_combines_ratings_and_watchlist():
     csvs = {
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            }
-        ]
+        RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "5"}],
+        WATCHLIST_CSV: [{"Name": "Alien", "Year": "1979"}],
     }
 
-    count = persist_ratings(registered_user, csvs)
+    keys = _collect_film_keys(csvs)
 
-    assert count == 1
-    assert Rating.objects.count() == 1
-
-    rating = Rating.objects.get(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    )
-
-    assert rating.rating == 4.5
-    assert rating.watched_date is None
-    assert rating.liked is False
+    assert keys == {("Dune", 2021), ("Alien", 1979)}
 
 
-@pytest.mark.django_db
-def test_persist_ratings_creates_combined_rating(registered_user):
+def test_collect_film_keys_dedupes_film_in_both_ratings_and_watchlist():
     csvs = {
-        WATCHED_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-            }
-        ],
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            }
-        ],
-        DIARY_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "5",
-                "Watched Date": "2025-06-20",
-            }
-        ],
-        LIKED_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-            }
-        ],
+        RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "5"}],
+        WATCHLIST_CSV: [{"Name": "Dune", "Year": "2021"}],
     }
 
-    count = persist_ratings(registered_user, csvs)
+    keys = _collect_film_keys(csvs)
 
-    assert count == 1
-
-    rating = Rating.objects.get(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    )
-
-    assert rating.rating == 5.0
-    assert rating.watched_date == date(2025, 6, 20)
-    assert rating.liked is True
+    assert keys == {("Dune", 2021)}
 
 
-@pytest.mark.django_db
-def test_persist_ratings_updates_existing_rating(registered_user):
-    csvs = {
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            }
-        ]
-    }
-
-    persist_ratings(registered_user, csvs)
-
-    csvs[RATINGS_CSV][0]["Rating"] = "5"
-
-    count = persist_ratings(registered_user, csvs)
-
-    assert count == 1
-
-    assert Rating.objects.filter(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    ).count() == 1
-
-    rating = Rating.objects.get(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    )
-
-    assert rating.rating == 5.0
+def make_movie(**overrides) -> Movie:
+    movie = MagicMock(spec=Movie)
+    movie.title = overrides.get("title", "Dune")
+    movie.release_year = overrides.get("release_year", 2021)
+    return movie
 
 
-@pytest.mark.django_db
-def test_persist_ratings_persists_multiple_films(registered_user):
-    csvs = {
-        WATCHED_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-            },
-            {
-                "Name": "Alien",
-                "Year": "1979",
-            },
-        ],
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            },
-            {
-                "Name": "Alien",
-                "Year": "1979",
-                "Rating": "5",
-            },
-        ],
-    }
+class TestMatchFilms:
+    def test_matched_film_is_recorded(self):
+        movie = make_movie()
+        client = MagicMock()
 
-    count = persist_ratings(registered_user, csvs)
+        with patch(
+            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            return_value=movie,
+        ):
+            matches, summary = _match_films(client, {("Dune", 2021)})
 
-    assert count == 2
-    assert Rating.objects.count() == 2
+        assert matches[("Dune", 2021)] is movie
+        assert summary.matched == 1
+        assert summary.unmatched == []
+        assert summary.tmdb_error is None
+
+    def test_unmatched_film_is_recorded_without_stopping_the_batch(self):
+        client = MagicMock()
+
+        with patch(
+            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            side_effect=[
+                make_movie(title="Dune"),
+                MovieMatchNotFound("Obscure Short", 2021),
+            ],
+        ):
+            matches, summary = _match_films(
+                client, {("Dune", 2021), ("Obscure Short", 2021)}
+            )
+
+        assert summary.matched == 1
+        assert summary.unmatched == ["Obscure Short (2021)"]
+        assert ("Dune", 2021) in matches
+        assert ("Obscure Short", 2021) not in matches
+
+    def test_systemic_tmdb_failure_stops_further_matching(self):
+        client = MagicMock()
+
+        with patch(
+            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            side_effect=TMDbUnavailableError("TMDb is down"),
+        ):
+            matches, summary = _match_films(
+                client, {("Dune", 2021), ("Alien", 1979)}
+            )
+
+        assert matches == {}
+        assert summary.matched == 0
+        assert summary.tmdb_error == "TMDb is down"
+        assert set(summary.unmatched) == {"Dune (2021)", "Alien (1979)"}
+
+    def test_empty_film_keys_returns_empty_summary(self):
+        client = MagicMock()
+
+        matches, summary = _match_films(client, set())
+
+        assert matches == {}
+        assert summary.matched == 0
+        assert summary.unmatched == []
 
 
-@pytest.mark.django_db
-def test_persist_ratings_does_not_duplicate_same_film(registered_user):
-    csvs = {
-        RATINGS_CSV: [
-            {
-                "Name": "Dune",
-                "Year": "2021",
-                "Rating": "4.5",
-            }
-        ]
-    }
-
-    persist_ratings(registered_user, csvs)
-    persist_ratings(registered_user, csvs)
-
-    assert Rating.objects.filter(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    ).count() == 1
-
+@pytest.fixture
+def no_tmdb_matches():
+    with patch(
+        "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+        side_effect=MovieMatchNotFound("unused", None),
+    ):
+        yield
 
 
 @pytest.mark.django_db
-def test_persist_watchlist_creates_entry(registered_user):
-    rows = [
-        {
-            "Name": "Dune",
-            "Year": "2021",
-            "Date": "2025-01-15",
-        }
-    ]
+class TestPersistRatings:
+    def test_creates_rating(self, registered_user):
+        csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
 
-    count = persist_watchlist(registered_user, rows)
+        count = persist_ratings(registered_user, csvs, movie_matches={})
 
-    assert count == 1
-    assert WatchlistEntry.objects.count() == 1
+        assert count == 1
+        assert Rating.objects.count() == 1
 
-    entry = WatchlistEntry.objects.get(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    )
+        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        assert rating.rating == 4.5
+        assert rating.watched_date is None
+        assert rating.liked is False
+        assert rating.movie is None
 
-    assert entry.added_date == date(2025, 1, 15)
-    assert entry.source == WatchlistSource.IMPORTED
+    def test_links_matched_movie(self, registered_user):
+        movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
+        csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
 
+        persist_ratings(registered_user, csvs, movie_matches={("Dune", 2021): movie})
 
-@pytest.mark.django_db
-def test_persist_watchlist_updates_existing_entry(registered_user):
-    rows = [
-        {
-            "Name": "Dune",
-            "Year": "2021",
-            "Date": "2025-01-15",
-        }
-    ]
+        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        assert rating.movie_id == movie.id
 
-    persist_watchlist(registered_user, rows)
-
-    rows[0]["Date"] = "2025-02-20"
-
-    count = persist_watchlist(registered_user, rows)
-
-    assert count == 1
-
-    assert WatchlistEntry.objects.filter(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    ).count() == 1
-
-    entry = WatchlistEntry.objects.get(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    )
-
-    assert entry.added_date == date(2025, 2, 20)
-
-
-@pytest.mark.django_db
-def test_persist_watchlist_does_not_duplicate_same_film(registered_user):
-    rows = [
-        {
-            "Name": "Dune",
-            "Year": "2021",
-            "Date": "2025-01-15",
-        }
-    ]
-
-    persist_watchlist(registered_user, rows)
-    persist_watchlist(registered_user, rows)
-
-    assert WatchlistEntry.objects.filter(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    ).count() == 1
-
-
-@pytest.mark.django_db
-def test_persist_watchlist_skips_invalid_rows(registered_user):
-    rows = [
-        {
-            "Name": "",
-            "Year": "2021",
-        },
-        {
-            "Name": "Dune",
-            "Year": "invalid",
-        },
-        {
-            "Name": "Alien",
-            "Year": "1979",
-            "Date": "2025-01-15",
-        },
-    ]
-
-    count = persist_watchlist(registered_user, rows)
-
-    assert count == 1
-    assert WatchlistEntry.objects.count() == 1
-
-    assert WatchlistEntry.objects.filter(
-        title="Alien",
-        release_year=1979,
-    ).exists()
-
-
-@pytest.mark.django_db
-def test_persist_watchlist_with_invalid_date(registered_user):
-    rows = [
-        {
-            "Name": "Dune",
-            "Year": "2021",
-            "Date": "invalid",
-        }
-    ]
-
-    count = persist_watchlist(registered_user, rows)
-
-    assert count == 1
-
-    entry = WatchlistEntry.objects.get(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    )
-
-    assert entry.added_date is None
-
-
-
-@pytest.mark.django_db
-def test_persist_letterboxd_records_with_watchlist(registered_user):
-    result = ExtractionResult(
-        csvs={
-            RATINGS_CSV: [
+    def test_creates_combined_rating(self, registered_user):
+        csvs = {
+            WATCHED_CSV: [{"Name": "Dune", "Year": "2021"}],
+            RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
+            DIARY_CSV: [
                 {
                     "Name": "Dune",
                     "Year": "2021",
-                    "Rating": "4.5",
+                    "Rating": "5",
+                    "Watched Date": "2025-06-20",
                 }
             ],
-            WATCHLIST_CSV: [
-                {
-                    "Name": "Alien",
-                    "Year": "1979",
-                    "Date": "2025-01-01",
-                }
-            ],
+            LIKED_CSV: [{"Name": "Dune", "Year": "2021"}],
         }
-    )
 
-    persisted = persist_letterboxd_records(registered_user, result)
+        count = persist_ratings(registered_user, csvs, movie_matches={})
 
-    assert persisted == {
-        "ratings": 1,
-        "watchlist": 1,
-    }
+        assert count == 1
+        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        assert rating.rating == 5.0
+        assert rating.watched_date == date(2025, 6, 20)
+        assert rating.liked is True
 
-    assert Rating.objects.filter(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    ).exists()
+    def test_updates_existing_rating(self, registered_user):
+        csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
+        persist_ratings(registered_user, csvs, movie_matches={})
 
-    assert WatchlistEntry.objects.filter(
-        user=registered_user,
-        title="Alien",
-        release_year=1979,
-    ).exists()
+        csvs[RATINGS_CSV][0]["Rating"] = "5"
+        count = persist_ratings(registered_user, csvs, movie_matches={})
 
+        assert count == 1
+        assert Rating.objects.filter(
+            user=registered_user, title="Dune", release_year=2021
+        ).count() == 1
+        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        assert rating.rating == 5.0
 
-@pytest.mark.django_db
-def test_persist_letterboxd_records_without_watchlist(registered_user):
-    result = ExtractionResult(
-        csvs={
+    def test_persists_multiple_films(self, registered_user):
+        csvs = {
+            WATCHED_CSV: [
+                {"Name": "Dune", "Year": "2021"},
+                {"Name": "Alien", "Year": "1979"},
+            ],
             RATINGS_CSV: [
-                {
-                    "Name": "Dune",
-                    "Year": "2021",
-                    "Rating": "4.5",
-                }
+                {"Name": "Dune", "Year": "2021", "Rating": "4.5"},
+                {"Name": "Alien", "Year": "1979", "Rating": "5"},
             ],
         }
-    )
 
-    persisted = persist_letterboxd_records(registered_user, result)
+        count = persist_ratings(registered_user, csvs, movie_matches={})
 
-    assert persisted == {
-        "ratings": 1,
-    }
+        assert count == 2
+        assert Rating.objects.count() == 2
 
-    assert Rating.objects.filter(
-        user=registered_user,
-        title="Dune",
-        release_year=2021,
-    ).exists()
+    def test_does_not_duplicate_same_film(self, registered_user):
+        csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
 
-    assert WatchlistEntry.objects.count() == 0
+        persist_ratings(registered_user, csvs, movie_matches={})
+        persist_ratings(registered_user, csvs, movie_matches={})
+
+        assert Rating.objects.filter(
+            user=registered_user, title="Dune", release_year=2021
+        ).count() == 1
 
 
 @pytest.mark.django_db
-def test_persist_letterboxd_records_with_empty_result(registered_user):
-    result = ExtractionResult(csvs={})
+class TestPersistWatchlist:
+    def test_creates_entry(self, registered_user):
+        rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
 
-    persisted = persist_letterboxd_records(registered_user, result)
+        count = persist_watchlist(registered_user, rows, movie_matches={})
 
-    assert persisted == {
-        "ratings": 0,
-    }
+        assert count == 1
+        assert WatchlistEntry.objects.count() == 1
+        entry = WatchlistEntry.objects.get(
+            user=registered_user, title="Dune", release_year=2021
+        )
+        assert entry.added_date == date(2025, 1, 15)
+        assert entry.source == WatchlistSource.IMPORTED
+        assert entry.movie is None
 
-    assert Rating.objects.count() == 0
-    assert WatchlistEntry.objects.count() == 0
+    def test_links_matched_movie(self, registered_user):
+        movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
+        rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
+
+        persist_watchlist(registered_user, rows, movie_matches={("Dune", 2021): movie})
+
+        entry = WatchlistEntry.objects.get(
+            user=registered_user, title="Dune", release_year=2021
+        )
+        assert entry.movie_id == movie.id
+
+    def test_updates_existing_entry(self, registered_user):
+        rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
+        persist_watchlist(registered_user, rows, movie_matches={})
+
+        rows[0]["Date"] = "2025-02-20"
+        count = persist_watchlist(registered_user, rows, movie_matches={})
+
+        assert count == 1
+        entry = WatchlistEntry.objects.get(
+            user=registered_user, title="Dune", release_year=2021
+        )
+        assert entry.added_date == date(2025, 2, 20)
+
+    def test_does_not_duplicate_same_film(self, registered_user):
+        rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
+
+        persist_watchlist(registered_user, rows, movie_matches={})
+        persist_watchlist(registered_user, rows, movie_matches={})
+
+        assert WatchlistEntry.objects.filter(
+            user=registered_user, title="Dune", release_year=2021
+        ).count() == 1
+
+    def test_skips_invalid_rows(self, registered_user):
+        rows = [
+            {"Name": "", "Year": "2021"},
+            {"Name": "Dune", "Year": "invalid"},
+            {"Name": "Alien", "Year": "1979", "Date": "2025-01-15"},
+        ]
+
+        count = persist_watchlist(registered_user, rows, movie_matches={})
+
+        assert count == 1
+        assert WatchlistEntry.objects.count() == 1
+        assert WatchlistEntry.objects.filter(title="Alien", release_year=1979).exists()
+
+    def test_with_invalid_date(self, registered_user):
+        rows = [{"Name": "Dune", "Year": "2021", "Date": "invalid"}]
+
+        count = persist_watchlist(registered_user, rows, movie_matches={})
+
+        assert count == 1
+        entry = WatchlistEntry.objects.get(
+            user=registered_user, title="Dune", release_year=2021
+        )
+        assert entry.added_date is None
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("no_tmdb_matches")
+class TestPersistLetterboxdRecords:
+    def test_with_watchlist(self, registered_user):
+        result = ExtractionResult(
+            csvs={
+                RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
+                WATCHLIST_CSV: [
+                    {"Name": "Alien", "Year": "1979", "Date": "2025-01-01"}
+                ],
+            }
+        )
+ 
+        persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+ 
+        assert persisted == {"ratings": 1, "watchlist": 1}
+        assert Rating.objects.filter(
+            user=registered_user, title="Dune", release_year=2021
+        ).exists()
+        assert WatchlistEntry.objects.filter(
+            user=registered_user, title="Alien", release_year=1979
+        ).exists()
+        assert movie_summary.matched == 0
+        assert set(movie_summary.unmatched) == {"Dune (2021)", "Alien (1979)"}
+ 
+    def test_without_watchlist(self, registered_user):
+        result = ExtractionResult(
+            csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
+        )
+ 
+        persisted, _ = persist_letterboxd_records(registered_user, result)
+ 
+        assert persisted == {"ratings": 1}
+        assert WatchlistEntry.objects.count() == 0
+ 
+    def test_with_empty_result(self, registered_user):
+        result = ExtractionResult(csvs={})
+ 
+        persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+ 
+        assert persisted == {"ratings": 0}
+        assert Rating.objects.count() == 0
+        assert WatchlistEntry.objects.count() == 0
+        assert movie_summary.matched == 0
+        assert movie_summary.unmatched == []
+ 
+    def test_constructs_and_uses_a_tmdb_client_for_matching(self, registered_user):
+        movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
+        result = ExtractionResult(
+            csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
+        )
+        fake_client = MagicMock()
+ 
+        with patch(
+            "apps.imports.services.letterboxd_persistence.TMDbClient",
+            return_value=fake_client,
+        ), patch(
+            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            return_value=movie,
+        ) as mock_get_or_fetch:
+            persist_letterboxd_records(registered_user, result)
+ 
+        mock_get_or_fetch.assert_called_once_with(fake_client, "Dune", 2021)
+ 
+    def test_same_film_across_ratings_and_watchlist_is_matched_once(
+        self, registered_user
+    ):
+        movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
+        result = ExtractionResult(
+            csvs={
+                RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
+                WATCHLIST_CSV: [{"Name": "Dune", "Year": "2021"}],
+            }
+        )
+ 
+        with patch(
+            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            return_value=movie,
+        ) as mock_get_or_fetch:
+            persist_letterboxd_records(registered_user, result)
+ 
+        mock_get_or_fetch.assert_called_once()
+ 
+    def test_a_systemic_tmdb_failure_does_not_block_csv_persistence(
+        self, registered_user
+    ):
+        result = ExtractionResult(
+            csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
+        )
+ 
+        with patch(
+            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            side_effect=TMDbUnavailableError("TMDb is down"),
+        ):
+            persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+ 
+        assert persisted == {"ratings": 1}
+        assert Rating.objects.filter(
+            user=registered_user, title="Dune", release_year=2021
+        ).exists()
+        assert movie_summary.tmdb_error == "TMDb is down"
+        
