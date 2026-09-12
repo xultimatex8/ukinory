@@ -112,7 +112,7 @@ class TestLetterboxdImportViewUnit:
             missing=["watched.csv"],
             movies=MovieMatchSummary(
                 matched=800,
-                ambiguous=3,
+                without_metadata=[],
                 unmatched=["Some Obscure Short (2019)"],
                 tmdb_error=None,
             ),
@@ -127,7 +127,7 @@ class TestLetterboxdImportViewUnit:
             "missing": ["watched.csv"],
             "movies": {
                 "matched": 800,
-                "ambiguous": 3,
+                "withoutMetadata": [],
                 "unmatched": ["Some Obscure Short (2019)"],
                 "tmdbError": None,
             },
@@ -146,7 +146,7 @@ class TestLetterboxdImportViewUnit:
  
         assert response.data["movies"] == {
             "matched": 0,
-            "ambiguous": 0,
+            "withoutMetadata": [],
             "unmatched": [],
             "tmdbError": None,
         }
@@ -162,14 +162,10 @@ def _build_zip(files: dict[str, str]) -> bytes:
 
 @pytest.fixture(autouse=True)
 def no_real_tmdb_calls():
-    """Integration tests below exercise the real extraction/persistence
-    pipeline end to end, but must never hit the real TMDb API - every film
-    is treated as unmatched, which is enough to prove the CSV plumbing
-    still works regardless of movie matching."""
     from apps.movies.exceptions import MovieMatchNotFound
 
     with patch(
-        "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+        "apps.imports.services.letterboxd_persistence.match_movie",
         side_effect=MovieMatchNotFound("unused", None),
     ):
         yield
