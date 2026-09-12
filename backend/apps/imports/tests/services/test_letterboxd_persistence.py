@@ -26,6 +26,7 @@ from apps.imports.services.letterboxd_persistence import (
 from apps.library.models import Rating, WatchlistEntry, WatchlistSource
 from apps.movies.exceptions import MovieMatchNotFound, TMDbUnavailableError
 from apps.movies.models import Movie
+from apps.movies.services.movie_cache import find_cached_movie
 
 
 @pytest.mark.parametrize(
@@ -215,48 +216,191 @@ def make_movie(**overrides) -> Movie:
     return movie
 
 
+def fake_match(tmdb_id=438631, title="Dune", release_year=2021, popularity=100.0):
+    match = MagicMock()
+    match.tmdb_id = tmdb_id
+    match.title = title
+    match.release_year = release_year
+    match.popularity = popularity
+    match.is_ambiguous = False
+    return match
+
+
+PATCH_TARGET = "apps.imports.services.letterboxd_persistence.{}"
+
+
 class TestMatchFilms:
-    def test_matched_film_is_recorded(self):
+    """`_match_films` resolves each film against the local cache and, for a
+    TMDb match, only defers to Wikidata once for every film that survives
+    both cache checks - as a single batched call - instead of one Wikidata
+    request per film."""
+
+    def test_cache_hit_by_title_and_year_skips_tmdb_and_wikidata_entirely(self):
         movie = make_movie()
         client = MagicMock()
 
         with patch(
-            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
-            return_value=movie,
-        ):
+            PATCH_TARGET.format("find_cached_movie"), return_value=movie
+        ), patch(
+            PATCH_TARGET.format("match_movie")
+        ) as mock_match_movie, patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ) as mock_fetch_and_store:
             matches, summary = _match_films(client, {("Dune", 2021)})
 
         assert matches[("Dune", 2021)] is movie
         assert summary.matched == 1
         assert summary.unmatched == []
+        assert summary.without_metadata == []
         assert summary.tmdb_error is None
+        mock_match_movie.assert_not_called()
+        mock_fetch_and_store.assert_not_called()
+
+    def test_cache_hit_by_tmdb_id_skips_the_wikidata_batch(self):
+        movie = make_movie()
+        client = MagicMock()
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            return_value=fake_match(tmdb_id=438631),
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=movie
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ) as mock_fetch_and_store:
+            matches, summary = _match_films(client, {("Dune", 2021)})
+
+        assert matches[("Dune", 2021)] is movie
+        assert summary.matched == 1
+        mock_fetch_and_store.assert_not_called()
+
+    def test_full_cache_miss_is_resolved_through_the_wikidata_batch(self):
+        movie = make_movie()
+        client = MagicMock()
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            return_value=fake_match(tmdb_id=438631),
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value={438631: movie},
+        ) as mock_fetch_and_store:
+            matches, summary = _match_films(client, {("Dune", 2021)})
+
+        mock_fetch_and_store.assert_called_once_with({438631})
+        assert matches[("Dune", 2021)] is movie
+        assert summary.matched == 1
+        assert summary.without_metadata == []
+
+    def test_wikidata_batch_miss_is_recorded_as_without_metadata_not_unmatched(self):
+        client = MagicMock()
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            return_value=fake_match(tmdb_id=438631),
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"), return_value={}
+        ):
+            matches, summary = _match_films(client, {("Dune", 2021)})
+
+        assert matches == {}
+        assert summary.matched == 0
+        assert summary.unmatched == []
+        assert summary.without_metadata == ["Dune (2021)"]
+
+    def test_multiple_pending_films_are_resolved_in_a_single_wikidata_call(self):
+        client = MagicMock()
+        movie_dune = make_movie(title="Dune")
+        movie_alien = make_movie(title="Alien", release_year=1979)
+        tmdb_ids_by_title = {"Dune": 438631, "Alien": 348}
+
+        def fake_match_movie(_client, title, _year):
+            return fake_match(tmdb_id=tmdb_ids_by_title[title])
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"), side_effect=fake_match_movie
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value={438631: movie_dune, 348: movie_alien},
+        ) as mock_fetch_and_store:
+            matches, summary = _match_films(client, {("Dune", 2021), ("Alien", 1979)})
+
+        mock_fetch_and_store.assert_called_once_with({438631, 348})
+        assert summary.matched == 2
+        assert matches[("Dune", 2021)] is movie_dune
+        assert matches[("Alien", 1979)] is movie_alien
+
+    def test_same_tmdb_id_from_different_titles_is_deduped_before_the_wikidata_call(
+        self,
+    ):
+        client = MagicMock()
+        movie = make_movie()
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"), return_value=fake_match(tmdb_id=438631)
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value={438631: movie},
+        ) as mock_fetch_and_store:
+            matches, summary = _match_films(
+                client, {("Dune", 2021), ("Dune (Alternate Cut)", 2021)}
+            )
+
+        mock_fetch_and_store.assert_called_once_with({438631})
+        assert summary.matched == 2
+        assert matches[("Dune", 2021)] is movie
+        assert matches[("Dune (Alternate Cut)", 2021)] is movie
 
     def test_unmatched_film_is_recorded_without_stopping_the_batch(self):
         client = MagicMock()
 
         with patch(
-            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
-            side_effect=[
-                make_movie(title="Dune"),
-                MovieMatchNotFound("Obscure Short", 2021),
-            ],
-        ):
-            matches, summary = _match_films(
-                client, {("Dune", 2021), ("Obscure Short", 2021)}
-            )
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            side_effect=MovieMatchNotFound("Obscure Short", 2021),
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id")
+        ) as mock_find_by_tmdb_id, patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ) as mock_fetch_and_store:
+            matches, summary = _match_films(client, {("Obscure Short", 2021)})
 
-        assert summary.matched == 1
+        assert summary.matched == 0
         assert summary.unmatched == ["Obscure Short (2021)"]
-        assert ("Dune", 2021) in matches
-        assert ("Obscure Short", 2021) not in matches
+        assert matches == {}
+        mock_find_by_tmdb_id.assert_not_called()
+        mock_fetch_and_store.assert_not_called()
 
     def test_systemic_tmdb_failure_stops_further_matching(self):
         client = MagicMock()
 
         with patch(
-            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
             side_effect=TMDbUnavailableError("TMDb is down"),
-        ):
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ) as mock_fetch_and_store:
             matches, summary = _match_films(
                 client, {("Dune", 2021), ("Alien", 1979)}
             )
@@ -265,21 +409,26 @@ class TestMatchFilms:
         assert summary.matched == 0
         assert summary.tmdb_error == "TMDb is down"
         assert set(summary.unmatched) == {"Dune (2021)", "Alien (1979)"}
+        mock_fetch_and_store.assert_not_called()
 
     def test_empty_film_keys_returns_empty_summary(self):
         client = MagicMock()
 
-        matches, summary = _match_films(client, set())
+        with patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ) as mock_fetch_and_store:
+            matches, summary = _match_films(client, set())
 
         assert matches == {}
         assert summary.matched == 0
         assert summary.unmatched == []
+        mock_fetch_and_store.assert_not_called()
 
 
 @pytest.fixture
 def no_tmdb_matches():
     with patch(
-        "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+        PATCH_TARGET.format("match_movie"),
         side_effect=MovieMatchNotFound("unused", None),
     ):
         yield
@@ -497,58 +646,86 @@ class TestPersistLetterboxdRecords:
         assert movie_summary.unmatched == []
  
     def test_constructs_and_uses_a_tmdb_client_for_matching(self, registered_user):
-        movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
+        Movie.objects.create(tmdb_id=1, title="Dune (import spelling)", release_year=2021)
         result = ExtractionResult(
             csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
         )
         fake_client = MagicMock()
- 
+
         with patch(
             "apps.imports.services.letterboxd_persistence.TMDbClient",
             return_value=fake_client,
         ), patch(
-            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
-            return_value=movie,
-        ) as mock_get_or_fetch:
+            PATCH_TARGET.format("match_movie"),
+            return_value=fake_match(tmdb_id=1),
+        ) as mock_match_movie:
             persist_letterboxd_records(registered_user, result)
- 
-        mock_get_or_fetch.assert_called_once_with(fake_client, "Dune", 2021)
- 
+
+        mock_match_movie.assert_called_once_with(fake_client, "Dune", 2021)
+
     def test_same_film_across_ratings_and_watchlist_is_matched_once(
         self, registered_user
     ):
-        movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
+        Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
         result = ExtractionResult(
             csvs={
                 RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
                 WATCHLIST_CSV: [{"Name": "Dune", "Year": "2021"}],
             }
         )
- 
+
         with patch(
-            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
-            return_value=movie,
-        ) as mock_get_or_fetch:
+            PATCH_TARGET.format("find_cached_movie"), wraps=find_cached_movie
+        ) as mock_find_cached_movie:
             persist_letterboxd_records(registered_user, result)
- 
-        mock_get_or_fetch.assert_called_once()
- 
+
+        mock_find_cached_movie.assert_called_once()
+
     def test_a_systemic_tmdb_failure_does_not_block_csv_persistence(
         self, registered_user
     ):
         result = ExtractionResult(
             csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
         )
- 
+
         with patch(
-            "apps.imports.services.letterboxd_persistence.get_or_fetch_movie",
+            PATCH_TARGET.format("match_movie"),
             side_effect=TMDbUnavailableError("TMDb is down"),
         ):
             persisted, movie_summary = persist_letterboxd_records(registered_user, result)
- 
+
         assert persisted == {"ratings": 1}
         assert Rating.objects.filter(
             user=registered_user, title="Dune", release_year=2021
         ).exists()
         assert movie_summary.tmdb_error == "TMDb is down"
-        
+
+    def test_films_needing_wikidata_are_resolved_in_one_batched_call(
+        self, registered_user
+    ):
+        movie = Movie.objects.create(
+            tmdb_id=438631, title="Dune", release_year=2021
+        )
+        result = ExtractionResult(
+            csvs={
+                RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
+                WATCHLIST_CSV: [{"Name": "Alien", "Year": "1979"}],
+            }
+        )
+
+        def fake_match_movie(_client, title, _year):
+            return fake_match(tmdb_id={"Dune": 111, "Alien": 348}[title])
+
+        with patch(
+            PATCH_TARGET.format("match_movie"), side_effect=fake_match_movie
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value={348: movie},
+        ) as mock_fetch_and_store:
+            persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+
+        mock_fetch_and_store.assert_called_once_with({348})
+        assert movie_summary.matched == 2
+        assert persisted == {"ratings": 1, "watchlist": 1}

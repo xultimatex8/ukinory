@@ -52,7 +52,7 @@ class LetterboxdImportView(APIView):
                 "missing": summary.missing,
                 "movies": {
                     "matched": summary.movies.matched,
-                    "ambiguous": summary.movies.ambiguous,
+                    "withoutMetadata": summary.movies.without_metadata,
                     "unmatched": summary.movies.unmatched,
                     "tmdbError": summary.movies.tmdb_error,
                 },

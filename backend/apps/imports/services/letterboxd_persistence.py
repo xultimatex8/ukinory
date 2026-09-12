@@ -14,8 +14,13 @@ from apps.imports.dtos.import_summary import MovieMatchSummary
 from apps.imports.constants import DIARY_CSV, LIKED_CSV, RATINGS_CSV, WATCHED_CSV, WATCHLIST_CSV
 from apps.movies.exceptions import MovieMatchNotFound, TMDbError
 from apps.movies.models import Movie
-from apps.movies.services.movie_cache import get_or_fetch_movie
+from apps.movies.services.movie_cache import (
+    fetch_and_store_movies,
+    find_cached_movie,
+    find_cached_movie_by_tmdb_id,
+)
 from apps.movies.services.tmdb_client import TMDbClient
+from apps.movies.services.tmdb_matching import match_movie
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +123,21 @@ def _match_films(
 ) -> tuple[dict[FilmKey, Movie], MovieMatchSummary]:
     matches: dict[FilmKey, Movie] = {}
     summary = MovieMatchSummary()
+    pending_tmdb_id_by_key: dict[FilmKey, int] = {}
 
     for title, year in sorted(film_keys):
         if summary.tmdb_error is not None:
             summary.unmatched.append(f"{title} ({year})")
             continue
 
+        cached = find_cached_movie(title, year)
+        if cached is not None:
+            matches[(title, year)] = cached
+            summary.matched += 1
+            continue
+
         try:
-            movie = get_or_fetch_movie(client, title, year)
+            match = match_movie(client, title, year)
         except MovieMatchNotFound:
             summary.unmatched.append(f"{title} ({year})")
             continue
@@ -139,8 +151,24 @@ def _match_films(
             summary.unmatched.append(f"{title} ({year})")
             continue
 
-        matches[(title, year)] = movie
-        summary.matched += 1
+        cached_by_tmdb_id = find_cached_movie_by_tmdb_id(match.tmdb_id)
+        if cached_by_tmdb_id is not None:
+            matches[(title, year)] = cached_by_tmdb_id
+            summary.matched += 1
+            continue
+
+        pending_tmdb_id_by_key[(title, year)] = match.tmdb_id
+
+    if pending_tmdb_id_by_key:
+        movies_by_tmdb_id = fetch_and_store_movies(set(pending_tmdb_id_by_key.values()))
+        for key, tmdb_id in pending_tmdb_id_by_key.items():
+            movie = movies_by_tmdb_id.get(tmdb_id)
+            if movie is not None:
+                matches[key] = movie
+                summary.matched += 1
+            else:
+                title, year = key
+                summary.without_metadata.append(f"{title} ({year})")
 
     return matches, summary
 
