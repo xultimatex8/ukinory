@@ -43,3 +43,14 @@ class MovieMatchNotFound(MovieMatchError):
             year,
             f"No plausible TMDb match for '{title}' ({year or 'unknown year'}).",
         )
+
+class WikidataError(Exception):
+    """Base error for Wikidata client/metadata failures."""
+
+
+class WikidataNotFoundError(WikidataError):
+    """Raised when no Wikidata item covers a given resource/tmdb_id."""
+
+
+class WikidataUnavailableError(WikidataError):
+    """Raised after retries are exhausted on transient failures."""

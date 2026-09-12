@@ -8,7 +8,7 @@ from apps.common.helpers import extract_year
 POSTER_SIZE = "w500"
 
 
-def fetch_movie_metadata(client: TMDbClient, tmdb_id: int) -> dict[str, Any]:
+def fetch_live_display_metadata(client: TMDbClient, tmdb_id: int) -> dict[str, Any]:
     details = client.get(
         f"/movie/{tmdb_id}",
         params={"append_to_response": "watch/providers"},
@@ -35,5 +35,5 @@ def fetch_movie_metadata(client: TMDbClient, tmdb_id: int) -> dict[str, Any]:
 def _poster_url(poster_path: Optional[str]) -> str:
     if not poster_path:
         return ""
-    
+
     return f"https://image.tmdb.org/t/p/{POSTER_SIZE}{poster_path}"
