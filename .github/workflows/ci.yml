@@ -52,6 +52,7 @@ jobs:
       REDIS_URL: redis://localhost:6379/1
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
       TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      WIKIDATA_USER_AGENT: ${{ secrets.WIKIDATA_USER_AGENT }}
 
     steps:
       - name: Checkout
@@ -112,6 +113,7 @@ jobs:
     env:
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
       TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      WIKIDATA_USER_AGENT: ${{ secrets.WIKIDATA_USER_AGENT }}
 
     steps:
       - name: Checkout
@@ -127,6 +129,7 @@ jobs:
           POSTGRES_PORT=5432
           DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
           TMDB_API_KEY=${TMDB_API_KEY}
+          WIKIDATA_USER_AGENT=${WIKIDATA_USER_AGENT}
           EOF
 
       - name: Validate Compose configuration
