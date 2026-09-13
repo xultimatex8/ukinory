@@ -10,7 +10,12 @@ from rest_framework.views import APIView
 
 from apps.imports.exceptions import LetterboxdImportError
 from apps.imports.services.letterboxd_import import import_letterboxd_export
-from apps.movies.exceptions import TMDbRateLimitedError, TMDbError
+from apps.movies.exceptions import (
+    TMDbError,
+    TMDbRateLimitedError,
+    WikidataError,
+    WikidataUnavailableError,
+)
 
 Uploads = List[Tuple[object, Optional[str]]]
 
@@ -42,6 +47,17 @@ class LetterboxdImportView(APIView):
         except TMDbError as exc:
             return self._error(
                 f"Couldn't reach TMDb to match movies: {exc}",
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except WikidataUnavailableError as exc:
+            return self._error(
+                f"Couldn't reach Wikidata to fetch movie metadata: {exc}. "
+                "Try again shortly.",
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except WikidataError as exc:
+            return self._error(
+                f"Wikidata metadata lookup failed: {exc}",
                 status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
