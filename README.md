@@ -36,6 +36,7 @@ More detail and rationale behind these decisions in [`docs/tech-stack.md`](docs/
 - [Tech Stack and rationale](docs/tech-stack.md)
 - [MVP functional requirements](docs/mvp-functional-requirements.md)
 - [Data model](docs/data-model.md)
+- [Letterboxd export import flow](docs/letterboxd-export-import-flow.md)
 
 ## Running the Project
 
