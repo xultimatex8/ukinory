@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+@theme {
+  --color-background: #111315;
+  --color-surface: #1A1D1F;
+  --color-surface-hover: #232729;
+
+  --color-text: #F4F7F8;
+  --color-text-secondary: #DFE7EA;
+  --color-text-muted: #929DA2;
+
+  --color-border: #30373B;
+
+  --color-primary: #38BDF8;
+  --color-primary-hover: #7DD3FC;
+
+  --font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
 :root {
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -12,4 +30,5 @@
 body {
   margin: 0;
   min-width: 320px;
+  background-color: var(--color-background);
 }
