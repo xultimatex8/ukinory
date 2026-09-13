@@ -10,7 +10,12 @@ from django.urls import reverse
 
 from apps.imports.dtos.import_summary import ImportSummary, MovieMatchSummary
 from apps.imports.exceptions import LetterboxdImportError
-from apps.movies.exceptions import TMDbRateLimitedError, TMDbUnavailableError
+from apps.movies.exceptions import (
+    TMDbRateLimitedError,
+    TMDbUnavailableError,
+    WikidataError,
+    WikidataUnavailableError,
+)
 
 
 @pytest.fixture
@@ -104,6 +109,26 @@ class TestLetterboxdImportViewUnit:
 
         assert response.status_code == 503
         assert "Couldn't reach TMDb" in response.data["error"]["message"]
+
+    @patch("apps.imports.views.import_letterboxd_export")
+    def test_wikidata_unavailable_maps_to_503(self, mock_import, api_client, import_url):
+        mock_import.side_effect = WikidataUnavailableError("network is down")
+        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
+
+        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
+
+        assert response.status_code == 503
+        assert "Couldn't reach Wikidata" in response.data["error"]["message"]
+
+    @patch("apps.imports.views.import_letterboxd_export")
+    def test_generic_wikidata_error_maps_to_503(self, mock_import, api_client, import_url):
+        mock_import.side_effect = WikidataError("WIKIDATA_USER_AGENT is not configured")
+        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
+
+        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
+
+        assert response.status_code == 503
+        assert "Wikidata metadata lookup failed" in response.data["error"]["message"]
 
     @patch("apps.imports.views.import_letterboxd_export")
     def test_response_shape(self, mock_import, api_client, import_url):
