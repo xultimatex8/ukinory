@@ -27,18 +27,19 @@ direction TB
 
   class Movie {
     tmdbId: int
+    wikidataId: string
     title: string
     releaseYear: int
-    synopsis: string
-    posterUrl: string
-    voteAverage: float
+    description: string
     runtime: int
+    originalLanguage: string
+    directors: string[]
     embedding: vector
-    streamingProviders: json
+    metadataFetchedAt: datetime
   }
 
   class Genre {
-    tmdbId: int
+    wikidataId: string
     name: string
   }
 
@@ -154,8 +155,8 @@ direction TB
   SwipeSession "1" --> "0..*" CandidateJustification : generates
   SwipeAction "0..*" --> "1" User : by
   Movie "0..*" --> "0..*" Genre : has
-  Movie "1" --> "0..*" Rating : rated in
-  Movie "1" --> "0..*" WatchlistEntry : appears in
+  Movie "0..1" --> "0..*" Rating : rated in
+  Movie "0..1" --> "0..*" WatchlistEntry : appears in
   Movie "1" --> "0..*" SwipeAction : shown in
   Movie "1" --> "0..*" CandidateJustification : justified for
   Movie "1" --> "0..*" RatingPrediction : predicted for
@@ -170,7 +171,9 @@ direction TB
 
 **Invite** — a shareable, expiring code that lets one user (guest or registered) bring another into a `Comparison` or a `PAIRED` `SwipeSession`, without needing a public directory of users to search. `type` says what the invite is for; once `status` becomes `ACCEPTED`, the backend creates the actual `Comparison`/`SwipeSession`, linking the invite's creator and acceptor as its participants. No target reference is stored on `Invite` itself — the target doesn't exist yet at invite-creation time (it's only created on acceptance), so there's nothing for it to point to beforehand.
 
-**Movie** — a title enriched from TMDb, keyed by `tmdbId`. Cached locally after the first lookup so repeated references (across ratings, watchlist, swipes, matches, predictions) don't require new API calls. Stores its synopsis `embedding` as a `pgvector` column, and `streamingProviders` as a JSON blob of regional availability. No `voteCount`/`adult` columns are added here — see the FR-B21 design note below for why.
+**Movie** — anchored on its `tmdbId` (the id TMDb's search returns during matching, FR-B15), but with its descriptive fields sourced from Wikidata rather than TMDb: `title`, `releaseYear`, `description`, `runtime`, `originalLanguage`, `directors`, and its `genres` (via the M2M below) are looked up from Wikidata using `tmdbId` as the join key (a Wikidata item declares its TMDb id via the `P4947` property) and cached once per `tmdbId`, so repeated references — across ratings, watchlist entries, swipes, matches, and predictions — never re-trigger a Wikidata lookup. A row is only created once **both** a TMDb match *and* a corresponding Wikidata item are found; a `tmdbId` with no matching Wikidata item stores nothing and is instead recorded as matched-but-without-metadata (FR-B19), not as an error.
+
+**Genre** — a movie genre as classified by Wikidata (`wikidataId`, e.g. `Q471839` for Science Fiction), reused across every `Movie` that shares it rather than duplicated per movie.
 
 **Rating** — a single Letterboxd entry connecting a user to a movie they've watched, sourced from `ratings.csv` and taking the watched date from `diary.csv` and checking whether it was liked or not from `liked/films.csv`.
 
@@ -195,21 +198,34 @@ direction TB
 ## Design notes
 
 - **Surrogate `id` keys, plain `createdAt` audit timestamps, and stored foreign keys are all omitted from the class bodies.** Every entity is assumed to have a primary key, and every relationship shown as an arrow is assumed to be backed by whatever foreign key(s) implementing it requires (e.g. the `SwipeSession "1" --> "0..*" SwipeAction` arrow implies a `sessionId` column on `SwipeAction` at the physical level) — repeating that as an attribute on the class would just restate the arrow in text form. The one exception is `SwipeAction "0..*" --> "1" User : by`: unlike, say, `Rating` or `WatchlistEntry` (where the existing `User`/`Movie` arrows already say everything the old `userId`/`movieId` fields said), nothing else in the diagram captured *which* participant made a given swipe, so that arrow was added rather than just dropping the field with no trace of it. What's kept as an actual attribute is anything that's actually load-bearing for a requirement and isn't implied by any arrow: `User.lastActiveAt` (drives the FR-B10 cleanup job), `Invite.expiresAt` (drives FR-B13), `ProfileSummary/Comparison/CandidateJustification/RatingPrediction.generatedAt` (freshness/regeneration logic, e.g. FR-B04's re-import overwrite), `LegalDocument.effectiveAt` and `UserLegalAcceptance.acceptedAt` (FR-B09's versioning). The rule of thumb: if a field either wouldn't break any FR by being removed, or is already implied by a drawn relation, it isn't in the diagram.
+
 - **`User.isGuest`** is the entire guest/registered distinction — every other entity (`Rating`, `WatchlistEntry`, `Comparison`, `SwipeSession`, etc.) references a plain `User` id and behaves identically either way. This is what makes "claiming" an account a one-row update instead of a data migration.
+
 - **`Invite`** decouples "how two people find each other" from what happens once they do — the same entity covers both comparisons and paired swipe sessions via `type`, and expiring unused invites (`status: EXPIRED`) keeps stale codes from being usable indefinitely.
-- **`Movie.embedding`** and **`Movie.streamingProviders`** are computed/fetched once per movie and reused across all users — no per-user recalculation needed.
-- **FR-B21's adult/vote-count filter is applied as a TMDb query parameter at ingestion time (FR-B20), not as a stored `Movie` column.** The seeding job calls TMDb's discover endpoint with `include_adult=false` and a `vote_count.gte` threshold, so a title that fails the filter is simply never fetched or inserted — there's nothing to "exclude" locally after the fact. This deliberately does **not** apply to movies that arrive via a user's own Letterboxd import (FR-B15): those are the user's real watch history and must never be filtered out just because a title is unrated or adult-flagged, which is exactly why this lives in the seeding pipeline (FR-B20/23) rather than as a general `Movie` attribute. `voteAverage` stays as a stored column since it's actually displayed to the user; `voteCount`/`adult` are query inputs, not display data, so they don't need a home in the schema.
+
+- **`Movie.embedding`** is computed once per movie from its full set of stored fields (`title`, `description`, `genres`, `directors`, `originalLanguage`) rather than from `description` alone, and reused across all users — no per-user recalculation needed. `posterUrl`, `voteAverage`, and streaming-provider availability are fetched fresh from TMDb at display time rather than cached on `Movie`.
+
+- **Movie metadata resolution happens in two decoupled steps.** FR-B15 resolves a TMDb match (search by title/year) for every imported or seeded title; only the subset whose `tmdbId` isn't already cached proceeds to FR-B16, where Wikidata metadata for *every outstanding `tmdbId` in that batch* is resolved together — one (or a handful of, for very large batches) SPARQL request instead of one request per movie.
+
+- **`Rating`/`WatchlistEntry` can exist without a linked `Movie`.** A Letterboxd entry that TMDb can't match at all (FR-B15), or that matches a `tmdbId` with no Wikidata coverage (FR-B16), is still recorded — a user's watch history must never be silently dropped just because enrichment failed — just with `movieId` left null.
+
 - **`SwipeSession.type`** unifies individual and paired swiping under one model, so the swipe/matching logic doesn't need two separate code paths.
+
 - **`SwipeSession.comparisonId`** is what lets a paired session directly reuse the compatibility computation (candidate pool + joint justification) from an existing `Comparison`, instead of recomputing it from scratch — modeled as the `SwipeSession "0..1" --> "0..1" Comparison : seeded by` relation rather than a listed field, per the note above.
+
 - **`Comparison`–`User` and `SwipeSession`–`User` are drawn as direct many-to-many associations** (`"2..*"` and `"1..2"`), not as an explicit join-table class. At the relational level this still becomes a join table either way — SQL has no way to express "a row relates to a variable number of rows elsewhere" without one — so nothing about the physical schema changes. What changes is that the *diagram* treats that table as an implementation detail (e.g. `comparison_participants(comparisonId, userId)`, `swipe_session_participants(sessionId, userId)`) rather than a first-class documented entity, since today neither table needs any column beyond the two foreign keys. If a participant-level attribute is ever needed (joined-at, role, invited-by), that's the point at which it earns a spot back in this document as its own entity.
+
 - **`CandidateJustification`** is deliberately scoped to `(sessionId, movieId)` rather than to a single user, so a `PAIRED` session's joint justification is generated and stored once and read by both participants, and so re-showing a candidate in the same session (e.g. after a page refresh) doesn't trigger a second LLM call.
+
 - **Match detection (FR-B39) is a derived condition, not a stored entity.** A match is just: within one `PAIRED` `SwipeSession`, do both participants have a `SwipeAction` row for the same movie with `action = ADD_TO_WATCHLIST`? That's a query over `SwipeAction`, checked whenever a swipe is recorded. When it's true, the backend inserts the two `WatchlistEntry` rows (`source: SWIPE_MATCH`) and pushes a transient real-time event to both clients (FR-B38) — but nothing about "the match" itself needs its own row, since `SwipeAction` already has everything needed to reconstruct it later (e.g. for FR-B07's data export, "matches" are just `WatchlistEntry` rows with `source = SWIPE_MATCH`).
+
 - **`LegalDocument`** keeps versioned content independent of any single acceptance — the same version can be (and is meant to be) referenced by many `UserLegalAcceptance` rows, and a new version doesn't invalidate old acceptance records, it just means new registrations point at a newer `documentId`.
+
 - **`User.lastActiveAt`** is updated on every authenticated request (alongside token validation) and is what the guest-cleanup job (FR-B10) checks — a guest `User` (and everything cascading from it: ratings, watchlist, profile, swipes, matches) is deleted once `lastActiveAt` falls outside the inactivity window. Registered users are exempt from this cleanup regardless of `lastActiveAt`.
 
 ## Traceability Matrix
 
-Maps each backend functional requirement to the entities it touches. Frontend requirements (FR-F) are omitted — they consume these same entities through the API rather than modifying the model directly. Business rules (RN-01/02/03) are intentionally left out for now. marks rows changed by this revision.
+Maps each backend functional requirement to the entities it touches. Frontend requirements (FR-F) are omitted — they consume these same entities through the API rather than modifying the model directly. Business rules (RN-01/02/03) are intentionally left out for now. A ✏️ marks rows changed by this revision.
 
 | Requirement | Involved UML entities | Relevant attributes/relations | Relation type | Notes |
 |---|---|---|---|---|
@@ -228,17 +244,17 @@ Maps each backend functional requirement to the entities it touches. Frontend re
 | FR-B12: Accept invite link | Invite | status | Direct | The acceptor is captured by the `Invite "0..*" --> "0..1" User : accepted by` relation; accepting indirectly triggers the creation of `Comparison`/`SwipeSession` and their participant rows |
 | FR-B13: Expire unused invites | Invite | status = EXPIRED | Direct | — |
 | FR-B14: Import Letterboxd export | Rating, WatchlistEntry | source (WatchlistEntry); rating/liked/watchedDate (Rating) | Direct | Ownership by the importing user is captured by each entity's relation to `User`, not a stored field |
-| FR-B15: Match to a TMDb movie | Movie | tmdbId | Direct | Creates the row if it doesn't already exist in the cache |
-| FR-B16: Fetch full TMDb metadata | Movie | title, genres, synopsis, posterUrl, voteAverage, runtime, streamingProviders | Direct | — |
-| FR-B17: Handle TMDb rate limits | — | — | Not applicable | External API access logic, not data |
-| FR-B18: Cache TMDb metadata | Movie | the whole row acts as the cache | Direct | — |
-| FR-B19: Controlled ingestion errors | — | — | Not applicable | Error handling, not persistence |
+| FR-B15: Match to a TMDb movie | Movie | tmdbId | Direct | Only resolves the `tmdbId`; the row itself is created in FR-B16, once Wikidata metadata for that id is also found |
+| FR-B16: Fetch descriptive metadata (from Wikidata) | Movie, Genre | title, releaseYear, description, runtime, originalLanguage, directors, genres | Direct | Creates the row; a `tmdbId` with no matching Wikidata item creates nothing (see FR-B19). `posterUrl`/`voteAverage`/`streamingProviders` are not part of this — they're fetched live from TMDb at display time instead |
+| FR-B17: Handle TMDb/Wikidata rate limits | — | — | Not applicable | External API access logic (TMDb search and Wikidata SPARQL alike), not data |
+| FR-B18: Cache resolved metadata | Movie | the whole row acts as the cache, keyed by `tmdbId` | Direct | Every not-yet-cached `tmdbId` from an import is resolved together in one batched Wikidata request rather than one per movie |
+| FR-B19: Controlled ingestion errors | — | — | Not applicable | Error handling, not persistence. TMDb-side failures are mapped to a controlled response; Wikidata-side failures during the batched metadata step are not yet mapped the same way — an open gap |
 | FR-B20: Seed the catalog from TMDb | Movie | bulk creation independent of any user | Direct | — |
 | FR-B21: Exclude adult/unrated/low-vote titles | — | `include_adult=false`, `vote_count.gte=N` as parameters of the TMDb discover-endpoint call | Not applicable | No longer an attribute gap: the filter is applied when requesting the data from TMDb (FR-B20), `voteCount`/`adult` aren't stored on `Movie` or filtered after the fact. Doesn't apply to movies arriving via user import (FR-B15), which must never be filtered |
 | FR-B22: Embeddings for seeded movies | Movie | embedding | Direct | — |
 | FR-B23: Periodic catalog refresh | Movie | new/updated rows | Direct | — |
 | FR-B24: Internal quantitative profile metrics | ProfileSummary | metricsJson | Direct | — |
-| FR-B25: Embeddings of the user's watched synopses | Movie, Rating | embedding (Movie), joined via Rating | Indirect | Reuses the already-computed `Movie.embedding`; adds no attribute of its own |
+| FR-B25: Embeddings of the user's watched movies | Movie, Rating | embedding (Movie), joined via Rating | Indirect | Reuses the already-computed `Movie.embedding` (built from the movie's full stored metadata, not just `description`); adds no attribute of its own |
 | FR-B26: LLM-generated profile narrative | ProfileSummary | narrativeSummary | Direct | — |
 | FR-B27: Expose only the narrative | ProfileSummary | narrativeSummary (metricsJson omitted) | Direct | — |
 | FR-B28: Overlap/divergence metrics | Comparison | metricsJson | Direct | — |

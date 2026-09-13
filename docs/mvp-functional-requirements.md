@@ -23,10 +23,10 @@
 
 ### Data ingestion (Letterboxd export + TMDb)
 - **FR-B14**: Accept an uploaded Letterboxd export (zip or individual CSVs) and parse it into structured records, tied to the current user (guest or registered).
-- **FR-B15**: Match each Letterboxd entry to a TMDb movie using title and release year, handling ambiguous or unmatched titles.
-- **FR-B16**: Fetch full metadata for each matched movie from TMDb.
-- **FR-B17**: Handle TMDb API rate limits.
-- **FR-B18**: Cache already-downloaded TMDb metadata to avoid unnecessary API calls.
+- **FR-B15**: Match each Letterboxd entry to a TMDb movie using title and release year, handling ambiguous or unmatched titles. This only resolves a `tmdbId` for the entry — it does not by itself create a cached `Movie` row.
+- **FR-B16**: Fetch descriptive metadata (title, release year, description, runtime, original language, director(s), genres) for each matched movie from Wikidata, using the TMDb id resolved as the lookup key. A `tmdbId` with no corresponding Wikidata item is not a failure — the entry stays recorded as matched-but-without-metadata rather than being treated as an error or discarded.
+- **FR-B17**: Handle rate limits and transient failures from both TMDb (matching) and Wikidata (metadata), with retries/backoff and request pacing.
+- **FR-B18**: Cache already-resolved movie metadata (keyed by `tmdbId`) to avoid unnecessary TMDb/Wikidata calls, and resolve every not-yet-cached movie from an import in as few Wikidata requests as possible — batched together into one (or a handful of, for very large imports) request instead of one request per movie.
 - **FR-B19**: Return clear, handled errors (malformed CSV, unmatched titles, TMDb failures).
 
 ### Movie catalog seeding (candidate pool)
@@ -37,7 +37,7 @@
 
 ### Profile generation
 - **FR-B24**: Compute quantitative taste metrics per user as an internal input for the narrative profile below. These metrics are never exposed to the user as their own standalone statistics/charts (see design note under Known Constraints).
-- **FR-B25**: Generate embeddings for the synopses of a user's watched movies.
+- **FR-B25**: Generate embeddings for a user's watched movies from their full stored metadata (title, description, genres, directors, original language).
 - **FR-B26**: Generate a qualitative, narrative taste profile via LLM reasoning over the computed metrics and embeddings.
 - **FR-B27**: Expose the resulting profile (narrative summary only) through the API — the underlying metrics from FR-B24 are used to generate it but are not returned as standalone statistics.
 
