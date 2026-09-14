@@ -5,7 +5,7 @@ from typing import Any, Optional
 from apps.movies.services.wikidata_client import WikidataClient
 
 
-DEFAULT_BATCH_SIZE = 50
+DEFAULT_BATCH_SIZE = 30
 
 
 _BATCH_QUERY = """
