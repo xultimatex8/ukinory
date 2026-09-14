@@ -198,7 +198,7 @@ class TestDiscoverByDecadeTmdbIds:
         assert second_call_kwargs["params"]["primary_release_date.gte"] == "2000-01-01"
         assert second_call_kwargs["params"]["primary_release_date.lte"] == "2005-12-31"
 
-    def test_defaults_to_1900_through_current_year(self, settings, monkeypatch):
+    def test_defaults_to_configured_start_year_through_current_year(self, settings, monkeypatch):
         import apps.movies.services.tmdb_discovery as discovery_module
 
         class FixedDate(date):
@@ -212,7 +212,8 @@ class TestDiscoverByDecadeTmdbIds:
 
         discover_by_decade_tmdb_ids(client, max_pages_per_decade=1)
 
-        assert client.get.call_count == 13
+        expected_calls = ((2026 - settings.TMDB_DISCOVER_START_YEAR) // 10) + 1
+        assert client.get.call_count == expected_calls
 
 
 class TestFetchMovieGenreIds:
