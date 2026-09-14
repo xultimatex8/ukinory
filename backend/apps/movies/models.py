@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from django.db import models
+from pgvector.django import VectorField, HnswIndex
 
 from apps.common.models import BaseModel
+
+EMBEDDING_DIMENSIONS = 768
 
 
 class Genre(BaseModel):
@@ -25,7 +28,9 @@ class Movie(BaseModel):
     original_language = models.CharField(max_length=100, blank=True, default="")
     directors = models.JSONField(null=True, blank=True)
 
-    embedding = models.JSONField(null=True, blank=True)
+    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True, blank=True)
+    embedding_source_hash = models.CharField(max_length=64, blank=True, default="")
+
     genres = models.ManyToManyField(Genre, related_name="movies", blank=True)
 
     metadata_fetched_at = models.DateTimeField(
@@ -33,3 +38,14 @@ class Movie(BaseModel):
         blank=True,
         help_text="When Wikidata metadata was last (re)fetched for this row.",
     )
+
+    class Meta:
+        indexes = [
+            HnswIndex(
+                name="movie_embedding_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            )
+        ]

@@ -108,6 +108,8 @@ def _seed_from_pools(
     failed_pools: list[str] = []
     all_tmdb_ids: set[int] = set()
     all_stored: dict[int, object] = {}
+    already_stored = 0
+    without_metadata = 0
 
     for name, fn in pool_fns.items():
         try:
@@ -123,33 +125,48 @@ def _seed_from_pools(
         all_tmdb_ids.update(new_ids)
 
         if new_ids:
-            all_stored.update(fetch_and_store_movies(new_ids))
+            result = fetch_and_store_movies(new_ids)
+
+            all_stored.update(result.stored)
+            already_stored += result.already_stored
+            without_metadata += result.without_metadata
 
     summary = CatalogSeedSummary(
         discovered=len(all_tmdb_ids),
         stored=len(all_stored),
-        without_metadata=len(all_tmdb_ids) - len(all_stored),
+        already_stored=already_stored,
+        without_metadata=without_metadata,
         pool_sizes=pool_sizes,
         failed_pools=failed_pools,
     )
 
     logger.info(
-        "Catalog seeding stored %d/%d movie(s) from pools %s; %d had no "
-        "Wikidata metadata coverage; failed pools: %s.",
-        summary.stored, summary.discovered, pool_sizes,
-        summary.without_metadata, failed_pools or "none",
+        "Catalog seeding discovered %d movie(s) from pools %s; "
+        "stored %d; already stored %d; "
+        "%d had no Wikidata metadata coverage; failed pools: %s.",
+        summary.discovered,
+        pool_sizes,
+        summary.stored,
+        summary.already_stored,
+        summary.without_metadata,
+        failed_pools or "none",
     )
 
     return summary
 
 
 def format_seed_summary(summary: CatalogSeedSummary) -> str:
-    pools = ", ".join(f"{name}={count}" for name, count in summary.pool_sizes.items())
+    pools = ", ".join(
+        f"{name}={count}" for name, count in summary.pool_sizes.items()
+    )
+
     text = (
         f"Discovered {summary.discovered} candidate(s) [{pools}]; "
         f"stored {summary.stored}; "
+        f"already stored {summary.already_stored}; "
         f"{summary.without_metadata} had no Wikidata metadata coverage."
     )
+
     if summary.failed_pools:
         text += f" Failed pools (skipped): {', '.join(summary.failed_pools)}."
 

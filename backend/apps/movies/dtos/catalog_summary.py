@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class CatalogSeedSummary:
     discovered: int = 0
     stored: int = 0
+    already_stored: int = 0
     without_metadata: int = 0
     pool_sizes: dict = None
     failed_pools: list = None

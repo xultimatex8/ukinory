@@ -54,3 +54,11 @@ class WikidataNotFoundError(WikidataError):
 
 class WikidataUnavailableError(WikidataError):
     """Raised after retries are exhausted on transient failures."""
+
+
+class EmbeddingError(Exception):
+    """Raised when an embedding cannot be generated."""
+
+
+class EmbeddingUnavailableError(EmbeddingError):
+    """Raised after retries are exhausted on transient embedding failures."""

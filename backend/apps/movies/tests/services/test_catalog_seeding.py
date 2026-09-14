@@ -10,6 +10,7 @@ from apps.movies.services.catalog_seeding import (
     seed_movie_catalog_deep,
     seed_movie_catalog_light,
 )
+from apps.movies.services.movie_cache import MovieCacheSummary
 
 PATCH_TARGET = "apps.movies.services.catalog_seeding.{}"
 
@@ -23,12 +24,20 @@ def _patch_pools(popular=None, new_release=None, by_decade=None, by_genre=None):
     )
 
 
+def _fake_store_result(ids):
+    return MovieCacheSummary(
+        stored={i: MagicMock() for i in ids},
+        already_stored=0,
+        without_metadata=0,
+    )
+
+
 class TestSeedMovieCatalogLight:
     def test_only_uses_popular_and_new_release_pools(self):
         patches = _patch_pools(popular=[1, 2], new_release=[2, 3])
         with patches[0], patches[1], patches[2] as mock_decade, patches[3] as mock_genre, patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            side_effect=lambda ids: {i: MagicMock() for i in ids},
+            side_effect=_fake_store_result,
         ) as mock_store:
             summary = seed_movie_catalog_light(MagicMock())
 
@@ -43,7 +52,12 @@ class TestSeedMovieCatalogLight:
         patches = _patch_pools()
         with patch(PATCH_TARGET.format("TMDbClient")) as mock_client_cls, \
              patches[0], patches[1], patches[2], patches[3], patch(
-            PATCH_TARGET.format("fetch_and_store_movies"), return_value={}
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=MovieCacheSummary(
+                stored={},
+                already_stored=0,
+                without_metadata=0,
+            ),
         ):
             seed_movie_catalog_light()
 
@@ -55,7 +69,7 @@ class TestSeedMovieCatalogDeep:
         patches = _patch_pools(by_decade=[10, 20], by_genre=[20, 30])
         with patches[0] as mock_popular, patches[1] as mock_new, patches[2], patches[3], patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            side_effect=lambda ids: {i: MagicMock() for i in ids},
+            side_effect=_fake_store_result,
         ):
             summary = seed_movie_catalog_deep(MagicMock())
 
@@ -75,7 +89,7 @@ class TestSeedMovieCatalogIncrementalStorage:
 
         def fake_store(ids):
             store_calls.append(set(ids))
-            return {i: MagicMock() for i in ids}
+            return _fake_store_result(ids)
 
         with patches[0], patches[1], patches[2], patches[3], patch(
             PATCH_TARGET.format("fetch_and_store_movies"), side_effect=fake_store
@@ -92,7 +106,7 @@ class TestSeedMovieCatalogIncrementalStorage:
             side_effect=TMDbError("rate limited"),
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            side_effect=lambda ids: {i: MagicMock() for i in ids},
+            side_effect=_fake_store_result,
         ) as mock_store:
             summary = seed_movie_catalog_light(MagicMock())
 
@@ -112,7 +126,7 @@ class TestSeedMovieCatalogIncrementalStorage:
             PATCH_TARGET.format("discover_by_genre_tmdb_ids"), return_value=[3]
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            side_effect=lambda ids: {i: MagicMock() for i in ids},
+            side_effect=_fake_store_result,
         ):
             summary = seed_movie_catalog(MagicMock())
 
@@ -127,7 +141,7 @@ class TestSeedMovieCatalogIncrementalStorage:
 
         def fake_store(ids):
             store_calls.append(set(ids))
-            return {i: MagicMock() for i in ids}
+            return _fake_store_result(ids)
 
         with patches[0], patches[1], patches[2], patches[3], patch(
             PATCH_TARGET.format("fetch_and_store_movies"), side_effect=fake_store
@@ -143,6 +157,7 @@ class TestFormatSeedSummary:
         summary = CatalogSeedSummary(
             discovered=10,
             stored=8,
+            already_stored=0,
             without_metadata=2,
             pool_sizes={"popular": 5, "new_release": 5},
         )
@@ -160,6 +175,7 @@ class TestFormatSeedSummary:
         summary = CatalogSeedSummary(
             discovered=5,
             stored=5,
+            already_stored=0,
             without_metadata=0,
             pool_sizes={"popular": 5},
             failed_pools=["new_release"],
