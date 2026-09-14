@@ -48,11 +48,21 @@ INSTALLED_APPS = [
     'apps.imports',
     'apps.library',
     'apps.movies',
+    'django_crontab'
 ]
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("TMDB_MIN_REQUEST_INTERVAL_SECONDS") or 0.25)
 TMDB_USE_SHARED_PACING = os.getenv("TMDB_USE_SHARED_PACING", "True") == "True"
+TMDB_DISCOVER_MAX_PAGES = int(os.getenv("TMDB_DISCOVER_MAX_PAGES") or 5)
+TMDB_DISCOVER_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_MIN_VOTE_COUNT") or 50)
+TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS = int(os.getenv("TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS") or 90)
+TMDB_DISCOVER_NEW_RELEASE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_NEW_RELEASE_MIN_VOTE_COUNT") or 5)
+TMDB_DISCOVER_START_YEAR = int(os.getenv("TMDB_DISCOVER_START_YEAR") or 1900)
+TMDB_DISCOVER_PAGES_PER_BUCKET = int(os.getenv("TMDB_DISCOVER_PAGES_PER_BUCKET") or 1)
+TMDB_DISCOVER_DECADE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_DECADE_MIN_VOTE_COUNT") or 100)
+TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT") or 50)
+
 WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS") or 1.0)
 WIKIDATA_USE_SHARED_PACING = os.getenv("WIKIDATA_USE_SHARED_PACING", "True") == "True"
 WIKIDATA_USER_AGENT = os.getenv("WIKIDATA_USER_AGENT")
@@ -74,6 +84,11 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
 }
+
+CRONJOBS = [
+    ("0 3 * * *", "django.core.management.call_command", ["seed_movie_catalog_daily"]),
+    ("0 4 * * 0", "django.core.management.call_command", ["seed_movie_catalog_weekly"]),
+]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
