@@ -28,9 +28,27 @@ def fetch_and_store_movies(tmdb_ids: Iterable[int]) -> dict[int, Movie]:
     wikidata_client = WikidataClient()
     metadata_by_tmdb_id = fetch_movies_metadata(wikidata_client, unique_ids)
 
+    filtered_metadata = {}
+    used_wikidata_ids = set()
+
+    for tmdb_id, metadata in metadata_by_tmdb_id.items():
+        wikidata_id = metadata["wikidata_id"]
+
+        if wikidata_id in used_wikidata_ids:
+            logger.warning(
+                "Skipping TMDb ID %s: Wikidata ID %s is already "
+                "associated with another TMDb ID in this batch.",
+                tmdb_id,
+                wikidata_id,
+            )
+            continue
+
+        used_wikidata_ids.add(wikidata_id)
+        filtered_metadata[tmdb_id] = metadata
+
     return {
         tmdb_id: _store_movie(tmdb_id, metadata)
-        for tmdb_id, metadata in metadata_by_tmdb_id.items()
+        for tmdb_id, metadata in filtered_metadata.items()
     }
 
 
