@@ -48,8 +48,15 @@ INSTALLED_APPS = [
     'apps.imports',
     'apps.library',
     'apps.movies',
-    'django_crontab'
+    'django_crontab',
+    'django.contrib.postgres'
 ]
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL") or "gemini-embedding-001"
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS") or 768)
+EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS") or 1.5)
+EMBEDDING_USE_SHARED_PACING = (os.getenv("EMBEDDING_USE_SHARED_PACING", "True") == "True")
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("TMDB_MIN_REQUEST_INTERVAL_SECONDS") or 0.25)

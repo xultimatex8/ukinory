@@ -10,3 +10,5 @@ djangorestframework_simplejwt
 requests
 redis>=5.0
 django-crontab
+google-genai
+pgvector
