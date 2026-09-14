@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from apps.movies.exceptions import WikidataNotFoundError
 from apps.movies.services.wikidata_metadata import (
     DEFAULT_BATCH_SIZE,
     fetch_movies_metadata,
@@ -92,16 +89,16 @@ class TestFetchMoviesMetadataBatch:
         client.sparql.assert_called_once()
 
     def test_chunks_large_id_lists_across_multiple_sparql_calls(self):
-        ids = list(range(1, 121))  # DEFAULT_BATCH_SIZE=50 -> 3 chunks (50/50/20)
+        ids = list(range(1, 121))
+        expected_calls = (len(ids) + DEFAULT_BATCH_SIZE - 1) // DEFAULT_BATCH_SIZE
+
         client = make_client(
-            {"results": {"bindings": []}},
-            {"results": {"bindings": []}},
-            {"results": {"bindings": []}},
+            *({"results": {"bindings": []}} for _ in range(expected_calls))
         )
 
         fetch_movies_metadata(client, ids)
 
-        assert client.sparql.call_count == 3
+        assert client.sparql.call_count == expected_calls
 
     def test_respects_a_custom_batch_size(self):
         client = make_client(
