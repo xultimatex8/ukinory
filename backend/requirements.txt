@@ -12,3 +12,10 @@ redis>=5.0
 django-crontab
 google-genai
 pgvector
+django-extensions
+notebook==7.2.2
+jupyterlab==4.2.5
+jupyter_server==2.14.2
+tornado==6.4.1
+pandas
+numpy
