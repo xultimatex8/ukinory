@@ -244,3 +244,10 @@ media/
 
 # Local development
 *.local
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# Notebooks with real outputs/data
+notebooks/*.ipynb
