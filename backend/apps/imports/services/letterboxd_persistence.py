@@ -160,9 +160,9 @@ def _match_films(
         pending_tmdb_id_by_key[(title, year)] = match.tmdb_id
 
     if pending_tmdb_id_by_key:
-        movies_by_tmdb_id = fetch_and_store_movies(set(pending_tmdb_id_by_key.values()))
+        cache_summary = fetch_and_store_movies(set(pending_tmdb_id_by_key.values()))
         for key, tmdb_id in pending_tmdb_id_by_key.items():
-            movie = movies_by_tmdb_id.get(tmdb_id)
+            movie = cache_summary.stored.get(tmdb_id)
             if movie is not None:
                 matches[key] = movie
                 summary.matched += 1
