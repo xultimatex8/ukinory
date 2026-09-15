@@ -27,6 +27,7 @@ from apps.library.models import Rating, WatchlistEntry, WatchlistSource
 from apps.movies.exceptions import MovieMatchNotFound, TMDbUnavailableError
 from apps.movies.models import Movie
 from apps.movies.services.movie_cache import find_cached_movie
+from apps.movies.dtos.movie_summary import MovieCacheSummary
 
 
 @pytest.mark.parametrize(
@@ -289,7 +290,11 @@ class TestMatchFilms:
             PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            return_value={438631: movie},
+            return_value=MovieCacheSummary(
+                stored={438631: movie},
+                already_stored=0,
+                without_metadata=0,
+            ),
         ) as mock_fetch_and_store:
             matches, summary = _match_films(client, {("Dune", 2021)})
 
@@ -309,7 +314,12 @@ class TestMatchFilms:
         ), patch(
             PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
         ), patch(
-            PATCH_TARGET.format("fetch_and_store_movies"), return_value={}
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=MovieCacheSummary(
+                stored={},
+                already_stored=0,
+                without_metadata=1,
+            )
         ):
             matches, summary = _match_films(client, {("Dune", 2021)})
 
@@ -335,7 +345,14 @@ class TestMatchFilms:
             PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            return_value={438631: movie_dune, 348: movie_alien},
+            return_value=MovieCacheSummary(
+                stored={
+                    438631: movie_dune,
+                    348: movie_alien,
+                },
+                already_stored=0,
+                without_metadata=0,
+            ),
         ) as mock_fetch_and_store:
             matches, summary = _match_films(client, {("Dune", 2021), ("Alien", 1979)})
 
@@ -358,7 +375,11 @@ class TestMatchFilms:
             PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            return_value={438631: movie},
+            return_value=MovieCacheSummary(
+                stored={438631: movie},
+                already_stored=0,
+                without_metadata=0,
+            ),
         ) as mock_fetch_and_store:
             matches, summary = _match_films(
                 client, {("Dune", 2021), ("Dune (Alternate Cut)", 2021)}
@@ -722,7 +743,11 @@ class TestPersistLetterboxdRecords:
             PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            return_value={348: movie},
+            return_value=MovieCacheSummary(
+                stored={348: movie},
+                already_stored=0,
+                without_metadata=1,
+            ),
         ) as mock_fetch_and_store:
             persisted, movie_summary = persist_letterboxd_records(registered_user, result)
 

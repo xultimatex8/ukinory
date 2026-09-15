@@ -224,7 +224,6 @@ def _select_fact(
         if not value:
             continue
 
-        # Deprecated statements are never considered.
         if rank == "http://wikiba.se/ontology#DeprecatedRank":
             continue
 
@@ -247,8 +246,20 @@ def _select_fact(
     ]
 
     if numeric:
+        numeric_values = []
+
+        for value in best_values:
+            try:
+                float(value)
+                numeric_values.append(value)
+            except (TypeError, ValueError):
+                continue
+
+        if not numeric_values:
+            return None
+
         return min(
-            best_values,
+            numeric_values,
             key=lambda value: float(value),
         )
 
