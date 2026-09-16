@@ -9,8 +9,8 @@ from pgvector.django import CosineDistance
 from apps.library.models import Rating, WatchlistEntry
 from apps.movies.models import Movie
 from apps.recommendations.dtos.candidate import RecommendationCandidate
-from apps.recommendations.models import Swipe
 from apps.recommendations.services.taste_profile import build_taste_profile
+from apps.swipe_sessions.models import Swipe
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def _excluded_movie_ids(user) -> set[int]:
         WatchlistEntry.objects.filter(user=user, movie__isnull=False).values_list("movie_id", flat=True)
     )
     swiped = set(
-        Swipe.objects.filter(user=user).values_list("movie_id", flat=True)
+        Swipe.objects.filter(user=user).values_list("candidate__movie_id", flat=True)
     )
     return rated | watchlisted | swiped
 
