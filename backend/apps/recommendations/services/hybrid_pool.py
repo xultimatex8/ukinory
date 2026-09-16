@@ -53,7 +53,7 @@ def build_hybrid_pool(
     direct_cf_scores = {
         movie_id: score
         for movie_id in matrix.by_movie
-        if (score := predict_cf_score(user.id, movie_id, matrix, similar_users)) is not None
+        if (score := predict_cf_score(movie_id, matrix, similar_users)) is not None
     }
 
     rating_scale_max = getattr(
