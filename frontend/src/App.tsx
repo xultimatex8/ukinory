@@ -8,6 +8,7 @@ import PublicOnlyRoute from "./components/PublicOnlyRoute";
 import HomeScreen from "./screens/home";
 import DiscoverScreen from "./screens/discover";
 import DiscoverSessionScreen from "./screens/discover/session";
+import NotFoundScreen from "./screens/not-found";
 
 function App() {
   return (
@@ -24,6 +25,8 @@ function App() {
           <Route path="/discover" element={<DiscoverScreen />} />
           <Route path="/discover/:id" element={<DiscoverSessionScreen />} />
         </Route>
+
+        <Route path="*" element={<NotFoundScreen />} />
       </Routes>
     </BrowserRouter>
   );
