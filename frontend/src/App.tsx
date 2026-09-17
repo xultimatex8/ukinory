@@ -6,6 +6,8 @@ import LoginScreen from "./screens/login";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicOnlyRoute from "./components/PublicOnlyRoute";
 import HomeScreen from "./screens/home";
+import DiscoverScreen from "./screens/discover";
+import DiscoverSessionScreen from "./screens/discover/session";
 
 function App() {
   return (
@@ -19,6 +21,8 @@ function App() {
 
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<HomeScreen />} />
+          <Route path="/discover" element={<DiscoverScreen />} />
+          <Route path="/discover/:id" element={<DiscoverSessionScreen />} />
         </Route>
       </Routes>
     </BrowserRouter>

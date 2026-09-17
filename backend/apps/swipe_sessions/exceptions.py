@@ -18,16 +18,8 @@ class RecommendationError(Exception):
     """Base exception for recommendation errors."""
 
 
-class SwipeSessionNotFoundError(RecommendationError):
-    pass
-
-
-class NotSessionMemberError(RecommendationError):
-    pass
-
-
 class SwipeSessionError(Exception):
-    """Base exception for swipe session errors."""
+    """Base exception for all swipe session operations."""
 
 
 class SwipeSessionNotFoundError(SwipeSessionError):
@@ -38,9 +30,21 @@ class NotSessionMemberError(SwipeSessionError):
     pass
 
 
-class SwipeError(Exception):
-    """Base exception for swipe operations."""
-
-
-class CandidateNotFoundError(SwipeError):
+class SwipeSessionFinishedError(SwipeSessionError):
     pass
+
+
+class CandidateNotFoundError(SwipeSessionError):
+    pass
+
+
+class JustificationError(SwipeSessionError):
+    """Errors specific to justification generation, still a session error."""
+
+
+class RecommendationError(SwipeSessionError):
+    """Errors specific to recommendation retrieval, still a session error."""
+
+
+class SwipeError(SwipeSessionError):
+    """Errors specific to recording a swipe, still a session error."""
