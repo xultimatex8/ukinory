@@ -9,6 +9,7 @@ import HomeScreen from "./screens/home";
 import DiscoverScreen from "./screens/discover";
 import DiscoverSessionScreen from "./screens/discover/session";
 import NotFoundScreen from "./screens/not-found";
+import ServerErrorScreen from "./screens/server-error";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           <Route path="/discover/:id" element={<DiscoverSessionScreen />} />
         </Route>
 
+        <Route path="/500" element={<ServerErrorScreen />} />
         <Route path="*" element={<NotFoundScreen />} />
       </Routes>
     </BrowserRouter>
