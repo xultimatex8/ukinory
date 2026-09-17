@@ -11,6 +11,7 @@ from apps.common.enums import SwipeAction, SwipeSessionStatus, SwipeSessionType
 class SwipeSession(BaseModel):
     type = models.CharField(max_length=16, choices=SwipeSessionType.choices)
     status = models.CharField(max_length=16, choices=SwipeSessionStatus.choices, default=SwipeSessionStatus.WAITING)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
 
     users = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="swipe_sessions")
 

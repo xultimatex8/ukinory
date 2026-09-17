@@ -113,7 +113,11 @@ SIMPLE_JWT = {
 CRONJOBS = [
     ("0 3 * * *", "django.core.management.call_command", ["seed_movie_catalog_daily"]),
     ("0 4 * * 0", "django.core.management.call_command", ["seed_movie_catalog_weekly"]),
+
+    ("* * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
 ]
+
+CRONTAB_COMMAND_SUFFIX = ">> /app/cron.log 2>&1"
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',

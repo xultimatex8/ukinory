@@ -1,19 +1,18 @@
 from django.http import HttpResponse
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.swipe_sessions.models import SwipeSession
-from apps.swipe_sessions.services.session import create_swipe_session, end_swipe_session, get_user_swipe_session, start_swipe_session
+from apps.swipe_sessions.services.session import create_swipe_session, end_swipe_session, ensure_session_active, get_user_swipe_session, start_swipe_session, touch_session
 from apps.swipe_sessions.serializers import CreateSwipeSessionSerializer, SwipeSerializer, SwipeSessionSerializer
 from apps.swipe_sessions.services.recommendation import get_next_recommendation_for_session
 from apps.swipe_sessions.services.justification import get_candidate_justification
 from apps.swipe_sessions.services.swipe import get_session_candidate, record_swipe
-from apps.swipe_sessions.services.watchlist_export import export_watchlist_csv
 from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.services.tmdb_metadata import fetch_live_display_metadata
-from apps.swipe_sessions.exceptions import CandidateNotFoundError, NotSessionMemberError, SwipeSessionNotFoundError
+from apps.swipe_sessions.exceptions import CandidateNotFoundError, NotSessionMemberError, SwipeSessionFinishedError, SwipeSessionNotFoundError
 
 
 class SwipeSessionListCreateView(APIView):
@@ -51,6 +50,11 @@ class SwipeSessionDetailView(APIView):
                 {"detail": "You are not a member of this session."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        try:
+            ensure_session_active(session)
+        except SwipeSessionFinishedError:
+            return Response({"detail": "This swipe session has already finished."}, status=status.HTTP_409_CONFLICT)
 
         return Response(SwipeSessionSerializer(session).data)
 
@@ -104,6 +108,11 @@ class SwipeSessionRecommendationView(APIView):
             return Response(
                 {"detail": "You are not a member of this session."},
                 status=status.HTTP_403_FORBIDDEN,
+            )
+        except SwipeSessionFinishedError:
+            return Response(
+                {"detail": "This swipe session has already finished."},
+                status=status.HTTP_409_CONFLICT,
             )
 
         if result is None:
@@ -160,6 +169,11 @@ class SwipeSessionCandidateJustificationView(APIView):
                 {"detail": "Candidate not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except SwipeSessionFinishedError:
+            return Response(
+                {"detail": "This swipe session has already finished."},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         return Response(
             {
@@ -192,6 +206,11 @@ class SwipeSessionSwipeView(APIView):
                 {"detail": "You are not a member of this session."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        try:
+            ensure_session_active(session)
+        except SwipeSessionFinishedError:
+            return Response({"detail": "This swipe session has already finished."}, status=status.HTTP_409_CONFLICT)
 
         try:
             candidate = get_session_candidate(
@@ -255,3 +274,28 @@ class SwipeSessionEndView(APIView):
         response["X-Swipe-Session-Ended"] = "true"
 
         return response
+
+
+class SwipeSessionHeartbeatView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            session = get_user_swipe_session(session_id=pk, user=request.user)
+        except SwipeSessionNotFoundError:
+            return Response({"detail": "Swipe session not found."}, status=status.HTTP_404_NOT_FOUND)
+        except NotSessionMemberError:
+            return Response({"detail": "You are not a member of this session."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            ensure_session_active(session)
+        except SwipeSessionFinishedError:
+            return Response(
+                {"detail": "This swipe session has already finished."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        touch_session(session.pk)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+

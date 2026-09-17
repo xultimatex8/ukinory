@@ -5,7 +5,8 @@ from django.utils import timezone
 
 from apps.common.enums import SwipeAction
 from apps.library.models import WatchlistEntry, WatchlistSource
-from apps.swipe_sessions.models import Swipe, SwipeSessionCandidate
+from apps.swipe_sessions.models import Swipe, SwipeSessionCandidate, SwipeSession
+from apps.swipe_sessions.services.session import touch_session
 from apps.swipe_sessions.exceptions import CandidateNotFoundError
 
 
@@ -26,6 +27,8 @@ def record_swipe(user, candidate: SwipeSessionCandidate, action: str) -> Swipe:
         candidate=candidate,
         action=action,
     )
+
+    touch_session(candidate.session_id)
 
     if action == SwipeAction.WATCHLIST:
         WatchlistEntry.objects.update_or_create(

@@ -8,12 +8,15 @@ from apps.swipe_sessions.dtos.swipe_summary import SwipeExportSummary
 from apps.swipe_sessions.models import Swipe
 
 
-def export_watchlist_csv(user) -> SwipeExportSummary:
+def export_watchlist_csv(user, session=None) -> SwipeExportSummary:
     swipes = (
         Swipe.objects.filter(user=user, action=SwipeAction.WATCHLIST)
         .select_related("candidate__movie")
         .order_by("-created_at")
     )
+
+    if session is not None:
+        swipes = swipes.filter(candidate__session=session)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)

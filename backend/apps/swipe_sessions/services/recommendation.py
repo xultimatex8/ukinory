@@ -6,6 +6,7 @@ from apps.recommendations.dtos.candidate import RecommendationCandidate
 from apps.swipe_sessions.models import Swipe, SwipeSession, SwipeSessionCandidate
 from apps.swipe_sessions.services.candidate_pool import fill_candidate_pool
 from apps.swipe_sessions.exceptions import NotSessionMemberError, SwipeSessionNotFoundError
+from apps.swipe_sessions.services.session import ensure_session_active
 
 
 DEFAULT_POOL_REFILL_THRESHOLD = 5
@@ -46,7 +47,6 @@ def get_next_recommendation(
 
 
 def get_next_recommendation_for_session(
-    *,
     session_id,
     user,
 ) -> tuple[SwipeSessionCandidate, RecommendationCandidate] | None:
@@ -57,6 +57,8 @@ def get_next_recommendation_for_session(
 
     if not session.users.filter(pk=user.pk).exists():
         raise NotSessionMemberError
+
+    ensure_session_active(session)
 
     return get_next_recommendation(
         session=session,
