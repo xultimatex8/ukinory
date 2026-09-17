@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import AppHeader from "../../components/LogoHeader";
+import { Link } from "react-router-dom";
 
 const features = [
   {
@@ -14,24 +15,28 @@ const features = [
     description: "Find movies based on your personal taste.",
     action: "Start discovering",
     icon: Heart,
+    to: "/discover"
   },
   {
     title: "Discover Together",
     description: "Find movies that match the tastes of you and someone else.",
     action: "Discover together",
     icon: Users,
+    to: ""
   },
   {
     title: "Compare",
     description: "Compare your movie taste with someone else.",
     action: "Compare tastes",
     icon: GitCompareArrows,
+    to: ""
   },
   {
     title: "Profile",
     description: "Manage your profile, preferences and account.",
     action: "View profile",
     icon: UserRound,
+    to: ""
   },
 ];
 
@@ -50,11 +55,12 @@ export default function HomeScreen() {
               const Icon = feature.icon;
 
               return (
-                <button
+                <Link
                   key={feature.title}
+                  to={feature.to}
                   className="group flex flex-col items-start border border-border bg-surface p-7
                             text-left transition hover:border-primary
-                            hover:bg-surface-hover cursor-pointer"
+                            hover:bg-surface-hover"
                 >
                   <div className="flex w-full items-start justify-between">
                     <div className="flex h-12 w-12 items-center justify-center">
@@ -85,7 +91,7 @@ export default function HomeScreen() {
                   <p className="mt-6 text-sm font-medium text-primary">
                     {feature.action}
                   </p>
-                </button>
+                </Link>
               );
             })}
           </div>
