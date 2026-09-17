@@ -165,6 +165,8 @@ class TestEndSwipeSession:
         user,
         swipe_session,
     ):
+        swipe_session.users.add(user)
+
         swipe_session.status = SwipeSessionStatus.ACTIVE
         swipe_session.save(update_fields=["status"])
 
@@ -184,7 +186,10 @@ class TestEndSwipeSession:
         assert result == summary
         assert swipe_session.status == SwipeSessionStatus.FINISHED
 
-        export_watchlist.assert_called_once_with(user=user)
+        export_watchlist.assert_called_once_with(
+            user=user,
+            session=swipe_session,
+        )
 
     @pytest.mark.django_db
     @pytest.mark.parametrize(
