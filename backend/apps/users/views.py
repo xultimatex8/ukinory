@@ -4,11 +4,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .services.update_user import change_password, update_user
 from .services.guest_claim import claim_guest
 from .services.user_register import register_user
 from .services.delete_account import delete_account
 
-from .serializers import ClaimGuestSerializer, DeleteAccountSerializer, RegisterSerializer, UserSerializer
+from .serializers import ChangePasswordSerializer, ClaimGuestSerializer, DeleteAccountSerializer, RegisterSerializer, UpdateUserSerializer, UserSerializer
 
 
 User = get_user_model()
@@ -75,5 +76,61 @@ class CurrentUserView(APIView):
     def get(self, request):
         return Response(
             UserSerializer(request.user).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def patch(self, request):
+        if request.user.is_guest:
+            return Response(
+                {"detail": "Guest accounts cannot be edited. Claim your account first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = UpdateUserSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = update_user(
+            request.user,
+            **serializer.validated_data,
+        )
+
+        return Response(
+            UserSerializer(user).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if request.user.is_guest:
+            return Response(
+                {
+                    "detail": (
+                        "Guest accounts cannot change their password. "
+                        "Claim your account first."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        change_password(
+            request.user,
+            old_password=serializer.validated_data["old_password"],
+            new_password=serializer.validated_data["new_password"],
+        )
+
+        return Response(
+            {"detail": "Password successfully changed."},
             status=status.HTTP_200_OK,
         )

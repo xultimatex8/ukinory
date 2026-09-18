@@ -13,6 +13,7 @@ import ServerErrorScreen from "./screens/server-error";
 import ProfileScreen from "./screens/profile";
 import GuestOnlyRoute from "./components/GuestOnlyRoute";
 import Navbar from "./components/NavBar";
+import EditProfileScreen from "./screens/profile/edit";
 
 function AppLayout() {
   const accessToken = localStorage.getItem("access_token");
@@ -50,6 +51,7 @@ function App() {
             <Route path="/discover" element={<DiscoverScreen />} />
             <Route path="/discover/:id" element={<DiscoverSessionScreen />} />
             <Route path="/profile" element={<ProfileScreen />} />
+            <Route path="/profile/edit" element={<EditProfileScreen />} />
           </Route>
 
           <Route path="/500" element={<ServerErrorScreen />} />

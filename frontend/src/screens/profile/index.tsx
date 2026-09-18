@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
+  Edit,
   LogOut,
   Mail,
   UserRound,
@@ -119,9 +120,7 @@ export default function ProfileScreen() {
 
           {error && !isLoading && (
             <div className="mt-10 border border-border bg-surface p-5">
-              <p className="text-sm text-red-400">
-                {error}
-              </p>
+              <p className="text-sm text-red-400">{error}</p>
             </div>
           )}
 
@@ -136,16 +135,11 @@ export default function ProfileScreen() {
               <div className="divide-y divide-border">
                 <div className="flex items-center gap-4 px-6 py-5">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-background text-primary">
-                    <UserRound
-                      size={18}
-                      strokeWidth={1.7}
-                    />
+                    <UserRound size={18} strokeWidth={1.7} />
                   </div>
 
                   <div className="min-w-0">
-                    <p className="text-xs text-text-muted">
-                      Username
-                    </p>
+                    <p className="text-xs text-text-muted">Username</p>
 
                     <p className="mt-1 truncate text-sm font-medium text-text">
                       {user.username}
@@ -156,16 +150,11 @@ export default function ProfileScreen() {
                 {!user.is_guest && (
                   <div className="flex items-center gap-4 px-6 py-5">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-background text-primary">
-                      <Mail
-                        size={18}
-                        strokeWidth={1.7}
-                      />
+                      <Mail size={18} strokeWidth={1.7} />
                     </div>
 
                     <div className="min-w-0">
-                      <p className="text-xs text-text-muted">
-                        Email
-                      </p>
+                      <p className="text-xs text-text-muted">Email</p>
 
                       <p className="mt-1 truncate text-sm font-medium text-text">
                         {user.email}
@@ -201,34 +190,59 @@ export default function ProfileScreen() {
             </div>
           )}
 
-          <div className="mt-6 flex items-center justify-between">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 text-sm text-text-muted transition hover:text-text"
-            >
-              <ArrowLeft size={16} />
-              Back to home
-            </Link>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleOpenDeleteModal}
-                disabled={isDeleting}
-                className="cursor-pointer border border-red-400/40 px-4 py-2 text-sm font-medium text-red-400 transition hover:border-red-400 hover:bg-red-400/5 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+          <div className="mt-6 flex flex-col gap-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 text-sm text-text-muted transition hover:text-text"
               >
-                Delete account
-              </button>
+                <ArrowLeft size={16} />
+                Back to home
+              </Link>
 
-              <button
-                type="button"
-                onClick={handleLogout}
-                disabled={isDeleting}
-                className="flex cursor-pointer items-center gap-2 border border-border px-4 py-2 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <LogOut size={16} />
-                Sign out
-              </button>
+              <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                {user && !user.is_guest && (
+                  <Link
+                    to="/profile/edit"
+                    className="inline-flex items-center justify-center gap-2 border border-border px-4 py-2 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text"
+                  >
+                    <Edit size={16} />
+                    Edit profile
+                  </Link>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={isDeleting}
+                  className="inline-flex cursor-pointer items-center justify-center gap-2 border border-border px-4 py-2 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <LogOut size={16} />
+                  Sign out
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-border pt-6">
+              <div className="border border-red-400/20 bg-red-400/5 p-5">
+                <p className="text-sm font-medium text-red-400">
+                  Delete account
+                </p>
+
+                <p className="mt-1 text-sm leading-relaxed text-text-muted">
+                  Permanently delete your account and all associated data.
+                  This action cannot be undone.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleOpenDeleteModal}
+                  disabled={isDeleting}
+                  className="mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-red-400/40 px-4 py-2 text-sm font-medium text-red-400 transition hover:border-red-400 hover:bg-red-400/5 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  Delete account
+                </button>
+              </div>
             </div>
           </div>
         </section>

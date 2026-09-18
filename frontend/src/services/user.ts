@@ -21,6 +21,37 @@ export async function getCurrentUser(): Promise<User> {
   return response.json();
 }
 
+export async function updateUser(data: {
+  email: string;
+  username: string;
+}): Promise<User> {
+  const response = await apiFetch("/api/auth/me/", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  return response.json();
+}
+
+export async function changePassword(data: {
+  oldPassword: string;
+  newPassword: string;
+}): Promise<void> {
+  await apiFetch("/api/auth/me/password/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      old_password: data.oldPassword,
+      new_password: data.newPassword,
+    }),
+  });
+}
+
 export async function claimGuest(data: {
   email: string;
   username?: string;
