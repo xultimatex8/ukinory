@@ -11,6 +11,7 @@ import DiscoverSessionScreen from "./screens/discover/session";
 import NotFoundScreen from "./screens/not-found";
 import ServerErrorScreen from "./screens/server-error";
 import ProfileScreen from "./screens/profile";
+import GuestOnlyRoute from "./components/GuestOnlyRoute";
 
 function App() {
   return (
@@ -20,6 +21,10 @@ function App() {
           <Route path="/auth" element={<AuthScreen />} />
           <Route path="/login" element={<LoginScreen />} />
           <Route path="/register" element={<RegisterScreen />} />
+        </Route>
+
+        <Route element={<GuestOnlyRoute />}>
+          <Route path="/register/claim" element={<RegisterScreen />} />
         </Route>
 
         <Route element={<ProtectedRoute />}>

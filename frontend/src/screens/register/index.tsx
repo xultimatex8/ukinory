@@ -1,17 +1,23 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 import { register } from "../../services/auth";
+import { claimGuest } from "../../services/user";
 import { registerSchema, type RegisterData } from "./schema";
-import { useState } from "react";
-import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 import AppHeader from "../../components/LogoHeader";
 
 export default function RegisterScreen() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const isClaiming = location.pathname === "/register/claim";
   const destination = location.state?.from ?? { pathname: "/" };
 
   const {
@@ -31,11 +37,17 @@ export default function RegisterScreen() {
 
   const handleSubmitForm = async (formData: RegisterData) => {
     try {
-      const data = await register({
-        email: formData.email,
-        username: formData.username,
-        password: formData.password,
-      });
+      const data = isClaiming
+        ? await claimGuest({
+            email: formData.email,
+            username: formData.username,
+            password: formData.password,
+          })
+        : await register({
+            email: formData.email,
+            username: formData.username,
+            password: formData.password,
+          });
 
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
@@ -67,7 +79,9 @@ export default function RegisterScreen() {
       } else {
         setError("root", {
           type: "server",
-          message: "Unable to create your account.",
+          message: isClaiming
+            ? "Unable to claim your account."
+            : "Unable to create your account.",
         });
       }
     }
@@ -77,8 +91,12 @@ export default function RegisterScreen() {
     <main className="min-h-screen bg-background text-text">
       <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6">
         <AppHeader
-          title="Create your account"
-          description="Start discovering movies tailored to your taste."
+          title={isClaiming ? "Claim your account" : "Create your account"}
+          description={
+            isClaiming
+              ? "Create an account to keep the activity and movie preferences you have already built up."
+              : "Start discovering movies tailored to your taste."
+          }
         />
 
         <button
@@ -257,18 +275,26 @@ export default function RegisterScreen() {
                        hover:bg-primary-hover disabled:cursor-not-allowed
                        disabled:opacity-50"
           >
-            {isSubmitting ? "Creating account..." : "Create account"}
+            {isSubmitting
+              ? isClaiming
+                ? "Claiming account..."
+                : "Creating account..."
+              : isClaiming
+                ? "Claim account"
+                : "Create account"}
           </button>
 
-          <p className="mt-6 text-center text-sm text-text-muted">
-            Already have an account?{" "}
-            <Link
-              to="/login"
-              className="font-medium text-primary transition hover:text-primary-hover"
-            >
-              Sign in
-            </Link>
-          </p>
+          {!isClaiming && (
+            <p className="mt-6 text-center text-sm text-text-muted">
+              Already have an account?{" "}
+              <Link
+                to="/login"
+                className="font-medium text-primary transition hover:text-primary-hover"
+              >
+                Sign in
+              </Link>
+            </p>
+          )}
         </form>
       </div>
     </main>
