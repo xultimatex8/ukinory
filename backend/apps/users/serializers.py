@@ -59,4 +59,4 @@ class DeleteAccountSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "email", "username", "is_guest", "last_active_at")
+        fields = ("id", "email", "username", "is_guest")

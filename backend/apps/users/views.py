@@ -67,3 +67,13 @@ class DeleteAccountView(APIView):
         delete_account(request.user, **serializer.validated_data)
 
         return Response({"detail": "Account successfully deleted!"})
+
+
+class CurrentUserView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(
+            UserSerializer(request.user).data,
+            status=status.HTTP_200_OK,
+        )
