@@ -115,6 +115,8 @@ CRONJOBS = [
     ("0 4 * * 0", "django.core.management.call_command", ["seed_movie_catalog_weekly"]),
 
     ("* * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
+
+    ("0 * * * *", "django.core.management.call_command", ["delete_stale_guests"]),
 ]
 
 CRONTAB_COMMAND_SUFFIX = ">> /app/cron.log 2>&1"
@@ -128,6 +130,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.users.middleware.UpdateLastActiveMiddleware',
 ]
 
 CORS_ALLOWED_ORIGINS = [
