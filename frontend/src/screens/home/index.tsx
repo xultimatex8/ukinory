@@ -36,7 +36,7 @@ const features = [
     description: "Manage your profile, preferences and account.",
     action: "View profile",
     icon: UserRound,
-    to: ""
+    to: "/profile"
   },
 ];
 
