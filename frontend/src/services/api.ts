@@ -29,11 +29,11 @@ async function createApiError(response: Response): Promise<ApiError> {
     if (result && typeof result === "object") {
       for (const value of Object.values(result)) {
         if (Array.isArray(value) && typeof value[0] === "string") {
-          return new ApiError(response.status, value[0] + ".");
+          return new ApiError(response.status, value[0]);
         }
 
         if (typeof value === "string") {
-          return new ApiError(response.status, value + ".");
+          return new ApiError(response.status, value);
         }
       }
     }
