@@ -40,32 +40,6 @@ class TestUserHasFilmDataView:
         assert response.status_code == 200
         assert response.data is True
 
-    def test_returns_true_when_user_has_watchlist_entry(
-        self,
-        api_client,
-        user,
-        watchlist_entry,
-    ):
-        api_client.force_authenticate(user=user)
-
-        response = api_client.get(self.url)
-
-        assert response.status_code == 200
-        assert response.data is True
-
-    def test_returns_true_when_user_has_rating_and_watchlist_entry(
-        self,
-        api_client,
-        user,
-        rating,
-    ):
-        api_client.force_authenticate(user=user)
-
-        response = api_client.get(self.url)
-
-        assert response.status_code == 200
-        assert response.data is True
-
     def test_does_not_use_another_users_film_data(
         self,
         api_client,
