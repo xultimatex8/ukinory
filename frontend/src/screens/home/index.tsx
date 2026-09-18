@@ -53,34 +53,39 @@ export default function HomeScreen() {
           <div className="mt-12 grid gap-4 sm:grid-cols-2">
             {features.map((feature) => {
               const Icon = feature.icon;
+              const isDisabled = !feature.to;
 
-              return (
-                <Link
-                  key={feature.title}
-                  to={feature.to}
-                  className="group flex flex-col items-start border border-border bg-surface p-7
-                            text-left transition hover:border-primary
-                            hover:bg-surface-hover"
-                >
+              const content = (
+                <>
                   <div className="flex w-full items-start justify-between">
                     <div className="flex h-12 w-12 items-center justify-center">
                       <Icon
                         size={38}
                         strokeWidth={1.5}
-                        className="text-primary transition group-hover:scale-105"
+                        className={
+                          isDisabled
+                            ? "text-text-muted"
+                            : "text-primary transition group-hover:scale-105"
+                        }
                       />
                     </div>
 
                     <ArrowRight
                       size={20}
                       strokeWidth={1.8}
-                      className="text-text-muted transition
-                                group-hover:translate-x-1
-                                group-hover:text-primary"
+                      className={
+                        isDisabled
+                          ? "text-text-muted/40"
+                          : "text-text-muted transition group-hover:translate-x-1 group-hover:text-primary"
+                      }
                     />
                   </div>
 
-                  <h2 className="mt-6 text-xl font-semibold">
+                  <h2
+                    className={`mt-6 text-xl font-semibold ${
+                      isDisabled ? "text-text-muted" : "text-text"
+                    }`}
+                  >
                     {feature.title}
                   </h2>
 
@@ -88,9 +93,38 @@ export default function HomeScreen() {
                     {feature.description}
                   </p>
 
-                  <p className="mt-6 text-sm font-medium text-primary">
+                  <p
+                    className={`mt-6 text-sm font-medium ${
+                      isDisabled ? "text-text-muted/50" : "text-primary"
+                    }`}
+                  >
                     {feature.action}
                   </p>
+                </>
+              );
+
+              if (isDisabled) {
+                return (
+                  <div
+                    key={feature.title}
+                    className="flex cursor-auto flex-col items-start border border-border/60 bg-surface/50 p-7
+                               text-left opacity-60"
+                    aria-disabled="true"
+                  >
+                    {content}
+                  </div>
+                );
+              }
+
+              return (
+                <Link
+                  key={feature.title}
+                  to={feature.to}
+                  className="group flex flex-col items-start border border-border bg-surface p-7
+                             text-left transition hover:border-primary
+                             hover:bg-surface-hover"
+                >
+                  {content}
                 </Link>
               );
             })}

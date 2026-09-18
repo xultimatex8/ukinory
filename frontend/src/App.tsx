@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import AuthScreen from "./screens/auth";
 import RegisterScreen from "./screens/register";
@@ -12,6 +12,23 @@ import NotFoundScreen from "./screens/not-found";
 import ServerErrorScreen from "./screens/server-error";
 import ProfileScreen from "./screens/profile";
 import GuestOnlyRoute from "./components/GuestOnlyRoute";
+import Navbar from "./components/NavBar";
+
+function AppLayout() {
+  const accessToken = localStorage.getItem("access_token");
+  const refreshToken = localStorage.getItem("refresh_token");
+
+  if (!accessToken || !refreshToken) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return (
+    <>
+      <Navbar />
+      <Outlet />
+    </>
+  );
+}
 
 function App() {
   return (
@@ -23,19 +40,21 @@ function App() {
           <Route path="/register" element={<RegisterScreen />} />
         </Route>
 
-        <Route element={<GuestOnlyRoute />}>
-          <Route path="/register/claim" element={<RegisterScreen />} />
-        </Route>
+        <Route element={<AppLayout />}>
+          <Route element={<GuestOnlyRoute />}>
+            <Route path="/register/claim" element={<RegisterScreen />} />
+          </Route>
 
-        <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<HomeScreen />} />
-          <Route path="/discover" element={<DiscoverScreen />} />
-          <Route path="/discover/:id" element={<DiscoverSessionScreen />} />
-          <Route path="/profile" element={<ProfileScreen />} />
-        </Route>
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={<HomeScreen />} />
+            <Route path="/discover" element={<DiscoverScreen />} />
+            <Route path="/discover/:id" element={<DiscoverSessionScreen />} />
+            <Route path="/profile" element={<ProfileScreen />} />
+          </Route>
 
-        <Route path="/500" element={<ServerErrorScreen />} />
-        <Route path="*" element={<NotFoundScreen />} />
+          <Route path="/500" element={<ServerErrorScreen />} />
+          <Route path="*" element={<NotFoundScreen />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );
