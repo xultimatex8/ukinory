@@ -12,7 +12,6 @@
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
     "@tailwindcss/vite": "^4.3.3",
-    "axios": "^1.20.0",
     "lucide-react": "^1.45.0",
     "motion": "^13.4.0",
     "react": "^19.2.8",
