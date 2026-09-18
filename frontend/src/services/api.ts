@@ -13,24 +13,38 @@ export class ApiError extends Error {
 }
 
 async function createApiError(response: Response): Promise<ApiError> {
-  let detail = "An unexpected error occurred.";
-
   try {
     const result = await response.json();
-    console.log(result);
+
+    console.log("API ERROR:", result);
 
     if (
       result &&
       typeof result === "object" &&
       typeof result.detail === "string"
     ) {
-      detail = result.detail;
+      return new ApiError(response.status, result.detail);
+    }
+
+    if (result && typeof result === "object") {
+      for (const value of Object.values(result)) {
+        if (Array.isArray(value) && typeof value[0] === "string") {
+          return new ApiError(response.status, value[0] + ".");
+        }
+
+        if (typeof value === "string") {
+          return new ApiError(response.status, value + ".");
+        }
+      }
     }
   } catch {
-    // Keep the generic message if the response is not valid JSON.
+    // Fall through to the generic error.
   }
 
-  return new ApiError(response.status, detail);
+  return new ApiError(
+    response.status,
+    "An unexpected error occurred.",
+  );
 }
 
 function handleServerError() {

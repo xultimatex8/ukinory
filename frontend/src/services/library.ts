@@ -8,11 +8,5 @@ export async function checkLibraryData(): Promise<boolean> {
     },
   });
 
-  const result = await response.json();
-
-  if (!response.ok) {
-    throw result;
-  }
-
-  return result;
+  return response.json();
 }

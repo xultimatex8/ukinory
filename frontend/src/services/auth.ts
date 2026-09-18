@@ -1,15 +1,9 @@
+import type { User } from "./user";
+
 export interface RegisterData {
   email: string;
   username: string;
   password: string;
-}
-
-export interface User {
-  id: number;
-  email: string;
-  username: string;
-  is_guest: boolean;
-  last_active_at: string | null;
 }
 
 export interface AuthResponse {
