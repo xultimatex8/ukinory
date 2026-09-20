@@ -37,7 +37,6 @@ class WikidataClient:
     max_retries: int = DEFAULT_MAX_RETRIES
     timeout: float = DEFAULT_TIMEOUT_SECONDS
     min_request_interval: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS
-    use_shared_pacing: bool = True
     _last_request_at: Optional[float] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -52,9 +51,6 @@ class WikidataClient:
         self.session.headers["Accept"] = "application/sparql-results+json"
         self.min_request_interval = getattr(
             settings, "WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
-        self.use_shared_pacing = getattr(
-            settings, "WIKIDATA_USE_SHARED_PACING", self.use_shared_pacing
         )
 
     def find_qid_by_tmdb_id(self, tmdb_id: int) -> Optional[str]:
@@ -126,18 +122,7 @@ class WikidataClient:
     def _wait_for_pacing(self) -> None:
         if self.min_request_interval <= 0:
             return
-        if self.use_shared_pacing:
-            self._wait_for_pacing_shared()
-        else:
-            self._wait_for_pacing_local()
-
-    def _wait_for_pacing_local(self) -> None:
-        if self._last_request_at is None:
-            return
-        elapsed = time.monotonic() - self._last_request_at
-        remaining = self.min_request_interval - elapsed
-        if remaining > 0:
-            time.sleep(remaining)
+        self._wait_for_pacing_shared()
 
     def _wait_for_pacing_shared(self) -> None:
         while not cache.add(

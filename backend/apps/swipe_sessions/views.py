@@ -179,7 +179,6 @@ class SwipeSessionCandidateJustificationView(APIView):
             {
                 "candidate_id": candidate.id,
                 "justification": justification.text,
-                "language": justification.language,
             }
         )
 

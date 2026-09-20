@@ -15,7 +15,6 @@ from apps.movies.exceptions import EmbeddingError, EmbeddingUnavailableError
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-embedding-001"
-DEFAULT_DIMENSIONS = 768
 DEFAULT_MAX_RETRIES = 3
 MAX_BACKOFF_SECONDS = 16.0
 
@@ -26,15 +25,16 @@ EMBEDDING_PACING_LOCK_KEY = "embedding:pacing:lock"
 PACING_LOCK_TIMEOUT_SECONDS = 2.0
 PACING_LOCK_POLL_SECONDS = 0.02
 
+DIMENSIONS = 768
+
+
 
 @dataclass(slots=True)
 class EmbeddingClient:
     api_key: Optional[str] = None
     model: str = DEFAULT_MODEL
-    dimensions: int = DEFAULT_DIMENSIONS
     max_retries: int = DEFAULT_MAX_RETRIES
     min_request_interval: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS
-    use_shared_pacing: bool = True
     _client: genai.Client = field(init=False, repr=False)
     _last_request_at: Optional[float] = field(default=None, init=False, repr=False)
 
@@ -46,12 +46,8 @@ class EmbeddingClient:
                 "(loaded from the environment) before using EmbeddingClient."
             )
         self.model = getattr(settings, "EMBEDDING_MODEL", self.model)
-        self.dimensions = getattr(settings, "EMBEDDING_DIMENSIONS", self.dimensions)
         self.min_request_interval = getattr(
             settings, "EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
-        self.use_shared_pacing = getattr(
-            settings, "EMBEDDING_USE_SHARED_PACING", self.use_shared_pacing
         )
         self._client = genai.Client(api_key=self.api_key)
 
@@ -65,14 +61,14 @@ class EmbeddingClient:
                 response = self._client.models.embed_content(
                     model=self.model,
                     contents=text,
-                    config={"output_dimensionality": self.dimensions},
+                    config={"output_dimensionality": DIMENSIONS},
                 )
 
                 values = response.embeddings[0].values
 
-                if len(values) != self.dimensions:
+                if len(values) != DIMENSIONS:
                     raise EmbeddingError(
-                        f"Expected {self.dimensions} embedding dimensions, "
+                        f"Expected {DIMENSIONS} embedding dimensions, "
                         f"got {len(values)}."
                     )
 
@@ -99,18 +95,7 @@ class EmbeddingClient:
     def _wait_for_pacing(self) -> None:
         if self.min_request_interval <= 0:
             return
-        if self.use_shared_pacing:
-            self._wait_for_pacing_shared()
-        else:
-            self._wait_for_pacing_local()
-
-    def _wait_for_pacing_local(self) -> None:
-        if self._last_request_at is None:
-            return
-        elapsed = time.monotonic() - self._last_request_at
-        remaining = self.min_request_interval - elapsed
-        if remaining > 0:
-            time.sleep(remaining)
+        self._wait_for_pacing_shared()
 
     def _wait_for_pacing_shared(self) -> None:
         while not cache.add(
