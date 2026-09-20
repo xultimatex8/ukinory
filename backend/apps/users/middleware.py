@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 ACTIVITY_UPDATE_INTERVAL = timedelta(minutes=5)
@@ -20,7 +21,7 @@ class UpdateLastActiveMiddleware:
                 or (now - user.last_active_at) >= ACTIVITY_UPDATE_INTERVAL
             )
             if needs_update:
-                type(user).objects.filter(pk=user.pk).update(last_active_at=now)
+                get_user_model().objects.filter(pk=user.pk).update(last_active_at=now)
                 user.last_active_at = now
 
         return response

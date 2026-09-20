@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'apps.movies',
     'apps.recommendations',
     'apps.swipe_sessions',
+    'apps.legal',
     'django_crontab',
     'django.contrib.postgres',
     'django_extensions',

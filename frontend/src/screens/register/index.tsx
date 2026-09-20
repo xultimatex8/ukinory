@@ -8,10 +8,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 
+import { ApiError } from "../../services/api";
 import { register } from "../../services/auth";
 import { claimGuest } from "../../services/user";
 import { registerSchema, type RegisterData } from "./schema";
 import AppHeader from "../../components/LogoHeader";
+import { useLegalDocuments } from "../../hooks/useLegalDocuments";
+import LegalLinks from "../../components/legal/LegalLinks";
 
 export default function RegisterScreen() {
   const navigate = useNavigate();
@@ -21,33 +24,49 @@ export default function RegisterScreen() {
   const destination = location.state?.from ?? { pathname: "/" };
 
   const {
+    documents,
+    error: documentsError,
+    reload: reloadDocuments,
+  } = useLegalDocuments();
+
+  const {
     register: registerField,
     handleSubmit,
     setError,
+    setValue,
     clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<RegisterData>({
     resolver: zodResolver(registerSchema),
     mode: "onSubmit",
     reValidateMode: "onSubmit",
+    defaultValues: { acceptedTerms: false },
   });
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmitForm = async (formData: RegisterData) => {
+    if (!documents) {
+      setError("root", {
+        type: "server",
+        message:
+          "Unable to load the Terms and Conditions. Please try again.",
+      });
+      return;
+    }
+
     try {
+      const payload = {
+        email: formData.email,
+        username: formData.username,
+        password: formData.password,
+        accepted_documents: documents.map((document) => document.id),
+      };
+
       const data = isClaiming
-        ? await claimGuest({
-            email: formData.email,
-            username: formData.username,
-            password: formData.password,
-          })
-        : await register({
-            email: formData.email,
-            username: formData.username,
-            password: formData.password,
-          });
+        ? await claimGuest(payload)
+        : await register(payload);
 
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
@@ -55,7 +74,9 @@ export default function RegisterScreen() {
       navigate(destination, { replace: true });
     } catch (error) {
       if (typeof error === "object" && error !== null) {
-        const backendErrors = error as Record<string, string[]>;
+        const backendErrors = (
+          error instanceof ApiError ? error.fields : error
+        ) as Record<string, string[] | string>;
 
         Object.entries(backendErrors).forEach(([field, messages]) => {
           if (
@@ -65,15 +86,27 @@ export default function RegisterScreen() {
           ) {
             setError(field, {
               type: "server",
-              message: messages[0],
+              message: Array.isArray(messages) ? messages[0] : messages,
             });
+          } else if (field === "accepted_documents") {
+            setValue("acceptedTerms", false);
+            setError("acceptedTerms", {
+              type: "server",
+              message:
+                "The Terms and Conditions or Privacy Policy have changed. Please review them and accept again.",
+            });
+            void reloadDocuments();
           }
         });
 
-        if (backendErrors.detail?.[0]) {
+        const detail = Array.isArray(backendErrors.detail)
+          ? backendErrors.detail[0]
+          : backendErrors.detail;
+
+        if (detail) {
           setError("root", {
             type: "server",
-            message: backendErrors.detail[0],
+            message: detail,
           });
         }
       } else {
@@ -260,6 +293,45 @@ export default function RegisterScreen() {
               )}
             </div>
 
+            <div>
+              <div className="flex items-start gap-3">
+                <input
+                  id="acceptedTerms"
+                  type="checkbox"
+                  {...registerField("acceptedTerms", {
+                    onChange: () => clearErrors("acceptedTerms"),
+                  })}
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-primary"
+                />
+
+                <label
+                  htmlFor="acceptedTerms"
+                  className="text-sm leading-relaxed text-text-muted"
+                >
+                  I accept the <LegalLinks documents={documents} />.
+                </label>
+              </div>
+
+              {errors.acceptedTerms?.message && (
+                <p className="mt-1 text-sm text-red-400">
+                  {errors.acceptedTerms.message}
+                </p>
+              )}
+
+              {documentsError && (
+                <p className="mt-1 text-sm text-red-400">
+                  {documentsError}{" "}
+                  <button
+                    type="button"
+                    onClick={() => void reloadDocuments()}
+                    className="cursor-pointer font-medium underline"
+                  >
+                    Try again
+                  </button>
+                </p>
+              )}
+            </div>
+
             {errors.root?.message && (
               <p className="text-sm text-red-400">
                 {errors.root.message}
@@ -269,7 +341,7 @@ export default function RegisterScreen() {
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !documents}
             className="mt-6 w-full cursor-pointer bg-primary px-4 py-3
                        font-semibold text-background transition
                        hover:bg-primary-hover disabled:cursor-not-allowed

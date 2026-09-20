@@ -8,6 +8,7 @@ import {
 
 import AppHeader from "../../components/LogoHeader";
 import { Link } from "react-router-dom";
+import LegalNotice from "../../components/legal/LegalNotice";
 
 const features = [
   {
@@ -128,6 +129,10 @@ export default function HomeScreen() {
                 </Link>
               );
             })}
+          </div>
+
+          <div className="mt-10">
+            <LegalNotice />
           </div>
         </section>
       </div>

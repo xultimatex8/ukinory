@@ -100,9 +100,6 @@ def _check_required(result: ExtractionResult, required: Set[str]) -> None:
 
 
 def _split_upload(upload: SingleUpload) -> Tuple[object, Optional[str]]:
-    """Normalizes an upload into (file_obj, filename). Accepts either a
-    plain file-like object (using its `.name` attribute, Django-style), or
-    an explicit (file_obj, filename) tuple."""
     if isinstance(upload, tuple):
         file_obj, filename = upload
     else:

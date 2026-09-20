@@ -1,12 +1,18 @@
 export class ApiError extends Error {
   status: number;
   detail: string;
+  fields: Record<string, unknown>;
 
-  constructor(status: number, detail: string) {
+  constructor(
+    status: number,
+    detail: string,
+    fields: Record<string, unknown> = {},
+  ) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.fields = fields;
 
     Object.setPrototypeOf(this, ApiError.prototype);
   }
@@ -23,17 +29,17 @@ async function createApiError(response: Response): Promise<ApiError> {
       typeof result === "object" &&
       typeof result.detail === "string"
     ) {
-      return new ApiError(response.status, result.detail);
+      return new ApiError(response.status, result.detail, result);
     }
 
     if (result && typeof result === "object") {
       for (const value of Object.values(result)) {
         if (Array.isArray(value) && typeof value[0] === "string") {
-          return new ApiError(response.status, value[0]);
+          return new ApiError(response.status, value[0], result);
         }
 
         if (typeof value === "string") {
-          return new ApiError(response.status, value);
+          return new ApiError(response.status, value, result);
         }
       }
     }

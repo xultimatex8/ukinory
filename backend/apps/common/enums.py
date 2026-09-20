@@ -21,3 +21,8 @@ class SwipeSessionStatus(models.TextChoices):
     WAITING = "WAITING", "Waiting"
     ACTIVE = "ACTIVE", "Active"
     FINISHED = "FINISHED", "Finished"
+
+
+class LegalDocumentType(models.TextChoices):
+    TERMS = "TERMS", "Terms and Conditions"
+    PRIVACY = "PRIVACY", "Privacy Policy"

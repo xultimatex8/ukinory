@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import type { LegalDocumentId } from "./legal";
 
 export interface User {
   id: number;
@@ -56,6 +57,7 @@ export async function claimGuest(data: {
   email: string;
   username?: string;
   password: string;
+  accepted_documents: LegalDocumentId[];
 }): Promise<AuthResponse> {
   const response = await apiFetch("/api/auth/guest/claim/", {
     method: "POST",

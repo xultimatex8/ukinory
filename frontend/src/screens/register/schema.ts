@@ -45,6 +45,13 @@ export const registerSchema = z
     confirmPassword: z
       .string()
       .min(1, "Please confirm your password."),
+
+    acceptedTerms: z
+      .boolean()
+      .refine(
+        (accepted) => accepted,
+        "You must accept the Terms and Conditions and Privacy Policy.",
+      ),
   })
   .superRefine(({ password, confirmPassword }, context) => {
     if (password !== confirmPassword) {
