@@ -14,9 +14,6 @@ from apps.movies.services.embedding_client import (
 
 
 class FakeAPIError(APIError):
-    """APIError real, pero con __init__ propio para no depender de la
-    firma exacta del SDK google-genai instalado."""
-
     def __init__(self, code: int):
         self.code = code
         Exception.__init__(self, f"fake api error {code}")
@@ -33,8 +30,6 @@ def embedding_api_key(settings):
 
 @pytest.fixture(autouse=True)
 def mock_genai_client_class(monkeypatch):
-    """Sustituye genai.Client por un MagicMock a nivel de clase, para que
-    ningún test golpee la API real de Gemini por accidente."""
     mock_client_cls = MagicMock()
     monkeypatch.setattr(
         "apps.movies.services.embedding_client.genai.Client", mock_client_cls
@@ -44,8 +39,6 @@ def mock_genai_client_class(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_real_sleep(monkeypatch):
-    """Todo camino de reintento/backoff en EmbeddingClient duerme; ningún
-    test debería esperar realmente ese tiempo."""
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
 

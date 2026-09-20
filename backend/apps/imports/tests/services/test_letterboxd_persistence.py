@@ -231,11 +231,6 @@ PATCH_TARGET = "apps.imports.services.letterboxd_persistence.{}"
 
 
 class TestMatchFilms:
-    """`_match_films` resolves each film against the local cache and, for a
-    TMDb match, only defers to Wikidata once for every film that survives
-    both cache checks - as a single batched call - instead of one Wikidata
-    request per film."""
-
     def test_cache_hit_by_title_and_year_skips_tmdb_and_wikidata_entirely(self):
         movie = make_movie()
         client = MagicMock()
