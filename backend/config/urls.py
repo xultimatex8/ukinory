@@ -11,4 +11,5 @@ urlpatterns = [
     path("api/auth/", include("apps.users.urls")),
     path("api/library/", include("apps.library.urls")),
     path("api/swipe-sessions/", include("apps.swipe_sessions.urls")),
+    path("api/legal/", include("apps.legal.urls")),
 ]
