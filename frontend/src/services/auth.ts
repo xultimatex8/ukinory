@@ -1,9 +1,11 @@
 import type { User } from "./user";
+import type { LegalDocumentId } from "./legal";
 
 export interface RegisterData {
   email: string;
   username: string;
   password: string;
+  accepted_documents: LegalDocumentId[];
 }
 
 export interface AuthResponse {
