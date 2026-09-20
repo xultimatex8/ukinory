@@ -2,10 +2,13 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from apps.legal.serializers import LegalAcceptanceMixin
+
+
 User = get_user_model()
 
 
-class RegisterSerializer(serializers.Serializer):
+class RegisterSerializer(LegalAcceptanceMixin, serializers.Serializer):
     email = serializers.EmailField()
     username = serializers.CharField()
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
@@ -27,7 +30,7 @@ class RegisterSerializer(serializers.Serializer):
         return value
 
 
-class ClaimGuestSerializer(serializers.Serializer):
+class ClaimGuestSerializer(LegalAcceptanceMixin, serializers.Serializer):
     email = serializers.EmailField()
     username = serializers.CharField(required=False)
     password = serializers.CharField(

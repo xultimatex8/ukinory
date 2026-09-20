@@ -1,8 +1,14 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import permissions, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.legal.serializers import LegalDocumentsUnavailable
+from apps.legal.exceptions import LegalAcceptanceError, LegalDocumentsUnavailableError
+from apps.legal.services.accept import accept_current_documents
 
 from .services.update_user import change_password, update_user
 from .services.guest_claim import claim_guest
@@ -18,6 +24,15 @@ User = get_user_model()
 def _tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
     return {"refresh": str(refresh), "access": str(refresh.access_token)}
+
+
+def _accept_legal_documents(user, documents):
+    try:
+        accept_current_documents(user, documents)
+    except LegalAcceptanceError as exc:
+        raise ValidationError({"accepted_documents": [str(exc)]})
+    except LegalDocumentsUnavailableError:
+        raise LegalDocumentsUnavailable()
 
 
 class GuestView(APIView):
@@ -38,7 +53,12 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = register_user(**serializer.validated_data)
+        data = dict(serializer.validated_data)
+        documents = data.pop("accepted_documents")
+
+        with transaction.atomic():
+            user = register_user(**data)
+            _accept_legal_documents(user, documents)
 
         return Response(
             {"user": UserSerializer(user).data, **_tokens_for_user(user)},
@@ -53,7 +73,13 @@ class ClaimGuestView(APIView):
         serializer = ClaimGuestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = claim_guest(request.user, **serializer.validated_data)
+        data = dict(serializer.validated_data)
+        documents = data.pop("accepted_documents")
+
+        with transaction.atomic():
+            user = claim_guest(request.user, **data)
+            user.refresh_from_db()
+            _accept_legal_documents(user, documents)
 
         return Response({"user": UserSerializer(user).data, **_tokens_for_user(user)})
 
