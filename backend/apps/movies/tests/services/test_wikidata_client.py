@@ -37,7 +37,6 @@ class FakeResponse:
 @pytest.fixture(autouse=True)
 def wikidata_user_agent(settings):
     settings.WIKIDATA_USER_AGENT = "ukinory-test/1.0 (test@example.com)"
-    settings.WIKIDATA_USE_SHARED_PACING = False
     settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 0.0
 
 
@@ -83,13 +82,6 @@ class TestConfiguration:
         client = WikidataClient()
 
         assert client.min_request_interval == 0.75
-
-    def test_reads_use_shared_pacing_from_settings(self, settings):
-        settings.WIKIDATA_USE_SHARED_PACING = True
-
-        client = WikidataClient()
-
-        assert client.use_shared_pacing is True
 
 
 class TestSparqlHappyPath:
@@ -193,58 +185,11 @@ class TestServerErrors:
         assert payload == bindings_payload()
 
 
-class TestLocalPacing:
-    def test_no_sleep_on_first_call(self, settings, monkeypatch):
-        settings.WIKIDATA_USE_SHARED_PACING = False
-        settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 1.0
-        client = make_client()
-        client.session.get.return_value = FakeResponse(200, bindings_payload())
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
-        client.sparql("SELECT ?item WHERE { }")
-
-        assert sleeps == []
-
-    def test_second_call_sleeps_out_the_remaining_interval(
-        self, settings, monkeypatch
-    ):
-        settings.WIKIDATA_USE_SHARED_PACING = False
-        settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 1.0
-        client = make_client()
-        client.session.get.return_value = FakeResponse(200, bindings_payload())
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
-        fake_clock = [100.0]
-        monkeypatch.setattr(time, "monotonic", lambda: fake_clock[0])
-
-        client.sparql("SELECT ?item WHERE { }")
-        fake_clock[0] = 100.3
-        client.sparql("SELECT ?item WHERE { }")
-
-        assert sleeps == [pytest.approx(0.7)]
-
-    def test_no_sleep_when_min_interval_is_zero(self, settings, monkeypatch):
-        settings.WIKIDATA_USE_SHARED_PACING = False
-        settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 0.0
-        client = make_client()
-        client.session.get.return_value = FakeResponse(200, bindings_payload())
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
-        client.sparql("SELECT ?item WHERE { }")
-        client.sparql("SELECT ?item WHERE { }")
-
-        assert sleeps == []
-
-
 @pytest.mark.django_db
 class TestSharedPacing:
     def test_stamps_timestamp_in_cache(self, settings):
         from django.core.cache import cache
 
-        settings.WIKIDATA_USE_SHARED_PACING = True
         settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
         client = make_client()
@@ -259,7 +204,6 @@ class TestSharedPacing:
     ):
         from django.core.cache import cache
 
-        settings.WIKIDATA_USE_SHARED_PACING = True
         settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
         client = make_client()
@@ -280,7 +224,6 @@ class TestSharedPacing:
         from django.core.cache import cache
         from apps.movies.services.wikidata_client import WIKIDATA_PACING_LOCK_KEY
 
-        settings.WIKIDATA_USE_SHARED_PACING = True
         cache.clear()
         client = make_client(max_retries=0)
         client.session.get.side_effect = requests.ConnectionError("boom")

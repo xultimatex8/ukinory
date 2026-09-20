@@ -13,9 +13,7 @@ from apps.swipe_sessions.exceptions import (
 )
 from apps.swipe_sessions.models import CandidateJustification, SwipeSessionCandidate
 from apps.swipe_sessions.services.justification import (
-    DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
-    DEFAULT_RECOMMENDATION_JUSTIFICATION_LANGUAGE,
     JustificationClient,
     _build_prompt,
     _recent_liked_ratings,
@@ -30,23 +28,17 @@ class TestJustificationClient:
         client = JustificationClient()
 
         assert client.model == DEFAULT_MODEL
-        assert client.fallback_model == DEFAULT_FALLBACK_MODEL
-        assert client.language == DEFAULT_RECOMMENDATION_JUSTIFICATION_LANGUAGE
         mock_client.assert_called_once()
 
     @patch("apps.swipe_sessions.services.justification.genai.Client")
     @override_settings(
         RECOMMENDATION_JUSTIFICATION_MODEL="custom-model",
-        RECOMMENDATION_JUSTIFICATION_FALLBACK_MODEL="custom-fallback",
-        RECOMMENDATION_JUSTIFICATION_LANGUAGE="es",
         GEMINI_API_KEY="test-api-key",
     )
     def test_uses_custom_settings(self, mock_client):
         client = JustificationClient()
 
         assert client.model == "custom-model"
-        assert client.fallback_model == "custom-fallback"
-        assert client.language == "es"
         mock_client.assert_called_once_with(api_key="test-api-key")
 
     @patch("apps.swipe_sessions.services.justification.genai.Client")
@@ -70,8 +62,6 @@ class TestJustificationClient:
         client = JustificationClient(
             api_key="test-key",
             model="primary-model",
-            fallback_model="fallback-model",
-            language="en",
         )
 
         movie = MagicMock()
@@ -88,7 +78,6 @@ class TestJustificationClient:
         mock_build_prompt.assert_called_once_with(
             movie,
             history,
-            "en",
         )
 
         mock_client.return_value.models.generate_content.assert_called_once_with(
@@ -96,60 +85,11 @@ class TestJustificationClient:
             contents="test prompt",
         )
 
-    @patch("apps.swipe_sessions.services.justification.genai.Client")
-    @patch("apps.swipe_sessions.services.justification._build_prompt")
-    @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
-    def test_generate_uses_fallback_model_when_primary_fails(
-        self,
-        mock_history,
-        mock_build_prompt,
-        mock_client,
-    ):
-        mock_history.return_value = []
-        mock_build_prompt.return_value = "test prompt"
-
-        response = MagicMock()
-        response.text = "Fallback justification"
-
-        generate_content = mock_client.return_value.models.generate_content
-        generate_content.side_effect = [
-            Exception("Primary model failed"),
-            response,
-        ]
-
-        client = JustificationClient(
-            api_key="test-key",
-            model="primary-model",
-            fallback_model="fallback-model",
-            language="en",
-        )
-
-        movie = MagicMock()
-        movie.pk = 123
-
-        result = client.generate(
-            user=MagicMock(),
-            movie=movie,
-        )
-
-        assert result == "Fallback justification"
-
-        assert generate_content.call_count == 2
-
-        assert generate_content.call_args_list[0].kwargs == {
-            "model": "primary-model",
-            "contents": "test prompt",
-        }
-
-        assert generate_content.call_args_list[1].kwargs == {
-            "model": "fallback-model",
-            "contents": "test prompt",
-        }
 
     @patch("apps.swipe_sessions.services.justification.genai.Client")
     @patch("apps.swipe_sessions.services.justification._build_prompt")
     @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
-    def test_generate_returns_empty_string_when_primary_and_fallback_fail(
+    def test_generate_returns_empty_string_when_primary_fail(
         self,
         mock_history,
         mock_build_prompt,
@@ -160,14 +100,11 @@ class TestJustificationClient:
 
         mock_client.return_value.models.generate_content.side_effect = [
             Exception("Primary model failed"),
-            Exception("Fallback model failed"),
         ]
 
         client = JustificationClient(
             api_key="test-key",
             model="primary-model",
-            fallback_model="fallback-model",
-            language="en",
         )
 
         movie = MagicMock()
@@ -179,42 +116,6 @@ class TestJustificationClient:
         )
 
         assert result == ""
-
-    @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
-    @patch("apps.swipe_sessions.services.justification.genai.Client")
-    def test_does_not_use_fallback_when_it_is_same_as_primary(
-        self,
-        mock_client,
-        mock_recent_ratings,
-    ):
-        mock_recent_ratings.return_value = []
-
-        mock_client.return_value.models.generate_content.side_effect = Exception(
-            "Generation failed"
-        )
-
-        client = JustificationClient(
-            api_key="test-key",
-            model="same-model",
-            fallback_model="same-model",
-            language="en",
-        )
-
-        movie = MagicMock()
-        movie.pk = 123
-        movie.title = "Test Movie"
-        movie.release_year = 2025
-        movie.wikidata_description = ""
-        movie.genres.all.return_value = []
-
-        result = client.generate(
-            user=MagicMock(),
-            movie=movie,
-        )
-
-        assert result == ""
-
-        assert mock_client.return_value.models.generate_content.call_count == 1
 
 
 class TestEnsureCandidateJustification:
@@ -235,7 +136,6 @@ class TestEnsureCandidateJustification:
         justification = CandidateJustification.objects.create(
             candidate=candidate,
             text="You liked similar movies.",
-            language="en",
             model_version="test-model",
         )
 
@@ -265,7 +165,6 @@ class TestEnsureCandidateJustification:
         )
 
         mock_client = MagicMock()
-        mock_client.language = "en"
         mock_client.model = "test-model"
         mock_client.generate.return_value = "You liked similar movies."
 
@@ -279,7 +178,6 @@ class TestEnsureCandidateJustification:
             )
 
         assert result.text == "You liked similar movies."
-        assert result.language == "en"
         assert result.model_version == "test-model"
 
         mock_client.generate.assert_called_once_with(
@@ -309,12 +207,10 @@ class TestEnsureCandidateJustification:
         existing = CandidateJustification.objects.create(
             candidate=candidate,
             text="",
-            language="en",
             model_version="old-model",
         )
 
         mock_client = MagicMock()
-        mock_client.language = "en"
         mock_client.model = "new-model"
         mock_client.generate.return_value = "New justification."
 
@@ -420,7 +316,6 @@ class TestGetCandidateJustification:
         justification = CandidateJustification.objects.create(
             candidate=candidate,
             text="You may enjoy this movie.",
-            language="en",
             model_version="test-model",
         )
 
@@ -463,14 +358,12 @@ class TestBuildPrompt:
         prompt = _build_prompt(
             movie=movie,
             history=[rating],
-            language="en",
         )
 
         assert "Dune (2021)" in prompt
         assert "A science fiction film." in prompt
         assert "Science Fiction" in prompt
         assert "Interstellar (2014): 5/5" in prompt
-        assert "Write the response in en." in prompt
 
     def test_uses_default_text_when_history_is_empty(self):
         movie = MagicMock()
@@ -483,11 +376,9 @@ class TestBuildPrompt:
         prompt = _build_prompt(
             movie=movie,
             history=[],
-            language="es",
         )
 
         assert "No rating history yet." in prompt
-        assert "Write the response in es." in prompt
 
 
 @pytest.mark.django_db
