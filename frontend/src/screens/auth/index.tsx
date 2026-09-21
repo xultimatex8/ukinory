@@ -1,17 +1,25 @@
+import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Clapperboard, UserRound } from "lucide-react";
 
 import AppHeader from "../../components/LogoHeader";
 import { createGuest } from "../../services/auth";
+import { ApiError } from "../../services/api";
 
 export default function AuthScreen() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [isGuestLoading, setIsGuestLoading] = useState(false);
+  const [guestError, setGuestError] = useState<string | null>(null);
+
   const destination = location.state?.from ?? { pathname: "/" };
 
   const handleGuest = async () => {
     try {
+      setIsGuestLoading(true);
+      setGuestError(null);
+
       const data = await createGuest();
 
       localStorage.setItem("access_token", data.access);
@@ -19,7 +27,13 @@ export default function AuthScreen() {
 
       navigate(destination, { replace: true });
     } catch (error) {
-      console.error("Unable to create guest session:", error);
+      if (error instanceof ApiError) {
+        setGuestError(error.detail);
+      } else {
+        setGuestError("Unable to create guest session.");
+      }
+
+      setIsGuestLoading(false);
     }
   };
 
@@ -35,9 +49,10 @@ export default function AuthScreen() {
           <button
             type="button"
             onClick={handleGuest}
+            disabled={isGuestLoading}
             className="group cursor-pointer border border-border bg-surface p-8
                        text-center transition hover:border-primary
-                       hover:bg-surface-hover"
+                       hover:bg-surface-hover disabled:cursor-auto disabled:opacity-50"
           >
             <div className="mx-auto flex h-20 w-20 items-center justify-center">
               <Clapperboard
@@ -48,11 +63,13 @@ export default function AuthScreen() {
             </div>
 
             <h2 className="mt-7 text-xl font-semibold">
-              Explore as a guest
+              {isGuestLoading ? "Joining..." : "Explore as a guest"}
             </h2>
 
             <p className="mt-2 text-sm text-text-muted">
-              Get started without an account
+              {isGuestLoading
+                ? "Creating your guest session"
+                : "Get started without an account"}
             </p>
           </button>
 
@@ -80,6 +97,12 @@ export default function AuthScreen() {
             </p>
           </Link>
         </div>
+
+        {guestError && (
+          <p className="mt-6 text-center text-sm text-red-400">
+            {guestError}
+          </p>
+        )}
 
         <div className="mt-8 text-center">
           <span className="text-sm text-text-muted">

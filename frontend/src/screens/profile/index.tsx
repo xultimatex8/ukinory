@@ -35,7 +35,11 @@ export default function ProfileScreen() {
         setIsLoading(true);
         setError(null);
 
-        const currentUser = await getCurrentUser();
+        const [currentUser] = await Promise.all([
+          getCurrentUser(),
+          new Promise((resolve) => setTimeout(resolve, 350)),
+        ]);
+
         setUser(currentUser);
       } catch (error) {
         if (error instanceof ApiError) {
@@ -103,16 +107,28 @@ export default function ProfileScreen() {
           />
 
           {isLoading && (
-            <div className="mt-10 border border-border bg-surface p-6">
-              <div className="animate-pulse space-y-6">
-                <div>
-                  <div className="h-3 w-20 bg-border" />
-                  <div className="mt-3 h-5 w-40 bg-border" />
+            <div className="mt-10 border border-border bg-surface">
+              <div className="border-b border-border px-6 py-5">
+                <div className="h-3 w-32 animate-pulse bg-border" />
+              </div>
+
+              <div className="divide-y divide-border">
+                <div className="flex items-center gap-4 px-6 py-5">
+                  <div className="h-10 w-10 shrink-0 animate-pulse bg-border" />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="h-3 w-16 animate-pulse bg-border" />
+                    <div className="mt-2 h-4 w-40 animate-pulse bg-border" />
+                  </div>
                 </div>
 
-                <div>
-                  <div className="h-3 w-16 bg-border" />
-                  <div className="mt-3 h-5 w-56 bg-border" />
+                <div className="flex items-center gap-4 px-6 py-5">
+                  <div className="h-10 w-10 shrink-0 animate-pulse bg-border" />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="h-3 w-12 animate-pulse bg-border" />
+                    <div className="mt-2 h-4 w-52 animate-pulse bg-border" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -215,7 +231,7 @@ export default function ProfileScreen() {
                   type="button"
                   onClick={handleLogout}
                   disabled={isDeleting}
-                  className="inline-flex cursor-pointer items-center justify-center gap-2 border border-border px-4 py-2 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center justify-center gap-2 border border-border px-4 py-2 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text disabled:cursor-auto disabled:opacity-50"
                 >
                   <LogOut size={16} />
                   Sign out
@@ -238,7 +254,7 @@ export default function ProfileScreen() {
                   type="button"
                   onClick={handleOpenDeleteModal}
                   disabled={isDeleting}
-                  className="mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-red-400/40 px-4 py-2 text-sm font-medium text-red-400 transition hover:border-red-400 hover:bg-red-400/5 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  className="mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-red-400/40 px-4 py-2 text-sm font-medium text-red-400 transition hover:border-red-400 hover:bg-red-400/5 hover:text-red-300 disabled:cursor-auto disabled:opacity-50 sm:w-auto"
                 >
                   Delete account
                 </button>
