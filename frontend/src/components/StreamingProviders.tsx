@@ -12,23 +12,6 @@ export interface StreamingCountry {
   providers: StreamingProvider[];
 }
 
-const COUNTRY_NAMES: Record<string, string> = {
-  ES: "Spain",
-  US: "United States",
-  GB: "United Kingdom",
-  FR: "France",
-  DE: "Germany",
-  IT: "Italy",
-  CA: "Canada",
-  AU: "Australia",
-  MX: "Mexico",
-  BR: "Brazil",
-  AR: "Argentina",
-  JP: "Japan",
-  KR: "South Korea",
-  IN: "India",
-};
-
 export function getStreamingCountries(
   movie: MovieRecommendation | null,
 ): StreamingCountry[] {
@@ -89,7 +72,7 @@ export function getStreamingCountries(
     if (uniqueProviders.size > 0) {
       countries.push({
         code: countryCode,
-        name: COUNTRY_NAMES[countryCode] ?? countryCode,
+        name: countryCode,
         providers: Array.from(uniqueProviders.values()),
       });
     }
