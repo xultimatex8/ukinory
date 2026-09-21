@@ -148,9 +148,6 @@ class TestLetterboxdImportViewUnit:
 
         assert response.data == {
             "missing": ["watched.csv"],
-            "movies": {
-                "matched": 800,
-            },
         }
 
     @patch("apps.imports.views.import_letterboxd_export")
@@ -164,8 +161,8 @@ class TestLetterboxdImportViewUnit:
  
         response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
  
-        assert response.data["movies"] == {
-            "matched": 0,
+        assert response.data == {
+            "missing": [],
         }
 
 
@@ -198,7 +195,6 @@ class TestLetterboxdImportViewIntegration:
 
         assert response.status_code == 200
         assert set(response.data["missing"]) == {"diary.csv", "watched.csv", "liked_films.csv"}
-        assert response.data["movies"]["matched"] == 0
 
     def test_real_csvs_without_zip(self, api_client, import_url):
         ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
@@ -206,7 +202,12 @@ class TestLetterboxdImportViewIntegration:
         response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["movies"]["matched"] == 0
+        assert set(response.data["missing"]) == {
+            "diary.csv",
+            "liked_films.csv",
+            "watched.csv",
+            "watchlist.csv",
+        }
 
     def test_malformed_csv_returns_422(self, api_client, import_url):
         broken = SimpleUploadedFile(
@@ -225,4 +226,9 @@ class TestLetterboxdImportViewIntegration:
         response = api_client.post(import_url, data={"file": mislabeled}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["movies"]["matched"] == 0
+        assert set(response.data["missing"]) == {
+            "diary.csv",
+            "liked_films.csv",
+            "watched.csv",
+            "watchlist.csv",
+        }

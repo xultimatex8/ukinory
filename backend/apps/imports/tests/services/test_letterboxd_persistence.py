@@ -16,6 +16,7 @@ from apps.imports.services.letterboxd_persistence import (
     _film_key,
     _match_films,
     _merge_rating_sources,
+    _needs_embedding,
     _parse_date,
     _parse_rating,
     _parse_year,
@@ -242,7 +243,7 @@ class TestMatchFilms:
         ) as mock_match_movie, patch(
             PATCH_TARGET.format("fetch_and_store_movies")
         ) as mock_fetch_and_store:
-            matches, summary = _match_films(client, {("Dune", 2021)})
+            matches, summary = _match_films(client, {("Dune", 2021)}, set())
 
         assert matches[("Dune", 2021)] is movie
         assert summary.matched == 1
@@ -266,7 +267,7 @@ class TestMatchFilms:
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies")
         ) as mock_fetch_and_store:
-            matches, summary = _match_films(client, {("Dune", 2021)})
+            matches, summary = _match_films(client, {("Dune", 2021)}, set())
 
         assert matches[("Dune", 2021)] is movie
         assert summary.matched == 1
@@ -291,9 +292,11 @@ class TestMatchFilms:
                 without_metadata=0,
             ),
         ) as mock_fetch_and_store:
-            matches, summary = _match_films(client, {("Dune", 2021)})
+            matches, summary = _match_films(client, {("Dune", 2021)}, set())
 
-        mock_fetch_and_store.assert_called_once_with({438631})
+        mock_fetch_and_store.assert_called_once_with(
+            {438631}, defer_embeddings=True
+        )
         assert matches[("Dune", 2021)] is movie
         assert summary.matched == 1
         assert summary.without_metadata == []
@@ -316,7 +319,7 @@ class TestMatchFilms:
                 without_metadata=1,
             )
         ):
-            matches, summary = _match_films(client, {("Dune", 2021)})
+            matches, summary = _match_films(client, {("Dune", 2021)}, set())
 
         assert matches == {}
         assert summary.matched == 0
@@ -349,9 +352,13 @@ class TestMatchFilms:
                 without_metadata=0,
             ),
         ) as mock_fetch_and_store:
-            matches, summary = _match_films(client, {("Dune", 2021), ("Alien", 1979)})
+            matches, summary = _match_films(
+                client, {("Dune", 2021), ("Alien", 1979)}, set()
+            )
 
-        mock_fetch_and_store.assert_called_once_with({438631, 348})
+        mock_fetch_and_store.assert_called_once_with(
+            {438631, 348}, defer_embeddings=True
+        )
         assert summary.matched == 2
         assert matches[("Dune", 2021)] is movie_dune
         assert matches[("Alien", 1979)] is movie_alien
@@ -377,10 +384,10 @@ class TestMatchFilms:
             ),
         ) as mock_fetch_and_store:
             matches, summary = _match_films(
-                client, {("Dune", 2021), ("Dune (Alternate Cut)", 2021)}
+                client, {("Dune", 2021), ("Dune (Alternate Cut)", 2021)}, set()
             )
 
-        mock_fetch_and_store.assert_called_once_with({438631})
+        mock_fetch_and_store.assert_called_once_with({438631}, defer_embeddings=True)
         assert summary.matched == 2
         assert matches[("Dune", 2021)] is movie
         assert matches[("Dune (Alternate Cut)", 2021)] is movie
@@ -398,7 +405,9 @@ class TestMatchFilms:
         ) as mock_find_by_tmdb_id, patch(
             PATCH_TARGET.format("fetch_and_store_movies")
         ) as mock_fetch_and_store:
-            matches, summary = _match_films(client, {("Obscure Short", 2021)})
+            matches, summary = _match_films(
+                client, {("Obscure Short", 2021)}, set()
+            )
 
         assert summary.matched == 0
         assert summary.unmatched == ["Obscure Short (2021)"]
@@ -418,7 +427,7 @@ class TestMatchFilms:
             PATCH_TARGET.format("fetch_and_store_movies")
         ) as mock_fetch_and_store:
             matches, summary = _match_films(
-                client, {("Dune", 2021), ("Alien", 1979)}
+                client, {("Dune", 2021), ("Alien", 1979)}, set()
             )
 
         assert matches == {}
@@ -433,7 +442,7 @@ class TestMatchFilms:
         with patch(
             PATCH_TARGET.format("fetch_and_store_movies")
         ) as mock_fetch_and_store:
-            matches, summary = _match_films(client, set())
+            matches, summary = _match_films(client, set(), set())
 
         assert matches == {}
         assert summary.matched == 0
@@ -448,6 +457,17 @@ def no_tmdb_matches():
         side_effect=MovieMatchNotFound("unused", None),
     ):
         yield
+
+
+@pytest.fixture
+def stub_movie_storage():
+    with patch(
+        PATCH_TARGET.format("fetch_and_store_movies"),
+        return_value=MovieCacheSummary(
+            stored={}, already_stored=0, without_metadata=0
+        ),
+    ) as mock:
+        yield mock
 
 
 @pytest.mark.django_db
@@ -616,9 +636,9 @@ class TestPersistWatchlist:
 
 
 @pytest.mark.django_db
-@pytest.mark.usefixtures("no_tmdb_matches")
+@pytest.mark.usefixtures("stub_movie_storage")
 class TestPersistLetterboxdRecords:
-    def test_with_watchlist(self, registered_user):
+    def test_with_watchlist(self, registered_user, no_tmdb_matches):
         result = ExtractionResult(
             csvs={
                 RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
@@ -640,7 +660,7 @@ class TestPersistLetterboxdRecords:
         assert movie_summary.matched == 0
         assert set(movie_summary.unmatched) == {"Dune (2021)", "Alien (1979)"}
  
-    def test_without_watchlist(self, registered_user):
+    def test_without_watchlist(self, registered_user, no_tmdb_matches):
         result = ExtractionResult(
             csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
         )
@@ -738,14 +758,71 @@ class TestPersistLetterboxdRecords:
             PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
-            return_value=MovieCacheSummary(
-                stored={348: movie},
-                already_stored=0,
-                without_metadata=1,
-            ),
+            side_effect=[
+                MovieCacheSummary(
+                    stored={},
+                    already_stored=0,
+                    without_metadata=0,
+                ),
+                MovieCacheSummary(
+                    stored={348: movie},
+                    already_stored=0,
+                    without_metadata=0,
+                ),
+            ],
         ) as mock_fetch_and_store:
             persisted, movie_summary = persist_letterboxd_records(registered_user, result)
 
-        mock_fetch_and_store.assert_called_once_with({348})
+        assert mock_fetch_and_store.call_count == 2
+        mock_fetch_and_store.assert_any_call({438631})
+        mock_fetch_and_store.assert_any_call({348}, defer_embeddings=True)
         assert movie_summary.matched == 2
         assert persisted == {"ratings": 1, "watchlist": 1}
+
+    def test_only_the_top_rated_films_are_embedded_synchronously(
+        self, registered_user, settings
+    ):
+        settings.RECOMMENDATION_MAX_HISTORY_MOVIES = 1
+        result = ExtractionResult(
+            csvs={
+                RATINGS_CSV: [
+                    {"Name": "Dune", "Year": "2021", "Rating": "5"},
+                    {"Name": "Alien", "Year": "1979", "Rating": "3"},
+                ]
+            }
+        )
+        tmdb_ids = {"Dune": 438631, "Alien": 348}
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            side_effect=lambda _c, title, _y: fake_match(tmdb_id=tmdb_ids[title]),
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=MovieCacheSummary(
+                stored={}, already_stored=0, without_metadata=0
+            ),
+        ) as mock_fetch:
+            persist_letterboxd_records(registered_user, result)
+
+        mock_fetch.assert_any_call({438631})
+        mock_fetch.assert_any_call({348}, defer_embeddings=True)
+
+
+def test_needs_embedding_is_false_when_a_batch_is_already_pending():
+    movie = make_movie()
+    movie.embedding = None
+    movie.embedding_batch_id = 5
+
+    assert _needs_embedding(movie) is False
+
+
+def test_needs_embedding_is_true_without_vector_or_batch():
+    movie = make_movie()
+    movie.embedding = None
+    movie.embedding_batch_id = None
+
+    assert _needs_embedding(movie) is True
