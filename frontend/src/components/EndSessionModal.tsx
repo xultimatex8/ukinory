@@ -45,7 +45,8 @@ export default function EndSessionModal({
             onClick={onClose}
             disabled={isEndingSession}
             aria-label="Close"
-            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border text-text-muted transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border
+              text-text-muted transition hover:border-primary hover:text-primary disabled:cursor-auto disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -62,7 +63,7 @@ export default function EndSessionModal({
             type="button"
             onClick={onGoHome}
             disabled={isEndingSession}
-            className="flex-1 cursor-pointer rounded-lg border border-border px-4 py-3 text-sm font-medium text-text transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 cursor-pointer rounded-lg border border-border px-4 py-3 text-sm font-medium text-text transition hover:bg-surface-hover disabled:cursor-auto disabled:opacity-50"
           >
             Back to home
           </button>
@@ -71,7 +72,7 @@ export default function EndSessionModal({
             type="button"
             onClick={onDownloadCsv}
             disabled={isEndingSession}
-            className="flex-1 cursor-pointer rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 cursor-pointer rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-auto disabled:opacity-50"
           >
             {isEndingSession
               ? "Ending session..."
