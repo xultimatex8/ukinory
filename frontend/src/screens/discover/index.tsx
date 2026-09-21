@@ -29,13 +29,10 @@ export default function DiscoverScreen() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
+  const [isLoadingLibraryStats, setIsLoadingLibraryStats] = useState(true);
 
   const hasLibraryData =
     libraryStats === null ? null : libraryStats.rated_total > 0;
-
-  const pendingCount = libraryStats
-    ? libraryStats.rated_total - libraryStats.rated_with_embedding
-    : 0;
 
   const refreshLibraryStats = async () => {
     try {
@@ -46,27 +43,24 @@ export default function DiscoverScreen() {
   };
 
   useEffect(() => {
-    let cancelled = false;
-
     const loadLibraryStats = async () => {
       try {
-        const stats = await getLibraryStats();
+        setIsLoadingLibraryStats(true);
 
-        if (!cancelled) {
-          setLibraryStats(stats);
-        }
+        const [stats] = await Promise.all([
+          getLibraryStats(),
+          new Promise((resolve) => setTimeout(resolve, 350)),
+        ]);
+
+        setLibraryStats(stats);
       } catch {
-        if (!cancelled) {
-          setLibraryStats(null);
-        }
+        setLibraryStats(null);
+      } finally {
+        setIsLoadingLibraryStats(false);
       }
     };
 
-    loadLibraryStats();
-
-    return () => {
-      cancelled = true;
-    };
+    void loadLibraryStats();
   }, []);
 
   const handleCreateSession = async () => {
@@ -197,7 +191,13 @@ export default function DiscoverScreen() {
             description="Find movies based on your taste and improve your recommendations with your Letterboxd history."
           />
 
-          {hasLibraryData === false && (
+          {isLoadingLibraryStats ? (
+            <div className="mt-5 -mb-5 border border-border bg-surface p-4">
+              <div className="h-3 w-52 animate-pulse bg-border" />
+              <div className="mt-3 h-4 w-72 animate-pulse bg-border" />
+              <div className="mt-2 h-4 w-64 animate-pulse bg-border" />
+            </div>
+          ) : hasLibraryData === false ? (
             <div className="mt-6 -mb-5 border border-border bg-surface p-4">
               <p className="text-sm font-medium text-text-secondary">
                 Improve your recommendations
@@ -209,9 +209,31 @@ export default function DiscoverScreen() {
                 it to help us learn your taste.
               </p>
             </div>
+          ) : (
+            libraryStats &&
+            libraryStats.rated_total > 0 && (
+              <div className="mt-5 -mb-5 border border-border bg-surface p-4">
+                <p className="text-sm font-medium text-text-secondary">
+                  Movies used for your recommendations
+                </p>
+
+                <p className="mt-1 text-2xl font-semibold text-text">
+                  {libraryStats.rated_with_embedding}
+                  <span className="ml-2 text-sm font-normal text-text-muted">
+                    of {libraryStats.rated_total} rated
+                  </span>
+                </p>
+
+                  <p className="mt-2 text-xs leading-relaxed text-text-muted">
+                    Not every movie you import can be used right away. Some may
+                    not be recognized, and others are processed gradually, so
+                    this number may grow over time.
+                  </p>
+              </div>
+            )
           )}
 
-          <div className="mt-10 grid gap-4 md:grid-cols-2">
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
             <button
               type="button"
               onClick={handleCreateSession}
@@ -389,31 +411,8 @@ export default function DiscoverScreen() {
             </div>
           </div>
 
-          {libraryStats && libraryStats.rated_total > 0 && (
-            <div className="mt-5 border border-border bg-surface p-5">
-              <p className="text-sm font-medium text-text-secondary">
-                Movies used for your recommendations
-              </p>
-
-              <p className="mt-1 text-2xl font-semibold text-text">
-                {libraryStats.rated_with_embedding}
-                <span className="ml-2 text-sm font-normal text-text-muted">
-                  of {libraryStats.rated_total} rated
-                </span>
-              </p>
-
-              {pendingCount > 0 && (
-                <p className="mt-2 text-xs leading-relaxed text-text-muted">
-                  Not every movie you import can be used right away. Some may
-                  not be recognized, and others are processed gradually, so
-                  this number may grow over time.
-                </p>
-              )}
-            </div>
-          )}
-
           {importResult && (
-            <div className="mt-5 border border-border bg-surface p-5">
+            <div className="mt-3 border border-border bg-surface p-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center border border-primary">
                   <Check size={17} strokeWidth={2} className="text-primary" />
@@ -449,7 +448,7 @@ export default function DiscoverScreen() {
             </div>
           )}
 
-          <div className="mt-5 border border-border bg-surface px-5 py-4">
+          <div className="mt-3 border border-border bg-surface px-5 py-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-sm font-medium text-text-secondary">
