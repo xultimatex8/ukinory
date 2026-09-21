@@ -163,8 +163,7 @@ export default function DiscoverSessionScreen() {
           </h2>
 
           <p className="mt-3 max-w-md text-sm leading-relaxed text-text-muted">
-            You've gone through all the movies currently available for this
-            session.
+            You've gone through all the movies currently available.
           </p>
 
           <button
