@@ -122,25 +122,36 @@ def _needs_embedding(movie: Movie) -> bool:
     return movie.embedding is None
 
 
+def _needs_embedding(movie: Movie) -> bool:
+    return movie.embedding is None
+
+
 def _match_films(
-    client: TMDbClient, film_keys: set[FilmKey]
+    client: TMDbClient,
+    film_keys: set[FilmKey],
+    priority_keys: set[FilmKey],
 ) -> tuple[dict[FilmKey, Movie], MovieMatchSummary]:
     matches: dict[FilmKey, Movie] = {}
     summary = MovieMatchSummary()
     pending_tmdb_id_by_key: dict[FilmKey, int] = {}
-    retry_embedding_ids: set[int] = set()
+    retry_ids: set[int] = set()
+    priority_ids: set[int] = set()
 
     for title, year in sorted(film_keys):
+        key = (title, year)
+
         if summary.tmdb_error is not None:
             summary.unmatched.append(f"{title} ({year})")
             continue
 
         cached = find_cached_movie(title, year)
         if cached is not None:
-            matches[(title, year)] = cached
+            matches[key] = cached
             summary.matched += 1
             if _needs_embedding(cached):
-                retry_embedding_ids.add(cached.tmdb_id)
+                retry_ids.add(cached.tmdb_id)
+                if key in priority_keys:
+                    priority_ids.add(cached.tmdb_id)
             continue
 
         try:
@@ -160,25 +171,33 @@ def _match_films(
 
         cached_by_tmdb_id = find_cached_movie_by_tmdb_id(match.tmdb_id)
         if cached_by_tmdb_id is not None:
-            matches[(title, year)] = cached_by_tmdb_id
+            matches[key] = cached_by_tmdb_id
             summary.matched += 1
             if _needs_embedding(cached_by_tmdb_id):
-                retry_embedding_ids.add(cached_by_tmdb_id.tmdb_id)
+                retry_ids.add(cached_by_tmdb_id.tmdb_id)
+                if key in priority_keys:
+                    priority_ids.add(cached_by_tmdb_id.tmdb_id)
             continue
 
-        pending_tmdb_id_by_key[(title, year)] = match.tmdb_id
+        pending_tmdb_id_by_key[key] = match.tmdb_id
+        if key in priority_keys:
+            priority_ids.add(match.tmdb_id)
 
-    ids_to_fetch = set(pending_tmdb_id_by_key.values()) | retry_embedding_ids
-    if ids_to_fetch:
-        cache_summary = fetch_and_store_movies(ids_to_fetch)
-        for key, tmdb_id in pending_tmdb_id_by_key.items():
-            movie = cache_summary.stored.get(tmdb_id)
-            if movie is not None:
-                matches[key] = movie
-                summary.matched += 1
-            else:
-                title, year = key
-                summary.without_metadata.append(f"{title} ({year})")
+    all_ids = set(pending_tmdb_id_by_key.values()) | retry_ids
+    stored: dict[int, Movie] = {}
+
+    for ids in (priority_ids, all_ids - priority_ids):
+        if ids:
+            stored.update(fetch_and_store_movies(ids).stored)
+
+    for key, tmdb_id in pending_tmdb_id_by_key.items():
+        movie = stored.get(tmdb_id)
+        if movie is not None:
+            matches[key] = movie
+            summary.matched += 1
+        else:
+            title, year = key
+            summary.without_metadata.append(f"{title} ({year})")
 
     return matches, summary
 
@@ -242,7 +261,12 @@ def persist_letterboxd_records(user, result: ExtractionResult
     client = TMDbClient()
 
     film_keys = _collect_film_keys(result.csvs)
-    movie_matches, movie_summary = _match_films(client, film_keys)
+    priority_keys = {
+        key
+        for key, entry in _merge_rating_sources(result.csvs).items()
+        if entry.rating is not None
+    }
+    movie_matches, movie_summary = _match_films(client, film_keys, priority_keys)
 
     persisted: dict[str, int] = {
         "ratings": persist_ratings(user, result.csvs, movie_matches)
