@@ -16,7 +16,7 @@ import {
   startSwipeSession,
 } from "../../services/swipeSessions";
 import { importExport, type ImportResult } from "../../services/imports";
-import { checkLibraryData } from "../../services/library";
+import { getLibraryStats, type LibraryStats } from "../../services/library";
 
 export default function DiscoverScreen() {
   const navigate = useNavigate();
@@ -28,19 +28,45 @@ export default function DiscoverScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasLibraryData, setHasLibraryData] = useState<boolean | null>(null);
+  const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
+
+  const hasLibraryData =
+    libraryStats === null ? null : libraryStats.rated_total > 0;
+
+  const pendingCount = libraryStats
+    ? libraryStats.rated_total - libraryStats.rated_with_embedding
+    : 0;
+
+  const refreshLibraryStats = async () => {
+    try {
+      setLibraryStats(await getLibraryStats());
+    } catch {
+      setLibraryStats(null);
+    }
+  };
 
   useEffect(() => {
-    const loadLibraryDataStatus = async () => {
+    let cancelled = false;
+
+    const loadLibraryStats = async () => {
       try {
-        const hasData = await checkLibraryData();
-        setHasLibraryData(hasData);
+        const stats = await getLibraryStats();
+
+        if (!cancelled) {
+          setLibraryStats(stats);
+        }
       } catch {
-        setHasLibraryData(null);
+        if (!cancelled) {
+          setLibraryStats(null);
+        }
       }
     };
 
-    loadLibraryDataStatus();
+    loadLibraryStats();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleCreateSession = async () => {
@@ -112,12 +138,7 @@ export default function DiscoverScreen() {
       setImportResult(result);
       setPendingFiles([]);
 
-      try {
-        const hasData = await checkLibraryData();
-        setHasLibraryData(hasData);
-      } catch {
-        setHasLibraryData(null);
-      }
+      await refreshLibraryStats();
     } catch (error) {
       if (typeof error === "object" && error !== null && "error" in error) {
         const backendError = error as { error?: { message?: string } };
@@ -184,7 +205,7 @@ export default function DiscoverScreen() {
 
               <p className="mt-1 text-xs leading-relaxed text-text-muted">
                 You can start discovering movies now, but your recommendations
-                may be less personalized without your Letterboxd history. Import 
+                may be less personalized without your Letterboxd history. Import
                 it to help us learn your taste.
               </p>
             </div>
@@ -368,6 +389,29 @@ export default function DiscoverScreen() {
             </div>
           </div>
 
+          {libraryStats && libraryStats.rated_total > 0 && (
+            <div className="mt-5 border border-border bg-surface p-5">
+              <p className="text-sm font-medium text-text-secondary">
+                Movies used for your recommendations
+              </p>
+
+              <p className="mt-1 text-2xl font-semibold text-text">
+                {libraryStats.rated_with_embedding}
+                <span className="ml-2 text-sm font-normal text-text-muted">
+                  of {libraryStats.rated_total} rated
+                </span>
+              </p>
+
+              {pendingCount > 0 && (
+                <p className="mt-2 text-xs leading-relaxed text-text-muted">
+                  Not every movie you import can be used right away. Some may
+                  not be recognized, and others are processed gradually, so
+                  this number may grow over time.
+                </p>
+              )}
+            </div>
+          )}
+
           {importResult && (
             <div className="mt-5 border border-border bg-surface p-5">
               <div className="flex items-center gap-3">
@@ -384,21 +428,6 @@ export default function DiscoverScreen() {
                     Your Letterboxd data has been processed.
                   </p>
                 </div>
-              </div>
-
-              <div className="mt-5 border border-border p-4">
-                <p className="text-sm font-medium text-text-secondary">
-                  Movies recognized
-                </p>
-
-                <p className="mt-1 text-2xl font-semibold text-text">
-                  {importResult.movies.matched}
-                </p>
-
-                <p className="mt-2 text-xs leading-relaxed text-text-muted">
-                  We may not be able to retrieve information for every movie
-                  in your Letterboxd data, so some movies may not be recognized.
-                </p>
               </div>
 
               {importResult.missing.length > 0 && (

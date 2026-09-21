@@ -2,9 +2,6 @@ import { apiFetch } from "./api";
 
 export interface ImportResult {
   missing: string[];
-  movies: {
-    matched: number;
-  };
 }
 
 export async function importExport(

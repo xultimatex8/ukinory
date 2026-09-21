@@ -62,12 +62,7 @@ class LetterboxdImportView(APIView):
             )
 
         return Response(
-            {
-                "missing": summary.missing,
-                "movies": {
-                    "matched": summary.movies.matched,
-                },
-            },
+            {"missing": summary.missing},
             status=status.HTTP_200_OK,
         )
 

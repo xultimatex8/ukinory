@@ -118,12 +118,17 @@ def _merge_rating_sources(csvs: Mapping[str, list]) -> dict[FilmKey, _RatingEntr
     return entries
 
 
+def _needs_embedding(movie: Movie) -> bool:
+    return movie.embedding is None
+
+
 def _match_films(
     client: TMDbClient, film_keys: set[FilmKey]
 ) -> tuple[dict[FilmKey, Movie], MovieMatchSummary]:
     matches: dict[FilmKey, Movie] = {}
     summary = MovieMatchSummary()
     pending_tmdb_id_by_key: dict[FilmKey, int] = {}
+    retry_embedding_ids: set[int] = set()
 
     for title, year in sorted(film_keys):
         if summary.tmdb_error is not None:
@@ -134,6 +139,8 @@ def _match_films(
         if cached is not None:
             matches[(title, year)] = cached
             summary.matched += 1
+            if _needs_embedding(cached):
+                retry_embedding_ids.add(cached.tmdb_id)
             continue
 
         try:
@@ -155,12 +162,15 @@ def _match_films(
         if cached_by_tmdb_id is not None:
             matches[(title, year)] = cached_by_tmdb_id
             summary.matched += 1
+            if _needs_embedding(cached_by_tmdb_id):
+                retry_embedding_ids.add(cached_by_tmdb_id.tmdb_id)
             continue
 
         pending_tmdb_id_by_key[(title, year)] = match.tmdb_id
 
-    if pending_tmdb_id_by_key:
-        cache_summary = fetch_and_store_movies(set(pending_tmdb_id_by_key.values()))
+    ids_to_fetch = set(pending_tmdb_id_by_key.values()) | retry_embedding_ids
+    if ids_to_fetch:
+        cache_summary = fetch_and_store_movies(ids_to_fetch)
         for key, tmdb_id in pending_tmdb_id_by_key.items():
             movie = cache_summary.stored.get(tmdb_id)
             if movie is not None:
