@@ -5,6 +5,7 @@ import {
   getSwipeRecommendation,
   type MovieRecommendation,
 } from "../services/swipeSessions";
+import { ApiError } from "../services/api";
 import { getErrorMessage } from "../utils/errors";
 
 interface UseSwipeRecommendationParams {
@@ -21,6 +22,8 @@ interface UseSwipeRecommendationResult {
   candidateId: string | null;
   isLoading: boolean;
   finished: boolean;
+  sessionNotFound: boolean;
+  sessionFinished: boolean;
   error: string | null;
   loadRecommendation: () => Promise<void>;
   setMovie: React.Dispatch<React.SetStateAction<MovieRecommendation | null>>;
@@ -42,6 +45,8 @@ export function useSwipeRecommendation({
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [finished, setFinished] = useState(false);
+  const [sessionNotFound, setSessionNotFound] = useState(false);
+  const [sessionFinished, setSessionFinished] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const resetCardAnimation = useCallback(() => {
@@ -60,6 +65,8 @@ export function useSwipeRecommendation({
     try {
       setIsLoading(true);
       setError(null);
+      setSessionNotFound(false);
+      setSessionFinished(false);
       setFinished(false);
 
       const result = await getSwipeRecommendation(id);
@@ -77,6 +84,19 @@ export function useSwipeRecommendation({
     } catch (err) {
       setMovie(null);
       setCandidateId(null);
+
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          setSessionNotFound(true);
+          return;
+        }
+
+        if (err.status === 409) {
+          setSessionFinished(true);
+          return;
+        }
+      }
+
       setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
@@ -96,6 +116,8 @@ export function useSwipeRecommendation({
       try {
         setIsLoading(true);
         setError(null);
+        setSessionNotFound(false);
+        setSessionFinished(false);
 
         const result = await getSwipeRecommendation(id);
 
@@ -117,6 +139,19 @@ export function useSwipeRecommendation({
 
         setMovie(null);
         setCandidateId(null);
+
+        if (err instanceof ApiError) {
+          if (err.status === 404) {
+            setSessionNotFound(true);
+            return;
+          }
+
+          if (err.status === 409) {
+            setSessionFinished(true);
+            return;
+          }
+        }
+
         setError(getErrorMessage(err));
       } finally {
         if (!cancelled) {
@@ -137,6 +172,8 @@ export function useSwipeRecommendation({
     candidateId,
     isLoading,
     finished,
+    sessionNotFound,
+    sessionFinished,
     error,
     loadRecommendation,
     setMovie,

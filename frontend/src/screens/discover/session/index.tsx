@@ -47,6 +47,8 @@ export default function DiscoverSessionScreen() {
     candidateId,
     isLoading,
     finished,
+    sessionNotFound,
+    sessionFinished,
     error,
     loadRecommendation,
     setMovie,
@@ -125,11 +127,28 @@ export default function DiscoverSessionScreen() {
 
   const streamingCountries = getStreamingCountries(movie);
 
+  if (sessionNotFound) {
+    return (
+      <ErrorScreen
+        message="This swipe session does not exist or is no longer available."
+        buttonText="Back to home"
+      />
+    );
+  }
+
+  if (sessionFinished) {
+    return (
+      <ErrorScreen
+        message="This swipe session has already finished."
+        buttonText="Back to home"
+      />
+    );
+  }
+
   if (error) {
     return (
       <ErrorScreen
         message={error}
-        buttonText="Try again"
         onRetry={handleRetry}
       />
     );
@@ -234,7 +253,7 @@ export default function DiscoverSessionScreen() {
                       }
                       onClick={() => void handleSwipe("left")}
                       aria-label="Skip"
-                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-red-400/30 bg-red-400/5 text-sm font-medium text-red-400 transition hover:border-red-400/60 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-red-400/30 bg-red-400/5 text-sm font-medium text-red-400 transition hover:border-red-400/60 hover:bg-red-400/10 disabled:cursor-auto disabled:opacity-40"
                     >
                       <X size={19} strokeWidth={1.8} />
                       Skip
@@ -252,7 +271,7 @@ export default function DiscoverSessionScreen() {
                       }
                       onClick={() => void handleSwipe("right")}
                       aria-label="Add to watchlist"
-                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-primary/50 bg-primary/5 text-sm font-medium text-primary transition hover:border-primary hover:bg-primary hover:text-background disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-primary/50 bg-primary/5 text-sm font-medium text-primary transition hover:border-primary hover:bg-primary hover:text-background disabled:cursor-auto disabled:opacity-40"
                     >
                       <Heart size={18} strokeWidth={1.8} />
                       Watchlist
