@@ -122,10 +122,6 @@ def _needs_embedding(movie: Movie) -> bool:
     return movie.embedding is None
 
 
-def _needs_embedding(movie: Movie) -> bool:
-    return movie.embedding is None
-
-
 def _match_films(
     client: TMDbClient,
     film_keys: set[FilmKey],
@@ -134,11 +130,11 @@ def _match_films(
     matches: dict[FilmKey, Movie] = {}
     summary = MovieMatchSummary()
     pending_tmdb_id_by_key: dict[FilmKey, int] = {}
-    retry_ids: set[int] = set()
     priority_ids: set[int] = set()
 
     for title, year in sorted(film_keys):
         key = (title, year)
+        is_priority = key in priority_keys
 
         if summary.tmdb_error is not None:
             summary.unmatched.append(f"{title} ({year})")
@@ -148,10 +144,8 @@ def _match_films(
         if cached is not None:
             matches[key] = cached
             summary.matched += 1
-            if _needs_embedding(cached):
-                retry_ids.add(cached.tmdb_id)
-                if key in priority_keys:
-                    priority_ids.add(cached.tmdb_id)
+            if is_priority and _needs_embedding(cached):
+                priority_ids.add(cached.tmdb_id)
             continue
 
         try:
@@ -173,22 +167,23 @@ def _match_films(
         if cached_by_tmdb_id is not None:
             matches[key] = cached_by_tmdb_id
             summary.matched += 1
-            if _needs_embedding(cached_by_tmdb_id):
-                retry_ids.add(cached_by_tmdb_id.tmdb_id)
-                if key in priority_keys:
-                    priority_ids.add(cached_by_tmdb_id.tmdb_id)
+            if is_priority and _needs_embedding(cached_by_tmdb_id):
+                priority_ids.add(cached_by_tmdb_id.tmdb_id)
             continue
 
         pending_tmdb_id_by_key[key] = match.tmdb_id
-        if key in priority_keys:
+        if is_priority:
             priority_ids.add(match.tmdb_id)
 
-    all_ids = set(pending_tmdb_id_by_key.values()) | retry_ids
+    other_ids = set(pending_tmdb_id_by_key.values()) - priority_ids
     stored: dict[int, Movie] = {}
 
-    for ids in (priority_ids, all_ids - priority_ids):
-        if ids:
-            stored.update(fetch_and_store_movies(ids).stored)
+    if priority_ids:
+        stored.update(fetch_and_store_movies(priority_ids).stored)
+    if other_ids:
+        stored.update(
+            fetch_and_store_movies(other_ids, defer_embeddings=True).stored
+        )
 
     for key, tmdb_id in pending_tmdb_id_by_key.items():
         movie = stored.get(tmdb_id)
