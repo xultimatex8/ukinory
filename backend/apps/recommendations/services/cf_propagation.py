@@ -21,7 +21,7 @@ def propagate_cf_score(
         return None
 
     neighbors = (
-        Movie.objects.filter(id__in=cf_scores_by_movie_id.keys())
+        Movie.objects.filter(id__in=cf_scores_by_movie_id.keys(), embedding__isnull=False)
         .annotate(distance=CosineDistance("embedding", movie.embedding))
         .order_by("distance")[:k]
     )
