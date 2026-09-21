@@ -63,7 +63,6 @@ class LetterboxdImportView(APIView):
 
         return Response(
             {
-                "userId": request.user.id,
                 "missing": summary.missing,
                 "movies": {
                     "matched": summary.movies.matched,
