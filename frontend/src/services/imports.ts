@@ -1,14 +1,9 @@
 import { apiFetch } from "./api";
 
 export interface ImportResult {
-  userId: number;
-  imported: Record<string, number>;
   missing: string[];
   movies: {
     matched: number;
-    withoutMetadata: string[];
-    unmatched: string[];
-    tmdbError: string | null;
   };
 }
 

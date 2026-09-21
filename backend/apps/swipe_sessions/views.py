@@ -177,7 +177,6 @@ class SwipeSessionCandidateJustificationView(APIView):
 
         return Response(
             {
-                "candidate_id": candidate.id,
                 "justification": justification.text,
             }
         )
@@ -228,14 +227,7 @@ class SwipeSessionSwipeView(APIView):
             action=serializer.validated_data["action"],
         )
 
-        return Response(
-            {
-                "id": swipe.id,
-                "candidate_id": candidate.id,
-                "action": swipe.action,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(status=status.HTTP_201_CREATED)
 
 
 class SwipeSessionEndView(APIView):
