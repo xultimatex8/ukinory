@@ -43,8 +43,6 @@ def tmdb_api_key(settings):
 
 @pytest.fixture(autouse=True)
 def no_real_sleep(monkeypatch):
-    """Every retry/backoff path in TMDbClient sleeps; none of these tests
-    should actually wait for it."""
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
 

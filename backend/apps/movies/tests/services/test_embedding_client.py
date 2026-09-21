@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from unittest.mock import MagicMock
 
@@ -9,6 +10,7 @@ from google.genai.errors import APIError
 from apps.movies.exceptions import EmbeddingError, EmbeddingUnavailableError
 from apps.movies.services.embedding_client import (
     DIMENSIONS,
+    EMBEDDING_PACING_LOCK_KEY,
     EMBEDDING_PACING_TIMESTAMP_KEY,
     EmbeddingClient,
 )
@@ -42,15 +44,16 @@ def no_real_sleep(monkeypatch):
 
 
 def make_client(**overrides) -> EmbeddingClient:
-    client = EmbeddingClient(**overrides)
-    return client
+    return EmbeddingClient(**overrides)
 
 
 def embed_response(values: list[float]):
     embedding = MagicMock()
     embedding.values = values
+
     response = MagicMock()
     response.embeddings = [embedding]
+
     return response
 
 
@@ -84,19 +87,22 @@ class TestConfiguration:
 
 
 class TestEmbedHappyPath:
-    def test_returns_embedding_values(self, settings):
+    def test_returns_normalized_embedding_values(self):
         client = make_client()
         values = [0.1] * DIMENSIONS
-        client._client.models.embed_content.return_value = embed_response(
-            values
-        )
+
+        client._client.models.embed_content.return_value = embed_response(values)
 
         result = client.embed("some movie text")
 
-        assert result == values
+        expected_value = 1 / math.sqrt(DIMENSIONS)
+        assert result == pytest.approx(
+            [expected_value] * DIMENSIONS
+        )
 
     def test_sends_configured_model_text(self, settings):
         settings.EMBEDDING_MODEL = "custom-model"
+
         client = make_client()
         client._client.models.embed_content.return_value = embed_response(
             [0.0] * DIMENSIONS
@@ -105,14 +111,16 @@ class TestEmbedHappyPath:
         client.embed("some movie text")
 
         _, kwargs = client._client.models.embed_content.call_args
+
         assert kwargs["model"] == "custom-model"
-        assert kwargs["contents"] == "some movie text"
+        assert kwargs["contents"] == ["some movie text"]
         assert kwargs["config"] == {"output_dimensionality": DIMENSIONS}
 
 
 class TestEmbedValidation:
-    def test_dimension_mismatch_raises_embedding_error(self, settings):
+    def test_dimension_mismatch_raises_embedding_error(self):
         client = make_client()
+
         client._client.models.embed_content.return_value = embed_response(
             [0.1, 0.2, 0.3]
         )
@@ -125,6 +133,7 @@ class TestRateLimiting:
     def test_429_retries_and_then_succeeds(self):
         client = make_client(max_retries=2)
         values = [1.0] * DIMENSIONS
+
         client._client.models.embed_content.side_effect = [
             FakeAPIError(429),
             embed_response(values),
@@ -132,7 +141,11 @@ class TestRateLimiting:
 
         result = client.embed("text")
 
-        assert result == values
+        expected_value = 1 / math.sqrt(DIMENSIONS)
+
+        assert result == pytest.approx(
+            [expected_value] * DIMENSIONS
+        )
         assert client._client.models.embed_content.call_count == 2
 
     def test_429_exhausted_raises_unavailable(self):
@@ -149,6 +162,7 @@ class TestServerErrors:
     def test_5xx_retries_and_then_succeeds(self):
         client = make_client(max_retries=2)
         values = [1.0] * DIMENSIONS
+
         client._client.models.embed_content.side_effect = [
             FakeAPIError(500),
             embed_response(values),
@@ -156,7 +170,11 @@ class TestServerErrors:
 
         result = client.embed("text")
 
-        assert result == values
+        expected_value = 1 / math.sqrt(DIMENSIONS)
+
+        assert result == pytest.approx(
+            [expected_value] * DIMENSIONS
+        )
         assert client._client.models.embed_content.call_count == 2
 
     def test_5xx_exhausted_raises_unavailable(self):
@@ -176,6 +194,7 @@ class TestSharedPacing:
 
         settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
+
         client = make_client()
         client._client.models.embed_content.return_value = embed_response(
             [0.0] * DIMENSIONS
@@ -185,11 +204,16 @@ class TestSharedPacing:
 
         assert cache.get(EMBEDDING_PACING_TIMESTAMP_KEY) is not None
 
-    def test_second_call_sleeps_out_the_remaining_interval(self, settings, monkeypatch):
+    def test_second_call_sleeps_out_the_remaining_interval(
+        self,
+        settings,
+        monkeypatch,
+    ):
         from django.core.cache import cache
 
         settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
+
         client = make_client()
         client._client.models.embed_content.return_value = embed_response(
             [0.0] * DIMENSIONS
@@ -197,20 +221,23 @@ class TestSharedPacing:
 
         fake_clock = [1_000.0]
         monkeypatch.setattr(time, "time", lambda: fake_clock[0])
+
         sleeps: list[float] = []
         monkeypatch.setattr(time, "sleep", sleeps.append)
 
         client.embed("first")
+
         fake_clock[0] = 1_000.4
+
         client.embed("second")
 
         assert any(s == pytest.approx(0.6) for s in sleeps)
 
     def test_lock_is_released_even_if_request_raises(self, settings):
         from django.core.cache import cache
-        from apps.movies.services.embedding_client import EMBEDDING_PACING_LOCK_KEY
 
         cache.clear()
+
         client = make_client(max_retries=0)
         client._client.models.embed_content.side_effect = FakeAPIError(500)
 

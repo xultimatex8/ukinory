@@ -56,6 +56,7 @@ class TestJustificationClient:
 
         response = MagicMock()
         response.text = "  Great recommendation.  "
+        response.usage_metadata = None
 
         mock_client.return_value.models.generate_content.return_value = response
 
@@ -80,10 +81,18 @@ class TestJustificationClient:
             history,
         )
 
-        mock_client.return_value.models.generate_content.assert_called_once_with(
-            model="primary-model",
-            contents="test prompt",
+        mock_client.return_value.models.generate_content.assert_called_once()
+
+        _, kwargs = (
+            mock_client.return_value.models.generate_content.call_args
         )
+
+        assert kwargs["model"] == "primary-model"
+        assert kwargs["contents"] == "test prompt"
+
+        config = kwargs["config"]
+        assert config.max_output_tokens == 80
+        assert config.thinking_config.thinking_level == "MINIMAL"
 
 
     @patch("apps.swipe_sessions.services.justification.genai.Client")
