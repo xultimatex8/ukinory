@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 
 from apps.movies.exceptions import TMDbError, WikidataError
 from apps.movies.services.catalog_seeding import format_seed_summary, seed_movie_catalog_light
-from config import settings
+from django.conf import settings
 
 
 class Command(BaseCommand):

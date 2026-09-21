@@ -21,7 +21,7 @@ from apps.movies.services.movie_cache import (
 )
 from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.services.tmdb_matching import match_movie
-from config import settings
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 

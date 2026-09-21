@@ -7,7 +7,7 @@ from apps.movies.services.embedding_batch import (
     collect_finished_batches,
     submit_pending_embeddings_batch,
 )
-from config import settings
+from django.conf import settings
 
 
 class Command(BaseCommand):
