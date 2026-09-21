@@ -344,8 +344,8 @@ export default function RegisterScreen() {
             disabled={isSubmitting || !documents}
             className="mt-6 w-full cursor-pointer bg-primary px-4 py-3
                        font-semibold text-background transition
-                       hover:bg-primary-hover disabled:cursor-not-allowed
-                       disabled:opacity-50"
+                       hover:bg-primary-hover disabled:cursor-auto
+                       disabled:opacity-50 disabled:hover:bg-primary"
           >
             {isSubmitting
               ? isClaiming
