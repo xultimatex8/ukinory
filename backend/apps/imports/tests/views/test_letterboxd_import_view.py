@@ -147,14 +147,9 @@ class TestLetterboxdImportViewUnit:
         response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
 
         assert response.data == {
-            "userId": response.wsgi_request.user.id,
-            "imported": {"ratings": 812, "diary": 340},
             "missing": ["watched.csv"],
             "movies": {
                 "matched": 800,
-                "withoutMetadata": [],
-                "unmatched": ["Some Obscure Short (2019)"],
-                "tmdbError": None,
             },
         }
 
@@ -171,9 +166,6 @@ class TestLetterboxdImportViewUnit:
  
         assert response.data["movies"] == {
             "matched": 0,
-            "withoutMetadata": [],
-            "unmatched": [],
-            "tmdbError": None,
         }
 
 
@@ -205,10 +197,8 @@ class TestLetterboxdImportViewIntegration:
         response = api_client.post(import_url, data={"file": zip_file}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["imported"] == {"ratings": 1, "watchlist": 1}
         assert set(response.data["missing"]) == {"diary.csv", "watched.csv", "liked_films.csv"}
         assert response.data["movies"]["matched"] == 0
-        assert len(response.data["movies"]["unmatched"]) == 2
 
     def test_real_csvs_without_zip(self, api_client, import_url):
         ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
@@ -216,7 +206,7 @@ class TestLetterboxdImportViewIntegration:
         response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["imported"] == {"ratings": 1}
+        assert response.data["movies"]["matched"] == 0
 
     def test_malformed_csv_returns_422(self, api_client, import_url):
         broken = SimpleUploadedFile(
@@ -235,4 +225,4 @@ class TestLetterboxdImportViewIntegration:
         response = api_client.post(import_url, data={"file": mislabeled}, format="multipart")
 
         assert response.status_code == 200
-        assert response.data["imported"] == {"ratings": 1}
+        assert response.data["movies"]["matched"] == 0

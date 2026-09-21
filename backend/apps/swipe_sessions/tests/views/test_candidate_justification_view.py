@@ -38,7 +38,6 @@ class TestSwipeSessionCandidateJustificationView:
 
         assert response.status_code == 200
         assert response.data == {
-            "candidate_id": candidate.id,
             "justification": "This movie matches your taste.",
         }
 

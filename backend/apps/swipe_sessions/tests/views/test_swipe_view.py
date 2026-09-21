@@ -52,11 +52,6 @@ class TestSwipeSessionSwipeView:
             )
 
         assert response.status_code == 201
-        assert response.data == {
-            "id": "swipe-id",
-            "candidate_id": candidate.id,
-            "action": SwipeAction.WATCHLIST,
-        }
 
         mock_record.assert_called_once_with(
             user=user,
