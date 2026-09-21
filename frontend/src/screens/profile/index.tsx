@@ -95,8 +95,8 @@ export default function ProfileScreen() {
 
   return (
     <main className="min-h-screen bg-background text-text">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-6 py-8">
-        <section className="flex flex-1 flex-col justify-center">
+      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-6 pt-8">
+        <section className="flex flex-1 flex-col">
           <AppHeader
             title="Your profile"
             description="View your account information."
