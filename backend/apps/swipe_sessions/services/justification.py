@@ -6,7 +6,9 @@ from typing import Optional
 
 from django.conf import settings
 from google import genai
+from google.genai import types
 
+from apps.common import api_quota
 from apps.library.models import Rating
 from apps.movies.models import Movie
 from apps.swipe_sessions.models import (
@@ -19,7 +21,9 @@ from apps.swipe_sessions.services.session import ensure_session_active
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
+QUOTA_CLIENT_NAME = "gemini_generate"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
+DEFAULT_MAX_OUTPUT_TOKENS = 80
 DEFAULT_MAX_HISTORY_MOVIES = 5
 
 
@@ -40,11 +44,31 @@ class JustificationClient:
         history = _recent_liked_ratings(user)
         prompt = _build_prompt(movie, history)
 
+        max_output = getattr(
+            settings, "RECOMMENDATION_JUSTIFICATION_MAX_OUTPUT_TOKENS", DEFAULT_MAX_OUTPUT_TOKENS
+        )
+
+        reserved = api_quota.cost_units(
+            QUOTA_CLIENT_NAME,
+            input_tokens=api_quota.estimate_tokens(prompt),
+            output_tokens=max_output,
+        )
+        try:
+            api_quota.consume(QUOTA_CLIENT_NAME, reserved)
+        except api_quota.QuotaExceeded as exc:
+            logger.warning("Skipping justification for movie %s: %s", movie.pk, exc)
+            return ""
+
         try:
             response = self._client.models.generate_content(
                 model=self.model,
                 contents=prompt,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=max_output,
+                    thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
+                ),
             )
+            self._reconcile_cost(response, reserved)
             return (response.text or "").strip()
         except Exception as exc:
             logger.warning(
@@ -55,6 +79,18 @@ class JustificationClient:
             )
 
         return ""
+
+    @staticmethod
+    def _reconcile_cost(response, reserved: int) -> None:
+        usage = getattr(response, "usage_metadata", None)
+        if usage is None or usage.prompt_token_count is None:
+            return
+        actual = api_quota.cost_units(
+            QUOTA_CLIENT_NAME,
+            input_tokens=usage.prompt_token_count or 0,
+            output_tokens=(usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0),
+        )
+        api_quota.adjust(QUOTA_CLIENT_NAME, actual - reserved)
 
 
 def ensure_candidate_justification(

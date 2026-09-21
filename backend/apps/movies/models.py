@@ -15,6 +15,21 @@ class Genre(BaseModel):
     name = models.CharField(max_length=100)
 
 
+class EmbeddingBatchJob(BaseModel):
+    class State(models.TextChoices):
+        SUBMITTED = "submitted"
+        SUCCEEDED = "succeeded"
+        FAILED = "failed"
+
+    job_name = models.CharField(max_length=255, unique=True)
+    state = models.CharField(
+        max_length=16, choices=State.choices, default=State.SUBMITTED, db_index=True
+    )
+    items = models.JSONField()
+    finished_at = models.DateTimeField(null=True, blank=True)
+    error = models.TextField(blank=True, default="")
+
+
 class Movie(BaseModel):
     tmdb_id = models.PositiveIntegerField(unique=True, db_index=True)
     wikidata_id = models.CharField(
@@ -30,6 +45,14 @@ class Movie(BaseModel):
 
     embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True, blank=True)
     embedding_source_hash = models.CharField(max_length=64, blank=True, default="")
+    embedding_target_hash = models.CharField(max_length=64, blank=True, default="")
+    embedding_batch = models.ForeignKey(
+        EmbeddingBatchJob,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="movies",
+    )
 
     genres = models.ManyToManyField(Genre, related_name="movies", blank=True)
 
