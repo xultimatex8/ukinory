@@ -1,15 +1,20 @@
+import { useState } from "react";
 import {
   animate,
   motion,
   type MotionValue,
   type PanInfo,
 } from "motion/react";
-import { Info, Star } from "lucide-react";
-import type { MovieRecommendation } from "../services/swipeSessions";
+import { Info, Sparkles, Star } from "lucide-react";
+import {
+  getRecommendationJustification,
+  type MovieRecommendation,
+} from "../services/swipeSessions";
 
 interface SwipeMovieCardProps {
   movie: MovieRecommendation;
   candidateId: string;
+  sessionId: string;
   isLoading: boolean;
   isSwiping: boolean;
   isRecordingSwipe: boolean;
@@ -35,6 +40,7 @@ const MOVIE_FADE_DURATION = 0.3;
 export default function SwipeMovieCard({
   movie,
   candidateId,
+  sessionId,
   isLoading,
   isSwiping,
   isRecordingSwipe,
@@ -48,6 +54,44 @@ export default function SwipeMovieCard({
   onShowInfo,
   onPromotionComplete,
 }: SwipeMovieCardProps) {
+  const [showJustification, setShowJustification] =
+    useState(false);
+  const [justification, setJustification] = useState("");
+  const [isLoadingJustification, setIsLoadingJustification] =
+    useState(false);
+
+  const handleShowJustification = async () => {
+    if (isLoadingJustification) {
+      return;
+    }
+
+    if (showJustification) {
+      setShowJustification(false);
+      return;
+    }
+
+    if (justification) {
+      setShowJustification(true);
+      return;
+    }
+
+    setIsLoadingJustification(true);
+
+    try {
+      const result = await getRecommendationJustification(
+        sessionId,
+        candidateId,
+      );
+
+      if (result.justification) {
+        setJustification(result.justification);
+        setShowJustification(true);
+      }
+    } finally {
+      setIsLoadingJustification(false);
+    }
+  };
+
   const handleDrag = () => {
     if (
       isSwiping ||
@@ -293,6 +337,34 @@ export default function SwipeMovieCard({
                 ))}
               </div>
             )}
+
+            <div className="mt-4 border-t border-white/20 pt-3">
+              <button
+                type="button"
+                onPointerDown={(event) =>
+                  event.stopPropagation()
+                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleShowJustification();
+                }}
+                disabled={isLoadingJustification}
+                className="flex cursor-pointer items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-primary transition-colors hover:text-sky-300 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Sparkles size={11} />
+                {isLoadingJustification
+                  ? "Thinking..."
+                  : showJustification
+                    ? "Hide explanation"
+                    : "Why this movie"}
+              </button>
+
+              {showJustification && (
+                <p className="mt-1.5 text-xs leading-relaxed text-white/70">
+                  {justification}
+                </p>
+              )}
+            </div>
           </div>
         </article>
       </motion.div>
