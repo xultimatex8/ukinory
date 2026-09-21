@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand
 
 from apps.movies.exceptions import TMDbError, WikidataError
 from apps.movies.services.catalog_seeding import format_seed_summary, seed_movie_catalog_deep
+from config import settings
 
 
 class Command(BaseCommand):
@@ -15,6 +16,14 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
+        if settings.ENVIRONMENT != "production":
+            self.stdout.write(
+                self.style.WARNING(
+                    "Catalog seeding (light) skipped: environment is not production."
+                )
+            )
+            return
+        
         try:
             summary = seed_movie_catalog_deep()
         except (TMDbError, WikidataError) as exc:

@@ -15,6 +15,7 @@ from apps.movies.exceptions import (
 )
 
 WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
+WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
 WIKIDATA_ENTITY_URL = "https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
 
 TMDB_MOVIE_ID_PROPERTY = "P4947"
@@ -22,6 +23,9 @@ TMDB_MOVIE_ID_PROPERTY = "P4947"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_RETRIES = 3
 MAX_BACKOFF_SECONDS = 8.0
+MAX_RETRY_AFTER_SECONDS = 120.0
+
+MAX_ENTITIES_PER_REQUEST = 50
 
 DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 
@@ -30,6 +34,9 @@ WIKIDATA_PACING_LOCK_KEY = "wikidata:pacing:lock"
 PACING_LOCK_TIMEOUT_SECONDS = 2.0
 PACING_LOCK_POLL_SECONDS = 0.02
 
+SPARQL_ACCEPT = "application/sparql-results+json"
+JSON_ACCEPT = "application/json"
+
 
 @dataclass(slots=True)
 class WikidataClient:
@@ -37,7 +44,6 @@ class WikidataClient:
     max_retries: int = DEFAULT_MAX_RETRIES
     timeout: float = DEFAULT_TIMEOUT_SECONDS
     min_request_interval: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS
-    use_shared_pacing: bool = True
     _last_request_at: Optional[float] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -49,12 +55,8 @@ class WikidataClient:
                 "Wikimedia's user-agent policy)."
             )
         self.session.headers["User-Agent"] = user_agent
-        self.session.headers["Accept"] = "application/sparql-results+json"
         self.min_request_interval = getattr(
             settings, "WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
-        self.use_shared_pacing = getattr(
-            settings, "WIKIDATA_USE_SHARED_PACING", self.use_shared_pacing
         )
 
     def find_qid_by_tmdb_id(self, tmdb_id: int) -> Optional[str]:
@@ -74,17 +76,67 @@ class WikidataClient:
     def sparql(self, query: str) -> dict:
         return self._sparql(query)
 
-    def _sparql(self, query: str) -> dict:
-        return self._get(WIKIDATA_SPARQL_URL, params={"query": query, "format": "json"})
+    def get_entities(
+        self,
+        qids: list[str],
+        props: str,
+        languages: tuple[str, ...] = ("en", "es"),
+    ) -> dict[str, dict]:
+        entities: dict[str, dict] = {}
 
-    def _get(self, url: str, params: Optional[dict] = None) -> dict:
+        for start in range(0, len(qids), MAX_ENTITIES_PER_REQUEST):
+            chunk = qids[start : start + MAX_ENTITIES_PER_REQUEST]
+            payload = self._get(
+                WIKIDATA_API_URL,
+                params={
+                    "action": "wbgetentities",
+                    "ids": "|".join(chunk),
+                    "props": props,
+                    "languages": "|".join(languages),
+                    "format": "json",
+                },
+                accept=JSON_ACCEPT,
+            )
+
+            if "error" in payload:
+                raise WikidataError(f"Wikidata API error: {payload['error']}")
+
+            for qid, entity in (payload.get("entities") or {}).items():
+                if "missing" in entity:
+                    continue
+                entities[qid] = entity
+
+        return entities
+
+    def _sparql(self, query: str) -> dict:
+        return self._get(
+            WIKIDATA_SPARQL_URL,
+            params={"query": query, "format": "json"},
+            accept=SPARQL_ACCEPT,
+        )
+
+    def _get(
+        self,
+        url: str,
+        params: Optional[dict] = None,
+        accept: str = JSON_ACCEPT,
+    ) -> dict:
         attempt = 0
         while True:
             attempt += 1
             self._wait_for_pacing()
             self._last_request_at = time.monotonic()
             try:
-                response = self.session.get(url, params=params, timeout=self.timeout)
+                response = self.session.get(
+                    url,
+                    params=params,
+                    headers={"Accept": accept},
+                    timeout=self.timeout,
+                )
+            except requests.Timeout as exc:
+                raise WikidataUnavailableError(
+                    f"Wikidata timed out on '{url}': {exc}"
+                ) from exc
             except requests.RequestException as exc:
                 if attempt > self.max_retries:
                     raise WikidataUnavailableError(
@@ -99,9 +151,10 @@ class WikidataClient:
 
             if response.status_code == 429:
                 retry_after = self._retry_after_seconds(response)
-                if attempt > self.max_retries:
+                if attempt > self.max_retries or retry_after > MAX_RETRY_AFTER_SECONDS:
                     raise WikidataUnavailableError(
-                        f"Wikidata rate-limited '{url}' after {attempt} attempt(s)."
+                        f"Wikidata rate-limited '{url}' "
+                        f"(Retry-After={retry_after}s, attempt {attempt})."
                     )
                 time.sleep(retry_after)
                 continue
@@ -126,18 +179,7 @@ class WikidataClient:
     def _wait_for_pacing(self) -> None:
         if self.min_request_interval <= 0:
             return
-        if self.use_shared_pacing:
-            self._wait_for_pacing_shared()
-        else:
-            self._wait_for_pacing_local()
-
-    def _wait_for_pacing_local(self) -> None:
-        if self._last_request_at is None:
-            return
-        elapsed = time.monotonic() - self._last_request_at
-        remaining = self.min_request_interval - elapsed
-        if remaining > 0:
-            time.sleep(remaining)
+        self._wait_for_pacing_shared()
 
     def _wait_for_pacing_shared(self) -> None:
         while not cache.add(

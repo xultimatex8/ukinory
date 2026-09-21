@@ -6,10 +6,12 @@ import {
 } from "motion/react";
 import { Info, Star } from "lucide-react";
 import type { MovieRecommendation } from "../services/swipeSessions";
+import WhyRecommended from "./WhyRecommend";
 
 interface SwipeMovieCardProps {
   movie: MovieRecommendation;
   candidateId: string;
+  sessionId: string;
   isLoading: boolean;
   isSwiping: boolean;
   isRecordingSwipe: boolean;
@@ -35,6 +37,7 @@ const MOVIE_FADE_DURATION = 0.3;
 export default function SwipeMovieCard({
   movie,
   candidateId,
+  sessionId,
   isLoading,
   isSwiping,
   isRecordingSwipe,
@@ -293,6 +296,11 @@ export default function SwipeMovieCard({
                 ))}
               </div>
             )}
+
+            <WhyRecommended
+              sessionId={sessionId}
+              candidateId={candidateId}
+            />
           </div>
         </article>
       </motion.div>

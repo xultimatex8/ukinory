@@ -40,7 +40,16 @@ class TestSeedMovieCatalogDailyCommand:
     )
 
     def test_calls_the_light_pass_only(self):
-        with patch(self.TARGET, return_value=FAKE_SUMMARY) as mock_light:
+        with (
+            patch(
+                self.TARGET,
+                return_value=FAKE_SUMMARY,
+            ) as mock_light,
+            patch(
+                "apps.movies.management.commands.seed_movie_catalog_daily.settings.ENVIRONMENT",
+                "production",
+            ),
+        ):
             out = StringIO()
             call_command("seed_movie_catalog_daily", stdout=out)
 
@@ -48,7 +57,16 @@ class TestSeedMovieCatalogDailyCommand:
         assert "Discovered 10" in out.getvalue()
 
     def test_propagates_and_reports_tmdb_errors(self):
-        with patch(self.TARGET, side_effect=TMDbError("boom")):
+        with (
+            patch(
+                self.TARGET,
+                side_effect=TMDbError("boom"),
+            ),
+            patch(
+                "apps.movies.management.commands.seed_movie_catalog_daily.settings.ENVIRONMENT",
+                "production",
+            ),
+        ):
             err = StringIO()
             with pytest.raises(TMDbError):
                 call_command("seed_movie_catalog_daily", stderr=err)
@@ -63,7 +81,16 @@ class TestSeedMovieCatalogWeeklyCommand:
     )
 
     def test_calls_the_deep_pass_only(self):
-        with patch(self.TARGET, return_value=FAKE_SUMMARY) as mock_deep:
+        with (
+            patch(
+                self.TARGET,
+                return_value=FAKE_SUMMARY,
+            ) as mock_deep,
+            patch(
+                "apps.movies.management.commands.seed_movie_catalog_weekly.settings.ENVIRONMENT",
+                "production",
+            ),
+        ):
             out = StringIO()
             call_command("seed_movie_catalog_weekly", stdout=out)
 
@@ -71,7 +98,16 @@ class TestSeedMovieCatalogWeeklyCommand:
         assert "Discovered 10" in out.getvalue()
 
     def test_propagates_and_reports_tmdb_errors(self):
-        with patch(self.TARGET, side_effect=TMDbError("boom")):
+        with (
+            patch(
+                self.TARGET,
+                side_effect=TMDbError("boom"),
+            ),
+            patch(
+                "apps.movies.management.commands.seed_movie_catalog_weekly.settings.ENVIRONMENT",
+                "production",
+            ),
+        ):
             err = StringIO()
             with pytest.raises(TMDbError):
                 call_command("seed_movie_catalog_weekly", stderr=err)

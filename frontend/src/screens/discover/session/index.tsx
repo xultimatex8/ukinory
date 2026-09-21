@@ -184,6 +184,7 @@ export default function DiscoverSessionScreen() {
                     <SwipeMovieCard
                       movie={movie}
                       candidateId={candidateId}
+                      sessionId={id!}
                       isLoading={isLoading}
                       isSwiping={isSwiping}
                       isRecordingSwipe={isRecordingSwipe}

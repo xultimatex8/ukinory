@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
-from dataclasses import dataclass
-import time
 from typing import Callable, Optional
 
-from apps.movies.exceptions import TMDbError
+from apps.movies.exceptions import TMDbError, WikidataError
 from apps.movies.services.movie_cache import fetch_and_store_movies
 from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.services.tmdb_discovery import (
@@ -122,11 +120,18 @@ def _seed_from_pools(
 
         pool_sizes[name] = len(pool_ids)
         new_ids = set(pool_ids) - all_tmdb_ids
-        all_tmdb_ids.update(new_ids)
 
         if new_ids:
-            result = fetch_and_store_movies(new_ids)
+            try:
+                result = fetch_and_store_movies(new_ids, defer_embeddings=True)
+            except (WikidataError, TMDbError) as exc:
+                logger.warning(
+                    "Skipping enrichment of pool '%s' after an error: %s", name, exc
+                )
+                failed_pools.append(name)
+                continue
 
+            all_tmdb_ids.update(new_ids)
             all_stored.update(result.stored)
             already_stored += result.already_stored
             without_metadata += result.without_metadata

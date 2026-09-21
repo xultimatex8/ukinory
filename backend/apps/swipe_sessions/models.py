@@ -32,9 +32,7 @@ class SwipeSessionCandidate(BaseModel):
 
 class CandidateJustification(BaseModel):
     text = models.TextField(blank=True, default="")
-    language = models.CharField(max_length=10, blank=True, default="")
     model_version = models.CharField(max_length=100, blank=True, default="")
-    generated_at = models.DateTimeField(null=True, blank=True)
 
     candidate = models.OneToOneField(SwipeSessionCandidate, on_delete=models.CASCADE, related_name="justification")
 

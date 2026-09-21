@@ -26,7 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+DEBUG = ENVIRONMENT != "production"
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "backend"]
 
@@ -58,9 +59,40 @@ INSTALLED_APPS = [
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL") or "gemini-embedding-001"
-EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS") or 768)
 EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS") or 1.5)
-EMBEDDING_USE_SHARED_PACING = (os.getenv("EMBEDDING_USE_SHARED_PACING", "True") == "True")
+
+def _budget_units(name: str, default_eur_cents: float):
+    value = float(os.getenv(name) or default_eur_cents)
+    return int(round(value * 10_000)) if value > 0 else None
+
+
+EUR_PER_USD = float(os.getenv("EUR_PER_USD") or 0.90)
+
+API_PRICING_USD_PER_M_TOKENS = {
+    "embedding_sync": {"input": float(os.getenv("EMBEDDING_SYNC_PRICE_INPUT") or 0.15)},
+    "embedding_batch": {"input": float(os.getenv("EMBEDDING_BATCH_PRICE_INPUT") or 0.075)},
+    "gemini_generate": {
+        "input": float(os.getenv("JUSTIFICATION_PRICE_INPUT") or 0.25),
+        "output": float(os.getenv("JUSTIFICATION_PRICE_OUTPUT") or 1.50),
+    },
+}
+
+API_QUOTAS = {
+    "embedding_sync": {
+        "day": _budget_units("EMBEDDING_SYNC_BUDGET_DAILY_CENTS", 0.25),
+        "week": _budget_units("EMBEDDING_SYNC_BUDGET_WEEKLY_CENTS", 1.0),
+    },
+    "embedding_batch": {
+        "day": _budget_units("EMBEDDING_BATCH_BUDGET_DAILY_CENTS", 0.25),
+        "week": _budget_units("EMBEDDING_BATCH_BUDGET_WEEKLY_CENTS", 1.0),
+    },
+    "gemini_generate": {
+        "day": _budget_units("JUSTIFICATION_BUDGET_DAILY_CENTS", 0.25),
+        "week": _budget_units("JUSTIFICATION_BUDGET_WEEKLY_CENTS", 1.0),
+    },
+}
+
+EMBEDDING_BATCH_MAX_ITEMS = int(os.getenv("EMBEDDING_BATCH_MAX_ITEMS") or 2000)
 
 RECOMMENDATION_PROPAGATION_K = int(os.getenv("RECOMMENDATION_PROPAGATION_K") or 10)
 RECOMMENDATION_MIN_RATERS_FOR_CF = int(os.getenv("RECOMMENDATION_MIN_RATERS_FOR_CF") or 5)
@@ -69,17 +101,14 @@ RECOMMENDATION_MAX_SIMILAR_USERS = int(os.getenv("RECOMMENDATION_MAX_SIMILAR_USE
 RECOMMENDATION_DEFAULT_POOL_SIZE = int(os.getenv("RECOMMENDATION_DEFAULT_POOL_SIZE") or 20)
 RECOMMENDATION_DEFAULT_STRATEGY = (os.getenv("RECOMMENDATION_DEFAULT_STRATEGY") or "hybrid")
 RECOMMENDATION_DEFAULT_ALPHA = float(os.getenv("RECOMMENDATION_DEFAULT_ALPHA") or 0.5)
-RECOMMENDATION_RATING_SCALE_MAX = float(os.getenv("RECOMMENDATION_RATING_SCALE_MAX") or 5.0)
-RECOMMENDATION_JUSTIFICATION_MODEL = (os.getenv("RECOMMENDATION_JUSTIFICATION_MODEL") or "gemini-3.5-flash-lite")
-RECOMMENDATION_JUSTIFICATION_FALLBACK_MODEL = (os.getenv("RECOMMENDATION_JUSTIFICATION_FALLBACK_MODEL") or "gemini-3.1-flash-lite")
-RECOMMENDATION_JUSTIFICATION_LANGUAGE = (os.getenv("RECOMMENDATION_JUSTIFICATION_LANGUAGE") or "en")
+RECOMMENDATION_JUSTIFICATION_MODEL = (os.getenv("RECOMMENDATION_JUSTIFICATION_MODEL") or "gemini-3.1-flash-lite")
+RECOMMENDATION_JUSTIFICATION_MAX_OUTPUT_TOKENS = int(os.getenv("RECOMMENDATION_JUSTIFICATION_MAX_OUTPUT_TOKENS") or 80)
 RECOMMENDATION_MAX_HISTORY_MOVIES = int(os.getenv("RECOMMENDATION_MAX_HISTORY_MOVIES") or 5)
 
 POOL_REFILL_THRESHOLD = int(os.getenv("POOL_REFILL_THRESHOLD") or 5)
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("TMDB_MIN_REQUEST_INTERVAL_SECONDS") or 0.25)
-TMDB_USE_SHARED_PACING = os.getenv("TMDB_USE_SHARED_PACING", "True") == "True"
 TMDB_DISCOVER_MAX_PAGES = int(os.getenv("TMDB_DISCOVER_MAX_PAGES") or 5)
 TMDB_DISCOVER_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_MIN_VOTE_COUNT") or 50)
 TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS = int(os.getenv("TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS") or 90)
@@ -90,7 +119,6 @@ TMDB_DISCOVER_DECADE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_DECADE_MIN_VO
 TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT") or 50)
 
 WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS") or 1.0)
-WIKIDATA_USE_SHARED_PACING = os.getenv("WIKIDATA_USE_SHARED_PACING", "True") == "True"
 WIKIDATA_USER_AGENT = os.getenv("WIKIDATA_USER_AGENT")
 
 AUTH_USER_MODEL = "users.User"
@@ -114,6 +142,8 @@ SIMPLE_JWT = {
 CRONJOBS = [
     ("0 3 * * *", "django.core.management.call_command", ["seed_movie_catalog_daily"]),
     ("0 4 * * 0", "django.core.management.call_command", ["seed_movie_catalog_weekly"]),
+
+    ("30 * * * *", "django.core.management.call_command", ["sync_embedding_batches"]),
 
     ("* * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
 

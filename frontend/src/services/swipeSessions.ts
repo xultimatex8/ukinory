@@ -34,6 +34,11 @@ export interface SwipeResponse {
   action: string;
 }
 
+export interface JustificationResponse {
+  candidate_id: string;
+  justification: string;
+}
+
 export async function createIndividualSwipeSession(): Promise<SwipeSession> {
   const response = await apiFetch("/api/swipe-sessions/", {
     method: "POST",
@@ -71,6 +76,23 @@ export async function getSwipeRecommendation(
     `/api/swipe-sessions/${sessionId}/recommendation/`,
     {
       method: "GET",
+    },
+  );
+
+  return response.json();
+}
+
+export async function getRecommendationJustification(
+  sessionId: string,
+  candidateId: string,
+): Promise<JustificationResponse> {
+  const response = await apiFetch(
+    `/api/swipe-sessions/${sessionId}/candidates/${candidateId}/justification/`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
     },
   );
 

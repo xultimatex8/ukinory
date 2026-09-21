@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from unittest.mock import MagicMock
 
@@ -8,6 +9,8 @@ from google.genai.errors import APIError
 
 from apps.movies.exceptions import EmbeddingError, EmbeddingUnavailableError
 from apps.movies.services.embedding_client import (
+    DIMENSIONS,
+    EMBEDDING_PACING_LOCK_KEY,
     EMBEDDING_PACING_TIMESTAMP_KEY,
     EmbeddingClient,
 )
@@ -22,9 +25,7 @@ class FakeAPIError(APIError):
 @pytest.fixture(autouse=True)
 def embedding_api_key(settings):
     settings.GEMINI_API_KEY = "test-key"
-    settings.EMBEDDING_USE_SHARED_PACING = False
     settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 0.0
-    settings.EMBEDDING_DIMENSIONS = 3
     settings.EMBEDDING_MODEL = "gemini-embedding-test"
 
 
@@ -43,15 +44,16 @@ def no_real_sleep(monkeypatch):
 
 
 def make_client(**overrides) -> EmbeddingClient:
-    client = EmbeddingClient(**overrides)
-    return client
+    return EmbeddingClient(**overrides)
 
 
 def embed_response(values: list[float]):
     embedding = MagicMock()
     embedding.values = values
+
     response = MagicMock()
     response.embeddings = [embedding]
+
     return response
 
 
@@ -76,13 +78,6 @@ class TestConfiguration:
 
         assert client.model == "custom-embedding-model"
 
-    def test_reads_dimensions_from_settings(self, settings):
-        settings.EMBEDDING_DIMENSIONS = 256
-
-        client = EmbeddingClient()
-
-        assert client.dimensions == 256
-
     def test_reads_min_request_interval_from_settings(self, settings):
         settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 0.75
 
@@ -90,46 +85,42 @@ class TestConfiguration:
 
         assert client.min_request_interval == 0.75
 
-    def test_reads_use_shared_pacing_from_settings(self, settings):
-        settings.EMBEDDING_USE_SHARED_PACING = True
-
-        client = EmbeddingClient()
-
-        assert client.use_shared_pacing is True
-
 
 class TestEmbedHappyPath:
-    def test_returns_embedding_values(self, settings):
-        settings.EMBEDDING_DIMENSIONS = 4
+    def test_returns_normalized_embedding_values(self):
         client = make_client()
-        client._client.models.embed_content.return_value = embed_response(
-            [0.1, 0.2, 0.3, 0.4]
-        )
+        values = [0.1] * DIMENSIONS
+
+        client._client.models.embed_content.return_value = embed_response(values)
 
         result = client.embed("some movie text")
 
-        assert result == [0.1, 0.2, 0.3, 0.4]
+        expected_value = 1 / math.sqrt(DIMENSIONS)
+        assert result == pytest.approx(
+            [expected_value] * DIMENSIONS
+        )
 
-    def test_sends_configured_model_dimensions_and_text(self, settings):
+    def test_sends_configured_model_text(self, settings):
         settings.EMBEDDING_MODEL = "custom-model"
-        settings.EMBEDDING_DIMENSIONS = 3
+
         client = make_client()
         client._client.models.embed_content.return_value = embed_response(
-            [0.0, 0.0, 0.0]
+            [0.0] * DIMENSIONS
         )
 
         client.embed("some movie text")
 
         _, kwargs = client._client.models.embed_content.call_args
+
         assert kwargs["model"] == "custom-model"
-        assert kwargs["contents"] == "some movie text"
-        assert kwargs["config"] == {"output_dimensionality": 3}
+        assert kwargs["contents"] == ["some movie text"]
+        assert kwargs["config"] == {"output_dimensionality": DIMENSIONS}
 
 
 class TestEmbedValidation:
-    def test_dimension_mismatch_raises_embedding_error(self, settings):
-        settings.EMBEDDING_DIMENSIONS = 4
+    def test_dimension_mismatch_raises_embedding_error(self):
         client = make_client()
+
         client._client.models.embed_content.return_value = embed_response(
             [0.1, 0.2, 0.3]
         )
@@ -141,14 +132,20 @@ class TestEmbedValidation:
 class TestRateLimiting:
     def test_429_retries_and_then_succeeds(self):
         client = make_client(max_retries=2)
+        values = [1.0] * DIMENSIONS
+
         client._client.models.embed_content.side_effect = [
             FakeAPIError(429),
-            embed_response([1.0, 2.0, 3.0]),
+            embed_response(values),
         ]
 
         result = client.embed("text")
 
-        assert result == [1.0, 2.0, 3.0]
+        expected_value = 1 / math.sqrt(DIMENSIONS)
+
+        assert result == pytest.approx(
+            [expected_value] * DIMENSIONS
+        )
         assert client._client.models.embed_content.call_count == 2
 
     def test_429_exhausted_raises_unavailable(self):
@@ -164,14 +161,20 @@ class TestRateLimiting:
 class TestServerErrors:
     def test_5xx_retries_and_then_succeeds(self):
         client = make_client(max_retries=2)
+        values = [1.0] * DIMENSIONS
+
         client._client.models.embed_content.side_effect = [
             FakeAPIError(500),
-            embed_response([1.0, 1.0, 1.0]),
+            embed_response(values),
         ]
 
         result = client.embed("text")
 
-        assert result == [1.0, 1.0, 1.0]
+        expected_value = 1 / math.sqrt(DIMENSIONS)
+
+        assert result == pytest.approx(
+            [expected_value] * DIMENSIONS
+        )
         assert client._client.models.embed_content.call_count == 2
 
     def test_5xx_exhausted_raises_unavailable(self):
@@ -184,101 +187,57 @@ class TestServerErrors:
         assert client._client.models.embed_content.call_count == 2
 
 
-class TestLocalPacing:
-    def test_no_sleep_on_first_call(self, settings, monkeypatch):
-        settings.EMBEDDING_USE_SHARED_PACING = False
-        settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
-        client = make_client()
-        client._client.models.embed_content.return_value = embed_response(
-            [0.0, 0.0, 0.0]
-        )
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
-        client.embed("text")
-
-        assert sleeps == []
-
-    def test_second_call_sleeps_out_the_remaining_interval(self, settings, monkeypatch):
-        settings.EMBEDDING_USE_SHARED_PACING = False
-        settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
-        client = make_client()
-        client._client.models.embed_content.return_value = embed_response(
-            [0.0, 0.0, 0.0]
-        )
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
-        fake_clock = [100.0]
-        monkeypatch.setattr(time, "monotonic", lambda: fake_clock[0])
-
-        client.embed("first")
-        fake_clock[0] = 100.3
-        client.embed("second")
-
-        assert sleeps == [pytest.approx(0.7)]
-
-    def test_no_sleep_when_min_interval_is_zero(self, settings, monkeypatch):
-        settings.EMBEDDING_USE_SHARED_PACING = False
-        settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 0.0
-        client = make_client()
-        client._client.models.embed_content.return_value = embed_response(
-            [0.0, 0.0, 0.0]
-        )
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
-        client.embed("first")
-        client.embed("second")
-
-        assert sleeps == []
-
-
 @pytest.mark.django_db
 class TestSharedPacing:
     def test_stamps_timestamp_in_cache(self, settings):
         from django.core.cache import cache
 
-        settings.EMBEDDING_USE_SHARED_PACING = True
         settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
+
         client = make_client()
         client._client.models.embed_content.return_value = embed_response(
-            [0.0, 0.0, 0.0]
+            [0.0] * DIMENSIONS
         )
 
         client.embed("text")
 
         assert cache.get(EMBEDDING_PACING_TIMESTAMP_KEY) is not None
 
-    def test_second_call_sleeps_out_the_remaining_interval(self, settings, monkeypatch):
+    def test_second_call_sleeps_out_the_remaining_interval(
+        self,
+        settings,
+        monkeypatch,
+    ):
         from django.core.cache import cache
 
-        settings.EMBEDDING_USE_SHARED_PACING = True
         settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
+
         client = make_client()
         client._client.models.embed_content.return_value = embed_response(
-            [0.0, 0.0, 0.0]
+            [0.0] * DIMENSIONS
         )
 
         fake_clock = [1_000.0]
         monkeypatch.setattr(time, "time", lambda: fake_clock[0])
+
         sleeps: list[float] = []
         monkeypatch.setattr(time, "sleep", sleeps.append)
 
         client.embed("first")
+
         fake_clock[0] = 1_000.4
+
         client.embed("second")
 
         assert any(s == pytest.approx(0.6) for s in sleeps)
 
     def test_lock_is_released_even_if_request_raises(self, settings):
         from django.core.cache import cache
-        from apps.movies.services.embedding_client import EMBEDDING_PACING_LOCK_KEY
 
-        settings.EMBEDDING_USE_SHARED_PACING = True
         cache.clear()
+
         client = make_client(max_retries=0)
         client._client.models.embed_content.side_effect = FakeAPIError(500)
 

@@ -20,7 +20,8 @@ Strategy = Literal["content", "collaborative", "hybrid"]
 DEFAULT_POOL_SIZE = 20
 DEFAULT_STRATEGY: Strategy = "hybrid"
 DEFAULT_ALPHA = 0.5
-DEFAULT_RATING_SCALE_MAX = 5.0
+
+RATING_SCALE_MAX = 5.0
 
 
 def build_hybrid_pool(
@@ -56,16 +57,12 @@ def build_hybrid_pool(
         if (score := predict_cf_score(movie_id, matrix, similar_users)) is not None
     }
 
-    rating_scale_max = getattr(
-        settings, "RECOMMENDATION_RATING_SCALE_MAX", DEFAULT_RATING_SCALE_MAX
-    )
-
     results = []
     for candidate in content_candidates:
         direct = direct_cf_scores.get(candidate.movie.id)
         propagated = direct is None
         cf_raw = direct if direct is not None else propagate_cf_score(candidate.movie, direct_cf_scores)
-        cf_normalized = (cf_raw / rating_scale_max) if cf_raw is not None else None
+        cf_normalized = (cf_raw / RATING_SCALE_MAX) if cf_raw is not None else None
 
         if strategy == "collaborative":
             final = cf_normalized if cf_normalized is not None else 0.0

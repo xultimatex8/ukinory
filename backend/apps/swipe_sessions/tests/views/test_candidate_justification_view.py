@@ -12,10 +12,7 @@ from apps.swipe_sessions.views import SwipeSessionCandidateJustificationView
 
 @pytest.fixture
 def justification():
-    return Mock(
-        text="This movie matches your taste.",
-        language="en",
-    )
+    return Mock(text="This movie matches your taste.")
 
 
 @pytest.mark.django_db
@@ -43,7 +40,6 @@ class TestSwipeSessionCandidateJustificationView:
         assert response.data == {
             "candidate_id": candidate.id,
             "justification": "This movie matches your taste.",
-            "language": "en",
         }
 
     @pytest.mark.parametrize(
