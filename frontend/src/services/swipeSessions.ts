@@ -97,7 +97,7 @@ export async function recordSwipe(
   candidateId: string,
   action: "SKIP" | "WATCHLIST",
 ): Promise<void> {
-  const response = await apiFetch(
+  await apiFetch(
     `/api/swipe-sessions/${sessionId}/swipe/`,
     {
       method: "POST",
@@ -110,8 +110,6 @@ export async function recordSwipe(
       }),
     },
   );
-
-  return response.json();
 }
 
 export async function endSwipeSession(
