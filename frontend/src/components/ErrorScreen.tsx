@@ -1,4 +1,5 @@
 import { AlertCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface ErrorScreenProps {
   title?: string;
@@ -15,7 +16,9 @@ export default function ErrorScreen({
   onRetry,
   onBack,
 }: ErrorScreenProps) {
-  const handleButtonClick = onRetry ?? onBack;
+  const navigate = useNavigate();
+
+  const handleBack = onBack ?? (() => navigate("/"));
 
   return (
     <main className="min-h-screen bg-background text-text">
@@ -32,15 +35,25 @@ export default function ErrorScreen({
           {message}
         </p>
 
-        {handleButtonClick && (
+        <div className="mt-6 flex items-center gap-3">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="flex cursor-pointer items-center justify-center border border-primary px-5 py-2.5 text-sm font-medium text-primary transition hover:bg-primary hover:text-background"
+            >
+              {buttonText}
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={handleButtonClick}
-            className="mt-6 flex cursor-pointer items-center justify-center border border-primary px-5 py-2.5 text-sm font-medium text-primary transition hover:bg-primary hover:text-background"
+            onClick={handleBack}
+            className="flex cursor-pointer items-center justify-center border border-border px-5 py-2.5 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text"
           >
-            {buttonText}
+            Back to home
           </button>
-        )}
+        </div>
       </div>
     </main>
   );
