@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { getRecommendationJustification } from "../services/swipeSessions";
 
 interface WhyRecommendedProps {
@@ -7,17 +8,30 @@ interface WhyRecommendedProps {
   candidateId: string;
 }
 
-type Status = "idle" | "loading" | "loaded" | "error";
-
 export default function WhyRecommended({
   sessionId,
   candidateId,
 }: WhyRecommendedProps) {
-  const [status, setStatus] = useState<Status>("idle");
-  const [text, setText] = useState("");
+  const [showJustification, setShowJustification] = useState(false);
+  const [justification, setJustification] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleReveal = async () => {
-    setStatus("loading");
+  const handleToggle = async () => {
+    if (isLoading) {
+      return;
+    }
+
+    if (showJustification) {
+      setShowJustification(false);
+      return;
+    }
+
+    if (justification) {
+      setShowJustification(true);
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       const result = await getRecommendationJustification(
@@ -25,49 +39,71 @@ export default function WhyRecommended({
         candidateId,
       );
 
-      if (!result.justification) {
-        setStatus("error");
-        return;
+      if (result.justification) {
+        setJustification(result.justification);
+        setShowJustification(true);
       }
-
-      setText(result.justification);
-      setStatus("loaded");
-    } catch {
-      setStatus("error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  if (status === "loaded") {
-    return (
-      <section className="mt-4 border-t border-white/20 pt-3">
-        <h4 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
-          <Sparkles size={11} />
-          Why this movie
-        </h4>
-
-        <p className="mt-1.5 text-xs leading-relaxed text-white/70">
-          {text}
-        </p>
-      </section>
-    );
-  }
-
   return (
-    <div>
+    <div className="mt-4 border-t border-white/20 pt-3">
       <button
         type="button"
-        onClick={() => void handleReveal()}
-        disabled={status === "loading"}
-        className="flex w-full cursor-pointer items-center justify-center gap-2 border border-dashed border-primary/50 bg-primary/5 px-3 py-2.5 text-xs font-semibold text-primary transition hover:border-primary hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60"
+        onPointerDown={(event) =>
+          event.stopPropagation()
+        }
+        onClick={(event) => {
+          event.stopPropagation();
+          void handleToggle();
+        }}
+        disabled={isLoading}
+        className="flex cursor-pointer items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-primary transition-colors hover:text-sky-300 disabled:cursor-auto disabled:opacity-60"
       >
-        <Sparkles size={14} />
-        {status === "loading" ? "Thinking..." : "Wanna know why?"}
+        <Sparkles size={11} />
+        {isLoading
+          ? "Thinking..."
+          : showJustification
+            ? "Hide explanation"
+            : "Why this movie"}
       </button>
 
-      {status === "error" && (
-        <p className="mt-2 text-center text-xs text-red-400">
-          Couldn't load the explanation right now. Tap to try again.
-        </p>
+      {showJustification && (
+        <div className="mt-1.5 text-xs leading-relaxed text-white/70">
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => (
+                <p className="mb-2 last:mb-0">
+                  {children}
+                </p>
+              ),
+              ul: ({ children }) => (
+                <ul className="mb-2 list-disc space-y-1 pl-4 last:mb-0">
+                  {children}
+                </ul>
+              ),
+              ol: ({ children }) => (
+                <ol className="mb-2 list-decimal space-y-1 pl-4 last:mb-0">
+                  {children}
+                </ol>
+              ),
+              strong: ({ children }) => (
+                <strong className="font-semibold text-white/90">
+                  {children}
+                </strong>
+              ),
+              em: ({ children }) => (
+                <em className="italic text-white/90">
+                  {children}
+                </em>
+              ),
+            }}
+          >
+            {justification}
+          </ReactMarkdown>
+        </div>
       )}
     </div>
   );
