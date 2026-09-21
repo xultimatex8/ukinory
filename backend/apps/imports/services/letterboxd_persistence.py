@@ -21,6 +21,7 @@ from apps.movies.services.movie_cache import (
 )
 from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.services.tmdb_matching import match_movie
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ def _merge_rating_sources(csvs: Mapping[str, list]) -> dict[FilmKey, _RatingEntr
 
 
 def _needs_embedding(movie: Movie) -> bool:
-    return movie.embedding is None
+    return movie.embedding is None and movie.embedding_batch_id is None
 
 
 def _match_films(
@@ -250,25 +251,29 @@ def _collect_film_keys(csvs: Mapping[str, list]) -> set[FilmKey]:
     return keys
 
 
-@transaction.atomic
-def persist_letterboxd_records(user, result: ExtractionResult
+def persist_letterboxd_records(
+    user, result: ExtractionResult
 ) -> tuple[dict[str, int], MovieMatchSummary]:
     client = TMDbClient()
 
     film_keys = _collect_film_keys(result.csvs)
-    priority_keys = {
-        key
-        for key, entry in _merge_rating_sources(result.csvs).items()
-        if entry.rating is not None
-    }
+    merged = _merge_rating_sources(result.csvs)
+    rated = sorted(
+        (k for k, e in merged.items() if e.rating is not None),
+        key=lambda k: (merged[k].liked, merged[k].rating),
+        reverse=True,
+    )
+    priority_keys = set(rated[: settings.RECOMMENDATION_MAX_HISTORY_MOVIES])
+
     movie_matches, movie_summary = _match_films(client, film_keys, priority_keys)
 
-    persisted: dict[str, int] = {
-        "ratings": persist_ratings(user, result.csvs, movie_matches)
-    }
-    if WATCHLIST_CSV in result.csvs:
-        persisted["watchlist"] = persist_watchlist(
-            user, result.csvs[WATCHLIST_CSV], movie_matches
-        )
+    with transaction.atomic():
+        persisted: dict[str, int] = {
+            "ratings": persist_ratings(user, result.csvs, movie_matches)
+        }
+        if WATCHLIST_CSV in result.csvs:
+            persisted["watchlist"] = persist_watchlist(
+                user, result.csvs[WATCHLIST_CSV], movie_matches
+            )
 
     return persisted, movie_summary
