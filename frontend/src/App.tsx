@@ -14,6 +14,17 @@ import ProfileScreen from "./screens/profile";
 import GuestOnlyRoute from "./components/GuestOnlyRoute";
 import Navbar from "./components/NavBar";
 import EditProfileScreen from "./screens/profile/edit";
+import Footer from "./components/Footer";
+import LegalScreen from "./screens/legal";
+
+function PublicLayout() {
+  return (
+    <>
+      <Outlet />
+      <Footer />
+    </>
+  );
+}
 
 function AppLayout() {
   const accessToken = localStorage.getItem("access_token");
@@ -27,6 +38,7 @@ function AppLayout() {
     <>
       <Navbar />
       <Outlet />
+      <Footer />
     </>
   );
 }
@@ -35,10 +47,14 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<PublicOnlyRoute />}>
-          <Route path="/auth" element={<AuthScreen />} />
-          <Route path="/login" element={<LoginScreen />} />
-          <Route path="/register" element={<RegisterScreen />} />
+        <Route element={<PublicLayout />}>
+          <Route element={<PublicOnlyRoute />}>
+            <Route path="/auth" element={<AuthScreen />} />
+            <Route path="/login" element={<LoginScreen />} />
+            <Route path="/register" element={<RegisterScreen />} />
+          </Route>
+
+          <Route path="/legal" element={<LegalScreen />} />
         </Route>
 
         <Route element={<AppLayout />}>
