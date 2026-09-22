@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMotionValue } from "motion/react";
-import { Heart, LogOut, X } from "lucide-react";
+import { Check, Heart, LogOut, X } from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
 
 import EndSessionModal from "../../../components/EndSessionModal";
 import ErrorScreen from "../../../components/ErrorScreen";
 import MovieInfoModal from "../../../components/MovieInfoModal";
 import MovieInformation from "../../../components/MovieInformation";
+import RateMovieModal from "../../../components/RateMovieModal";
 import { getStreamingCountries } from "../../../components/StreamingProviders";
 import SwipeInstructions from "../../../components/SwipeInstructions";
 import SwipeMovieCard from "../../../components/SwipeMovieCard";
@@ -36,6 +37,7 @@ export default function DiscoverSessionScreen() {
     useState<SwipeDirection>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [showEndSessionModal, setShowEndSessionModal] = useState(false);
+  const [showRateModal, setShowRateModal] = useState(false);
 
   const dragX = useMotionValue(0);
   const dragRotate = useMotionValue(0);
@@ -116,6 +118,19 @@ export default function DiscoverSessionScreen() {
   const handleOpenEndSessionModal = () => {
     clearEndSessionError();
     setShowEndSessionModal(true);
+  };
+
+  const handleOpenRateModal = () => {
+    setShowRateModal(true);
+  };
+
+  const handleCloseRateModal = () => {
+    setShowRateModal(false);
+  };
+
+  const handleMovieRated = () => {
+    setShowRateModal(false);
+    void handleSwipe("left");
   };
 
   const handleCloseEndSessionModal = () => {
@@ -207,7 +222,7 @@ export default function DiscoverSessionScreen() {
                 <AppLogo />
               </div>
 
-              <div className="w-90 xl:w-full xl:max-w-120">
+              <div className="w-full max-w-90 xl:w-full xl:max-w-120">
                 <div className="relative h-130 w-full xl:h-[min(calc(100vh-190px),680px)]">
                   {movie && candidateId ? (
                     <SwipeMovieCard
@@ -239,7 +254,7 @@ export default function DiscoverSessionScreen() {
                 </div>
 
                 <div className="mt-6 flex flex-col items-center sm:mt-7">
-                  <div className="flex items-center gap-4">
+                  <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:items-center sm:justify-center sm:gap-4">
                     <button
                       type="button"
                       disabled={
@@ -252,10 +267,34 @@ export default function DiscoverSessionScreen() {
                       }
                       onClick={() => void handleSwipe("left")}
                       aria-label="Skip"
-                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-red-400/30 bg-red-400/5 text-sm font-medium text-red-400 transition hover:border-red-400/60 hover:bg-red-400/10 disabled:cursor-auto disabled:opacity-40"
+                      className="flex h-12 min-w-0 cursor-pointer items-center justify-center gap-1.5 border
+                        border-red-400/30 bg-red-400/5 px-2 text-xs font-medium text-red-400 transition
+                        hover:border-red-400/60 hover:bg-red-400/10 disabled:cursor-auto disabled:opacity-40
+                        sm:w-28 sm:gap-2 sm:px-0 sm:text-sm"
                     >
-                      <X size={19} strokeWidth={1.8} />
-                      Skip
+                      <X size={18} strokeWidth={1.8} />
+                      <span className="truncate">Skip</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        isLoading ||
+                        isSwiping ||
+                        isRecordingSwipe ||
+                        isPromotingBackCard ||
+                        !movie ||
+                        !candidateId
+                      }
+                      onClick={handleOpenRateModal}
+                      aria-label="Mark as watched"
+                      className="flex h-12 min-w-0 cursor-pointer items-center justify-center gap-1.5 border
+                        border-emerald-400/50 bg-emerald-400/5 px-2 text-xs font-medium text-emerald-400 transition
+                        hover:border-emerald-400 hover:bg-emerald-400 hover:text-background disabled:cursor-auto disabled:opacity-40
+                        sm:w-28 sm:gap-2 sm:px-0 sm:text-sm"
+                    >
+                      <Check size={16} strokeWidth={1.8} />
+                      <span className="truncate">Watched</span>
                     </button>
 
                     <button
@@ -270,10 +309,13 @@ export default function DiscoverSessionScreen() {
                       }
                       onClick={() => void handleSwipe("right")}
                       aria-label="Add to watchlist"
-                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-primary/50 bg-primary/5 text-sm font-medium text-primary transition hover:border-primary hover:bg-primary hover:text-background disabled:cursor-auto disabled:opacity-40"
+                      className="flex h-12 min-w-0 cursor-pointer items-center justify-center gap-1.5 border
+                        border-primary/50 bg-primary/5 px-2 text-xs font-medium text-primary transition
+                        hover:border-primary hover:bg-primary hover:text-background disabled:cursor-auto disabled:opacity-40
+                        sm:w-28 sm:gap-2 sm:px-0 sm:text-sm"
                     >
                       <Heart size={18} strokeWidth={1.8} />
-                      Watchlist
+                      <span className="truncate">Watchlist</span>
                     </button>
                   </div>
 
@@ -316,6 +358,15 @@ export default function DiscoverSessionScreen() {
           onClose={handleCloseEndSessionModal}
           onGoHome={handleGoHome}
           onDownloadCsv={handleDownloadCsv}
+        />
+      )}
+
+      {showRateModal && movie && (
+        <RateMovieModal
+          movieId={movie.tmdb_id}
+          movieTitle={movie.title}
+          onClose={handleCloseRateModal}
+          onSaved={handleMovieRated}
         />
       )}
     </main>
