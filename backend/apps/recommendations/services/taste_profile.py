@@ -10,6 +10,8 @@ from apps.library.models import Rating
 logger = logging.getLogger(__name__)
 
 MIN_RATING_TO_COUNT = 0.5
+RATING_BASELINE = 2.0
+LIKED_BOOST = 1.25
 
 
 def build_taste_profile(user) -> Optional[np.ndarray]:
@@ -28,7 +30,13 @@ def build_taste_profile(user) -> Optional[np.ndarray]:
 
     for rating in ratings:
         vectors.append(np.array(rating.movie.embedding, dtype=np.float32))
-        weights.append(rating.rating)
+
+        if rating.liked:
+            weight = max(rating.rating - RATING_BASELINE, 0.0) + LIKED_BOOST
+        else:
+            weight = rating.rating - RATING_BASELINE
+
+        weights.append(weight)
 
     if not vectors:
         logger.info("User %s has no rated+embedded movies; no taste profile.", user.pk)
@@ -37,5 +45,36 @@ def build_taste_profile(user) -> Optional[np.ndarray]:
     weights_arr = np.array(weights, dtype=np.float32)
     stacked = np.vstack(vectors)
 
-    profile = np.average(stacked, axis=0, weights=weights_arr)
-    return profile
+    if np.all(weights_arr == 0):
+        return None
+
+    positive_mask = weights_arr > 0
+    negative_mask = weights_arr < 0
+
+    if positive_mask.any() and negative_mask.any():
+        positive_profile = np.average(
+            stacked[positive_mask],
+            axis=0,
+            weights=weights_arr[positive_mask],
+        )
+        negative_profile = np.average(
+            stacked[negative_mask],
+            axis=0,
+            weights=np.abs(weights_arr[negative_mask]),
+        )
+
+        profile = positive_profile - negative_profile
+    elif positive_mask.any():
+        profile = np.average(
+            stacked[positive_mask],
+            axis=0,
+            weights=weights_arr[positive_mask],
+        )
+    else:
+        profile = -np.average(
+            stacked[negative_mask],
+            axis=0,
+            weights=np.abs(weights_arr[negative_mask]),
+        )
+
+    return profile.astype(np.float32)
