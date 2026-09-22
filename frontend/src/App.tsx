@@ -14,6 +14,7 @@ import ProfileScreen from "./screens/profile";
 import GuestOnlyRoute from "./components/GuestOnlyRoute";
 import Navbar from "./components/NavBar";
 import EditProfileScreen from "./screens/profile/edit";
+import Footer from "./components/Footer";
 
 function AppLayout() {
   const accessToken = localStorage.getItem("access_token");
@@ -27,6 +28,7 @@ function AppLayout() {
     <>
       <Navbar />
       <Outlet />
+      <Footer />
     </>
   );
 }
