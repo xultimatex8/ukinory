@@ -32,14 +32,14 @@ export default function Footer() {
             </h2>
 
             <Link
-              to="/terms"
+              to="/legal?type=terms"
               className="w-fit text-xs text-text-muted transition hover:text-text"
             >
               Terms & Conditions
             </Link>
 
             <Link
-              to="/privacy"
+              to="/legal?type=privacy"
               className="w-fit text-xs text-text-muted transition hover:text-text"
             >
               Privacy Policy
