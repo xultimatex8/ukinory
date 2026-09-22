@@ -76,7 +76,10 @@ export default function EditProfileScreen() {
         setIsLoading(true);
         setProfileError(null);
 
-        const currentUser = await getCurrentUser();
+        const [currentUser] = await Promise.all([
+          getCurrentUser(),
+          new Promise((resolve) => setTimeout(resolve, 350)),
+        ]);
 
         if (currentUser.is_guest) {
           navigate("/profile", { replace: true });
@@ -165,7 +168,7 @@ export default function EditProfileScreen() {
     return (
       <main className="min-h-screen bg-background text-text">
         <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-6 py-8">
-          <section className="flex flex-1 flex-col justify-center">
+          <section className="flex flex-1 flex-col">
             <AppHeader
               title="Edit your profile"
               description="Manage your account information and password."
@@ -335,7 +338,7 @@ export default function EditProfileScreen() {
                 <button
                   type="submit"
                   disabled={isSavingProfile}
-                  className="cursor-pointer bg-primary px-5 py-3 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  className="cursor-pointer bg-primary px-5 py-3 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-auto disabled:opacity-50"
                 >
                   {isSavingProfile ? "Saving..." : "Save changes"}
                 </button>
@@ -539,7 +542,7 @@ export default function EditProfileScreen() {
                 <button
                   type="submit"
                   disabled={isChangingPassword}
-                  className="cursor-pointer bg-primary px-5 py-3 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  className="cursor-pointer bg-primary px-5 py-3 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-auto disabled:opacity-50"
                 >
                   {isChangingPassword
                     ? "Changing password..."

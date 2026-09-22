@@ -13,7 +13,7 @@ def api_client():
 
 @pytest.mark.django_db
 class TestUserHasFilmDataView:
-    url = "/api/users/has-film-data/"
+    url = "/api/library/has-film-data/"
 
     def test_returns_false_when_user_has_no_film_data(
         self,

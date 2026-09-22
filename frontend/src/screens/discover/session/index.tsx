@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMotionValue } from "motion/react";
-import { Heart, LogOut, X } from "lucide-react";
+import { Check, Heart, LogOut, X } from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
 
 import EndSessionModal from "../../../components/EndSessionModal";
 import ErrorScreen from "../../../components/ErrorScreen";
 import MovieInfoModal from "../../../components/MovieInfoModal";
 import MovieInformation from "../../../components/MovieInformation";
+import RateMovieModal from "../../../components/RateMovieModal";
 import { getStreamingCountries } from "../../../components/StreamingProviders";
 import SwipeInstructions from "../../../components/SwipeInstructions";
 import SwipeMovieCard from "../../../components/SwipeMovieCard";
@@ -14,6 +15,7 @@ import { useEndSwipeSession } from "../../../hooks/useEndSwipeSession";
 import { useSwipeActions } from "../../../hooks/useSwipeActions";
 import { useSwipeRecommendation } from "../../../hooks/useSwipeRecommendation";
 import { useSwipeSessionLifecycle } from "../../../hooks/useSwipeSessionLifecycle";
+import AppLogo from "../../../components/AppLogo";
 
 type SwipeDirection = "left" | "right" | null;
 
@@ -35,6 +37,7 @@ export default function DiscoverSessionScreen() {
     useState<SwipeDirection>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [showEndSessionModal, setShowEndSessionModal] = useState(false);
+  const [showRateModal, setShowRateModal] = useState(false);
 
   const dragX = useMotionValue(0);
   const dragRotate = useMotionValue(0);
@@ -46,6 +49,8 @@ export default function DiscoverSessionScreen() {
     candidateId,
     isLoading,
     finished,
+    sessionNotFound,
+    sessionFinished,
     error,
     loadRecommendation,
     setMovie,
@@ -115,6 +120,19 @@ export default function DiscoverSessionScreen() {
     setShowEndSessionModal(true);
   };
 
+  const handleOpenRateModal = () => {
+    setShowRateModal(true);
+  };
+
+  const handleCloseRateModal = () => {
+    setShowRateModal(false);
+  };
+
+  const handleMovieRated = () => {
+    setShowRateModal(false);
+    void handleSwipe("left");
+  };
+
   const handleCloseEndSessionModal = () => {
     if (isEndingSession) return;
 
@@ -124,11 +142,28 @@ export default function DiscoverSessionScreen() {
 
   const streamingCountries = getStreamingCountries(movie);
 
+  if (sessionNotFound) {
+    return (
+      <ErrorScreen
+        message="This swipe session does not exist or is no longer available."
+        buttonText="Back to home"
+      />
+    );
+  }
+
+  if (sessionFinished) {
+    return (
+      <ErrorScreen
+        message="This swipe session has already finished."
+        buttonText="Back to home"
+      />
+    );
+  }
+
   if (error) {
     return (
       <ErrorScreen
         message={error}
-        buttonText="Try again"
         onRetry={handleRetry}
       />
     );
@@ -143,8 +178,7 @@ export default function DiscoverSessionScreen() {
           </h2>
 
           <p className="mt-3 max-w-md text-sm leading-relaxed text-text-muted">
-            You've gone through all the movies currently available for this
-            session.
+            You've gone through all the movies currently available.
           </p>
 
           <button
@@ -173,13 +207,23 @@ export default function DiscoverSessionScreen() {
   return (
     <main className="min-h-screen overflow-hidden bg-background text-text">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8 xl:px-10">
-        <div className="flex flex-1 items-center justify-center">
-          <div className="flex w-full items-center justify-center gap-8 lg:gap-14 xl:gap-20">
-            <SwipeInstructions />
+        <div className="flex flex-1 items-start justify-center pt-6 xl:pt-1 2xl:pt-6">
+          <div className="flex w-full items-center justify-center gap-8 lg:gap-14 2xl:gap-20">
+            <div className="hidden xl:flex flex-col items-center">
+              <div className="hidden 2xl:flex mb-8">
+                <AppLogo />
+              </div>
+
+              <SwipeInstructions />
+            </div>
 
             <div className="flex min-w-0 flex-col items-center xl:flex-1">
-              <div className="w-90 sm:w-100 md:w-110 xl:w-full xl:max-w-120">
-                <div className="relative h-130 w-full sm:h-150 md:h-160 xl:h-[min(calc(100vh-190px),680px)]">
+              <div className="mb-10 2xl:hidden">
+                <AppLogo />
+              </div>
+
+              <div className="w-full max-w-90 xl:w-full xl:max-w-120">
+                <div className="relative h-130 w-full xl:h-[min(calc(100vh-190px),680px)]">
                   {movie && candidateId ? (
                     <SwipeMovieCard
                       movie={movie}
@@ -210,7 +254,7 @@ export default function DiscoverSessionScreen() {
                 </div>
 
                 <div className="mt-6 flex flex-col items-center sm:mt-7">
-                  <div className="flex items-center gap-4">
+                  <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:items-center sm:justify-center sm:gap-4">
                     <button
                       type="button"
                       disabled={
@@ -223,10 +267,34 @@ export default function DiscoverSessionScreen() {
                       }
                       onClick={() => void handleSwipe("left")}
                       aria-label="Skip"
-                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-red-400/30 bg-red-400/5 text-sm font-medium text-red-400 transition hover:border-red-400/60 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex h-12 min-w-0 cursor-pointer items-center justify-center gap-1.5 border
+                        border-red-400/30 bg-red-400/5 px-2 text-xs font-medium text-red-400 transition
+                        hover:border-red-400/60 hover:bg-red-400/10 disabled:cursor-auto disabled:opacity-40
+                        sm:w-28 sm:gap-2 sm:px-0 sm:text-sm"
                     >
-                      <X size={19} strokeWidth={1.8} />
-                      Skip
+                      <X size={18} strokeWidth={1.8} />
+                      <span className="truncate">Skip</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        isLoading ||
+                        isSwiping ||
+                        isRecordingSwipe ||
+                        isPromotingBackCard ||
+                        !movie ||
+                        !candidateId
+                      }
+                      onClick={handleOpenRateModal}
+                      aria-label="Mark as watched"
+                      className="flex h-12 min-w-0 cursor-pointer items-center justify-center gap-1.5 border
+                        border-emerald-400/50 bg-emerald-400/5 px-2 text-xs font-medium text-emerald-400 transition
+                        hover:border-emerald-400 hover:bg-emerald-400 hover:text-background disabled:cursor-auto disabled:opacity-40
+                        sm:w-28 sm:gap-2 sm:px-0 sm:text-sm"
+                    >
+                      <Check size={16} strokeWidth={1.8} />
+                      <span className="truncate">Watched</span>
                     </button>
 
                     <button
@@ -241,10 +309,13 @@ export default function DiscoverSessionScreen() {
                       }
                       onClick={() => void handleSwipe("right")}
                       aria-label="Add to watchlist"
-                      className="flex h-12 w-28 cursor-pointer items-center justify-center gap-2 border border-primary/50 bg-primary/5 text-sm font-medium text-primary transition hover:border-primary hover:bg-primary hover:text-background disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex h-12 min-w-0 cursor-pointer items-center justify-center gap-1.5 border
+                        border-primary/50 bg-primary/5 px-2 text-xs font-medium text-primary transition
+                        hover:border-primary hover:bg-primary hover:text-background disabled:cursor-auto disabled:opacity-40
+                        sm:w-28 sm:gap-2 sm:px-0 sm:text-sm"
                     >
                       <Heart size={18} strokeWidth={1.8} />
-                      Watchlist
+                      <span className="truncate">Watchlist</span>
                     </button>
                   </div>
 
@@ -256,6 +327,10 @@ export default function DiscoverSessionScreen() {
                     <LogOut size={14} strokeWidth={1.7} />
                     End session
                   </button>
+
+                  <div className="mt-6 xl:hidden">
+                    <SwipeInstructions />
+                  </div>
                 </div>
               </div>
             </div>
@@ -283,6 +358,15 @@ export default function DiscoverSessionScreen() {
           onClose={handleCloseEndSessionModal}
           onGoHome={handleGoHome}
           onDownloadCsv={handleDownloadCsv}
+        />
+      )}
+
+      {showRateModal && movie && (
+        <RateMovieModal
+          movieId={movie.tmdb_id}
+          movieTitle={movie.title}
+          onClose={handleCloseRateModal}
+          onSaved={handleMovieRated}
         />
       )}
     </main>

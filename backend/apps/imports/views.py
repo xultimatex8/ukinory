@@ -62,17 +62,7 @@ class LetterboxdImportView(APIView):
             )
 
         return Response(
-            {
-                "userId": request.user.id,
-                "imported": summary.imported,
-                "missing": summary.missing,
-                "movies": {
-                    "matched": summary.movies.matched,
-                    "withoutMetadata": summary.movies.without_metadata,
-                    "unmatched": summary.movies.unmatched,
-                    "tmdbError": summary.movies.tmdb_error,
-                },
-            },
+            {"missing": summary.missing},
             status=status.HTTP_200_OK,
         )
 

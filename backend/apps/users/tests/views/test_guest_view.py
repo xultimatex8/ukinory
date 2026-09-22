@@ -13,4 +13,4 @@ def test_guest_view_creates_user_and_returns_tokens(api_client):
     assert response.data["user"]["is_guest"] is True
     assert "access" in response.data
     assert "refresh" in response.data
-    assert User.objects.filter(pk=response.data["user"]["id"]).exists()
+    assert User.objects.filter(is_guest=True).count() == 1

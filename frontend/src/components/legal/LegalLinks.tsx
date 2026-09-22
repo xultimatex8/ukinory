@@ -5,7 +5,7 @@ import type { LegalDocument, LegalDocumentType } from "../../services/legal";
 
 const linkClass =
   "cursor-pointer font-medium text-primary transition " +
-  "hover:text-primary-hover disabled:cursor-not-allowed disabled:opacity-50";
+  "hover:text-primary-hover disabled:cursor-auto disabled:opacity-50";
 
 interface LegalLinksProps {
   documents: LegalDocument[] | null;

@@ -28,14 +28,7 @@ export interface RecommendationResponse {
   movie: MovieRecommendation | null;
 }
 
-export interface SwipeResponse {
-  id: string;
-  candidate_id: string;
-  action: string;
-}
-
 export interface JustificationResponse {
-  candidate_id: string;
   justification: string;
 }
 
@@ -103,8 +96,8 @@ export async function recordSwipe(
   sessionId: string,
   candidateId: string,
   action: "SKIP" | "WATCHLIST",
-): Promise<SwipeResponse> {
-  const response = await apiFetch(
+): Promise<void> {
+  await apiFetch(
     `/api/swipe-sessions/${sessionId}/swipe/`,
     {
       method: "POST",
@@ -117,8 +110,6 @@ export async function recordSwipe(
       }),
     },
   );
-
-  return response.json();
 }
 
 export async function endSwipeSession(

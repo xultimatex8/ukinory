@@ -9,29 +9,6 @@ from apps.movies.models import Movie
 from apps.swipe_sessions.models import Swipe, SwipeSession, SwipeSessionCandidate
 
 
-User = get_user_model()
-
-
-@pytest.fixture
-def user(db):
-    return User.objects.create_user(
-        email="test@example.com",
-        username="testuser",
-        password="TestPassword123!",
-        is_guest=False,
-    )
-
-
-@pytest.fixture
-def another_user(db):
-    return User.objects.create_user(
-        email="another@example.com",
-        username="anotheruser",
-        password="TestPassword123!",
-        is_guest=False,
-    )
-
-
 @pytest.fixture
 def movie(db):
     return Movie.objects.create(

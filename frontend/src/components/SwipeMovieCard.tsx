@@ -148,7 +148,9 @@ export default function SwipeMovieCard({
             type="button"
             disabled
             aria-label="More information"
-            className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white backdrop-blur-sm disabled:cursor-not-allowed disabled:opacity-100 sm:right-5 sm:top-5 sm:h-11 sm:w-11 lg:hidden"
+            className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border
+              border-white/30 bg-black/50 text-white backdrop-blur-sm disabled:cursor-auto disabled:opacity-100 
+              sm:right-5 sm:top-5 sm:h-11 sm:w-11 lg:hidden"
           >
             <Info size={20} />
           </button>
@@ -251,7 +253,7 @@ export default function SwipeMovieCard({
               onShowInfo();
             }}
             aria-label="More information"
-            className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white backdrop-blur-sm transition hover:border-white hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50 sm:right-5 sm:top-5 sm:h-11 sm:w-11 lg:hidden"
+            className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white backdrop-blur-sm transition hover:border-white hover:bg-black/70 disabled:cursor-auto disabled:opacity-50 sm:right-5 sm:top-5 sm:h-11 sm:w-11 lg:hidden"
           >
             <Info size={20} />
           </button>

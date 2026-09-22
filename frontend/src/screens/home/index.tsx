@@ -44,8 +44,8 @@ const features = [
 export default function HomeScreen() {
   return (
     <main className="min-h-screen bg-background text-text">
-      <div className="mx-auto min-h-screen w-full max-w-5xl px-6 py-10">
-        <section className="pt-16">
+      <div className="mx-auto min-h-screen w-full max-w-5xl px-6 pt-8">
+        <section>
           <AppHeader
             title="What do you want to watch?"
             description="Discover movies tailored to your taste or find something to watch together."

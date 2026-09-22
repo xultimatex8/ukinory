@@ -16,7 +16,7 @@ import {
   startSwipeSession,
 } from "../../services/swipeSessions";
 import { importExport, type ImportResult } from "../../services/imports";
-import { checkLibraryData } from "../../services/library";
+import { getLibraryStats, type LibraryStats } from "../../services/library";
 
 export default function DiscoverScreen() {
   const navigate = useNavigate();
@@ -28,19 +28,39 @@ export default function DiscoverScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasLibraryData, setHasLibraryData] = useState<boolean | null>(null);
+  const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
+  const [isLoadingLibraryStats, setIsLoadingLibraryStats] = useState(true);
+
+  const hasLibraryData =
+    libraryStats === null ? null : libraryStats.rated_total > 0;
+
+  const refreshLibraryStats = async () => {
+    try {
+      setLibraryStats(await getLibraryStats());
+    } catch {
+      setLibraryStats(null);
+    }
+  };
 
   useEffect(() => {
-    const loadLibraryDataStatus = async () => {
+    const loadLibraryStats = async () => {
       try {
-        const hasData = await checkLibraryData();
-        setHasLibraryData(hasData);
+        setIsLoadingLibraryStats(true);
+
+        const [stats] = await Promise.all([
+          getLibraryStats(),
+          new Promise((resolve) => setTimeout(resolve, 350)),
+        ]);
+
+        setLibraryStats(stats);
       } catch {
-        setHasLibraryData(null);
+        setLibraryStats(null);
+      } finally {
+        setIsLoadingLibraryStats(false);
       }
     };
 
-    loadLibraryDataStatus();
+    void loadLibraryStats();
   }, []);
 
   const handleCreateSession = async () => {
@@ -112,12 +132,7 @@ export default function DiscoverScreen() {
       setImportResult(result);
       setPendingFiles([]);
 
-      try {
-        const hasData = await checkLibraryData();
-        setHasLibraryData(hasData);
-      } catch {
-        setHasLibraryData(null);
-      }
+      await refreshLibraryStats();
     } catch (error) {
       if (typeof error === "object" && error !== null && "error" in error) {
         const backendError = error as { error?: { message?: string } };
@@ -169,14 +184,20 @@ export default function DiscoverScreen() {
 
   return (
     <main className="min-h-screen bg-background text-text">
-      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-8">
-        <section className="flex flex-1 flex-col justify-center">
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 pt-8">
+        <section>
           <AppHeader
             title="Discover movies for you"
             description="Find movies based on your taste and improve your recommendations with your Letterboxd history."
           />
 
-          {hasLibraryData === false && (
+          {isLoadingLibraryStats ? (
+            <div className="mt-5 -mb-5 border border-border bg-surface p-4">
+              <div className="h-3 w-52 animate-pulse bg-border" />
+              <div className="mt-3 h-4 w-72 animate-pulse bg-border" />
+              <div className="mt-2 h-4 w-64 animate-pulse bg-border" />
+            </div>
+          ) : hasLibraryData === false ? (
             <div className="mt-6 -mb-5 border border-border bg-surface p-4">
               <p className="text-sm font-medium text-text-secondary">
                 Improve your recommendations
@@ -184,13 +205,35 @@ export default function DiscoverScreen() {
 
               <p className="mt-1 text-xs leading-relaxed text-text-muted">
                 You can start discovering movies now, but your recommendations
-                may be less personalized without your Letterboxd history. Import 
+                may be less personalized without your Letterboxd history. Import
                 it to help us learn your taste.
               </p>
             </div>
+          ) : (
+            libraryStats &&
+            libraryStats.rated_total > 0 && (
+              <div className="mt-5 -mb-5 border border-border bg-surface p-4">
+                <p className="text-sm font-medium text-text-secondary">
+                  Movies used for your recommendations
+                </p>
+
+                <p className="mt-1 text-2xl font-semibold text-text">
+                  {libraryStats.rated_with_embedding}
+                  <span className="ml-2 text-sm font-normal text-text-muted">
+                    of {libraryStats.rated_total} rated
+                  </span>
+                </p>
+
+                  <p className="mt-2 text-xs leading-relaxed text-text-muted">
+                    Not every movie you import can be used right away. Some may
+                    not be recognized, and others are processed gradually, so
+                    this number may grow over time.
+                  </p>
+              </div>
+            )
           )}
 
-          <div className="mt-10 grid gap-4 md:grid-cols-2">
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
             <button
               type="button"
               onClick={handleCreateSession}
@@ -369,7 +412,7 @@ export default function DiscoverScreen() {
           </div>
 
           {importResult && (
-            <div className="mt-5 border border-border bg-surface p-5">
+            <div className="mt-3 border border-border bg-surface p-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center border border-primary">
                   <Check size={17} strokeWidth={2} className="text-primary" />
@@ -384,21 +427,6 @@ export default function DiscoverScreen() {
                     Your Letterboxd data has been processed.
                   </p>
                 </div>
-              </div>
-
-              <div className="mt-5 border border-border p-4">
-                <p className="text-sm font-medium text-text-secondary">
-                  Movies recognized
-                </p>
-
-                <p className="mt-1 text-2xl font-semibold text-text">
-                  {importResult.movies.matched}
-                </p>
-
-                <p className="mt-2 text-xs leading-relaxed text-text-muted">
-                  We may not be able to retrieve information for every movie
-                  in your Letterboxd data, so some movies may not be recognized.
-                </p>
               </div>
 
               {importResult.missing.length > 0 && (
@@ -420,7 +448,7 @@ export default function DiscoverScreen() {
             </div>
           )}
 
-          <div className="mt-5 border border-border bg-surface px-5 py-4">
+          <div className="mt-3 border border-border bg-surface px-5 py-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-sm font-medium text-text-secondary">

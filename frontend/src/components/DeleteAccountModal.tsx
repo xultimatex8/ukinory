@@ -61,7 +61,7 @@ export default function DeleteAccountModal({
             className="flex h-9 w-9 shrink-0 cursor-pointer items-center
                        justify-center border border-border text-text-muted
                        transition hover:border-primary hover:text-primary
-                       disabled:cursor-not-allowed disabled:opacity-50"
+                       disabled:cursor-auto disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -88,7 +88,7 @@ export default function DeleteAccountModal({
                            text-text outline-none transition
                            placeholder:text-text-muted
                            focus:border-primary
-                           disabled:cursor-not-allowed disabled:opacity-50"
+                           disabled:cursor-auto disabled:opacity-50"
                 placeholder="Enter your password"
               />
 
@@ -99,7 +99,7 @@ export default function DeleteAccountModal({
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 className="absolute right-3 top-1/2 -translate-y-1/2
                            cursor-pointer p-1 text-text-muted transition
-                           hover:text-text disabled:cursor-not-allowed
+                           hover:text-text disabled:cursor-auto
                            disabled:opacity-50"
               >
                 {showPassword ? (
@@ -126,7 +126,7 @@ export default function DeleteAccountModal({
             className="flex-1 cursor-pointer border border-border px-4 py-3
                        text-sm font-medium text-text transition
                        hover:bg-surface-hover
-                       disabled:cursor-not-allowed disabled:opacity-50"
+                       disabled:cursor-auto disabled:opacity-50"
           >
             Cancel
           </button>
@@ -138,7 +138,7 @@ export default function DeleteAccountModal({
             className="flex-1 cursor-pointer bg-red-500 px-4 py-3
                        text-sm font-semibold text-white transition
                        hover:bg-red-400
-                       disabled:cursor-not-allowed disabled:opacity-50"
+                       disabled:cursor-auto disabled:opacity-50"
           >
             {isDeleting ? "Deleting account..." : "Delete account"}
           </button>

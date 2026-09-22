@@ -177,7 +177,7 @@ export default function LoginScreen() {
             disabled={isSubmitting}
             className="mt-6 w-full cursor-pointer bg-primary px-4 py-3
                        font-semibold text-background transition
-                       hover:bg-primary-hover disabled:cursor-not-allowed
+                       hover:bg-primary-hover disabled:cursor-auto
                        disabled:opacity-50"
           >
             {isSubmitting ? "Signing in..." : "Sign in"}

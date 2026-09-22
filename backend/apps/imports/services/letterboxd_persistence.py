@@ -21,6 +21,7 @@ from apps.movies.services.movie_cache import (
 )
 from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.services.tmdb_matching import match_movie
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -118,22 +119,34 @@ def _merge_rating_sources(csvs: Mapping[str, list]) -> dict[FilmKey, _RatingEntr
     return entries
 
 
+def _needs_embedding(movie: Movie) -> bool:
+    return movie.embedding is None and movie.embedding_batch_id is None
+
+
 def _match_films(
-    client: TMDbClient, film_keys: set[FilmKey]
+    client: TMDbClient,
+    film_keys: set[FilmKey],
+    priority_keys: set[FilmKey],
 ) -> tuple[dict[FilmKey, Movie], MovieMatchSummary]:
     matches: dict[FilmKey, Movie] = {}
     summary = MovieMatchSummary()
     pending_tmdb_id_by_key: dict[FilmKey, int] = {}
+    priority_ids: set[int] = set()
 
     for title, year in sorted(film_keys):
+        key = (title, year)
+        is_priority = key in priority_keys
+
         if summary.tmdb_error is not None:
             summary.unmatched.append(f"{title} ({year})")
             continue
 
         cached = find_cached_movie(title, year)
         if cached is not None:
-            matches[(title, year)] = cached
+            matches[key] = cached
             summary.matched += 1
+            if is_priority and _needs_embedding(cached):
+                priority_ids.add(cached.tmdb_id)
             continue
 
         try:
@@ -153,22 +166,34 @@ def _match_films(
 
         cached_by_tmdb_id = find_cached_movie_by_tmdb_id(match.tmdb_id)
         if cached_by_tmdb_id is not None:
-            matches[(title, year)] = cached_by_tmdb_id
+            matches[key] = cached_by_tmdb_id
             summary.matched += 1
+            if is_priority and _needs_embedding(cached_by_tmdb_id):
+                priority_ids.add(cached_by_tmdb_id.tmdb_id)
             continue
 
-        pending_tmdb_id_by_key[(title, year)] = match.tmdb_id
+        pending_tmdb_id_by_key[key] = match.tmdb_id
+        if is_priority:
+            priority_ids.add(match.tmdb_id)
 
-    if pending_tmdb_id_by_key:
-        cache_summary = fetch_and_store_movies(set(pending_tmdb_id_by_key.values()))
-        for key, tmdb_id in pending_tmdb_id_by_key.items():
-            movie = cache_summary.stored.get(tmdb_id)
-            if movie is not None:
-                matches[key] = movie
-                summary.matched += 1
-            else:
-                title, year = key
-                summary.without_metadata.append(f"{title} ({year})")
+    other_ids = set(pending_tmdb_id_by_key.values()) - priority_ids
+    stored: dict[int, Movie] = {}
+
+    if priority_ids:
+        stored.update(fetch_and_store_movies(priority_ids).stored)
+    if other_ids:
+        stored.update(
+            fetch_and_store_movies(other_ids, defer_embeddings=True).stored
+        )
+
+    for key, tmdb_id in pending_tmdb_id_by_key.items():
+        movie = stored.get(tmdb_id)
+        if movie is not None:
+            matches[key] = movie
+            summary.matched += 1
+        else:
+            title, year = key
+            summary.without_metadata.append(f"{title} ({year})")
 
     return matches, summary
 
@@ -226,20 +251,29 @@ def _collect_film_keys(csvs: Mapping[str, list]) -> set[FilmKey]:
     return keys
 
 
-@transaction.atomic
-def persist_letterboxd_records(user, result: ExtractionResult
+def persist_letterboxd_records(
+    user, result: ExtractionResult
 ) -> tuple[dict[str, int], MovieMatchSummary]:
     client = TMDbClient()
 
     film_keys = _collect_film_keys(result.csvs)
-    movie_matches, movie_summary = _match_films(client, film_keys)
+    merged = _merge_rating_sources(result.csvs)
+    rated = sorted(
+        (k for k, e in merged.items() if e.rating is not None),
+        key=lambda k: (merged[k].liked, merged[k].rating),
+        reverse=True,
+    )
+    priority_keys = set(rated[: settings.RECOMMENDATION_MAX_HISTORY_MOVIES])
 
-    persisted: dict[str, int] = {
-        "ratings": persist_ratings(user, result.csvs, movie_matches)
-    }
-    if WATCHLIST_CSV in result.csvs:
-        persisted["watchlist"] = persist_watchlist(
-            user, result.csvs[WATCHLIST_CSV], movie_matches
-        )
+    movie_matches, movie_summary = _match_films(client, film_keys, priority_keys)
+
+    with transaction.atomic():
+        persisted: dict[str, int] = {
+            "ratings": persist_ratings(user, result.csvs, movie_matches)
+        }
+        if WATCHLIST_CSV in result.csvs:
+            persisted["watchlist"] = persist_watchlist(
+                user, result.csvs[WATCHLIST_CSV], movie_matches
+            )
 
     return persisted, movie_summary

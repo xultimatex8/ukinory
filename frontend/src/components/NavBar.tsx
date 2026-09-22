@@ -1,5 +1,6 @@
 import { Compass, House, UserRound } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
+import AppLogo from "./AppLogo";
 
 const navigation = [
   {
@@ -23,14 +24,8 @@ export default function Navbar() {
   return (
     <header className="border-b border-border bg-background">
       <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
-        <Link
-          to="/"
-          className="text-2xl font-bold tracking-tight"
-          aria-label="Ukinory home"
-        >
-          <span className="text-text">U</span>
-          <span className="text-primary">kino</span>
-          <span className="text-text">ry</span>
+        <Link to="/" aria-label="Ukinory home">
+          <AppLogo size="sm" />
         </Link>
 
         <nav className="flex items-center gap-1">
