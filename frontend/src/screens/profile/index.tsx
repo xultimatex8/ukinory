@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
+  Download,
   Edit,
   LogOut,
   Mail,
@@ -11,6 +12,7 @@ import { Link, useNavigate } from "react-router-dom";
 import AppHeader from "../../components/LogoHeader";
 import {
   deleteAccount,
+  exportUserData,
   getCurrentUser,
   signOut,
   type User,
@@ -28,6 +30,9 @@ export default function ProfileScreen() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -60,6 +65,23 @@ export default function ProfileScreen() {
       await signOut();
     } finally {
       navigate("/");
+    }
+  };
+
+  const handleExportData = async () => {
+    try {
+      setIsExporting(true);
+      setExportError(null);
+
+      await exportUserData();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setExportError(error.detail);
+      } else {
+        setExportError("Unable to export your data.");
+      }
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -235,6 +257,33 @@ export default function ProfileScreen() {
                 >
                   <LogOut size={16} />
                   Sign out
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-border pt-6">
+              <div className="border border-border bg-surface p-5">
+                <p className="text-sm font-medium text-text">
+                  Export your data
+                </p>
+
+                <p className="mt-1 text-sm leading-relaxed text-text-muted">
+                  Download a copy of all the personal data we hold about you
+                  as a JSON file.
+                </p>
+
+                {exportError && (
+                  <p className="mt-3 text-sm text-red-400">{exportError}</p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleExportData}
+                  disabled={isExporting}
+                  className="mt-4 inline-flex cursor-pointer items-center justify-center gap-2 border border-border px-4 py-2 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text disabled:cursor-auto disabled:opacity-50"
+                >
+                  <Download size={16} />
+                  {isExporting ? "Preparing export…" : "Export my data"}
                 </button>
               </div>
             </div>

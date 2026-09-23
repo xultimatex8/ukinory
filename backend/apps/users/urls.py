@@ -1,7 +1,15 @@
 from django.urls import path
 from rest_framework_simplejwt import views as jwt_views
 
-from .views import ChangePasswordView, ClaimGuestView, CurrentUserView, DeleteAccountView, GuestView, RegisterView
+from .views import (
+    ChangePasswordView,
+    ClaimGuestView,
+    CurrentUserView,
+    DeleteAccountView,
+    ExportUserDataView,
+    GuestView,
+    RegisterView,
+)
 
 urlpatterns = [
     path("guest/", GuestView.as_view(), name="guest"),
@@ -13,4 +21,5 @@ urlpatterns = [
     path("me/", CurrentUserView.as_view(), name="current-user"),
     path("me/delete/", DeleteAccountView.as_view(), name="delete-account"),
     path("me/password/", ChangePasswordView.as_view(), name="change-password"),
+    path("me/export/", ExportUserDataView.as_view(), name="export-user-data"),
 ]

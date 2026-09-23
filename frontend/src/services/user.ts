@@ -110,3 +110,21 @@ export async function deleteAccount(password?: string): Promise<void> {
     ),
   });
 }
+
+export async function exportUserData(): Promise<void> {
+  const response = await apiFetch("/api/auth/me/export/", {
+    method: "GET",
+  });
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `account-data-${Date.now()}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.URL.revokeObjectURL(url);
+}
