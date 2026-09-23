@@ -75,7 +75,7 @@ export default function MovieInformation({
                   Synopsis
                 </h4>
 
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                <p className="mt-2 line-clamp-7 text-sm leading-relaxed text-text-secondary">
                   {movie.synopsis}
                 </p>
               </section>
@@ -90,9 +90,7 @@ export default function MovieInformation({
                 {streamingCountries.length > 0 && (
                   <select
                     value={selectedCountry ?? defaultCountry?.code ?? ""}
-                    onChange={(event) =>
-                      setSelectedCountry(event.target.value)
-                    }
+                    onChange={(event) => setSelectedCountry(event.target.value)}
                     className="max-w-24 cursor-pointer border border-border bg-background px-2 py-1 text-[10px] text-text-secondary outline-none focus:border-primary"
                     aria-label="Select country"
                   >
@@ -110,13 +108,13 @@ export default function MovieInformation({
                   {selectedCountryData.providers.map((provider) => (
                     <div
                       key={provider.id}
-                      className="flex min-w-0 flex-col items-center border border-border bg-background px-2 py-2.5"
+                      className="flex min-w-0 flex-col items-center border border-border bg-background p-2"
                       title={provider.name}
                     >
                       <img
                         src={provider.logoUrl}
                         alt={provider.name}
-                        className="h-9 w-9 rounded object-cover"
+                        className="h-8 w-8 rounded object-cover"
                       />
 
                       <span className="mt-1.5 line-clamp-2 w-full text-center text-[10px] leading-tight text-text-muted">
@@ -130,6 +128,10 @@ export default function MovieInformation({
                   No streaming information available.
                 </p>
               )}
+
+              <p className="mt-3 text-[10px] leading-relaxed text-text-muted">
+                Streaming availability powered by JustWatch.
+              </p>
             </section>
 
             <a

@@ -148,6 +148,10 @@ export default function MovieInfoModal({
                 No streaming information available.
               </p>
             )}
+
+            <p className="mt-3 text-[10px] leading-relaxed text-text-muted">
+              Streaming availability data provided by JustWatch.
+            </p>
           </section>
 
           <a
