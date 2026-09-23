@@ -16,6 +16,7 @@ import Navbar from "./components/NavBar";
 import EditProfileScreen from "./screens/profile/edit";
 import Footer from "./components/Footer";
 import LegalScreen from "./screens/legal";
+import InstructionsScreen from "./screens/instructions";
 
 function PublicLayout() {
   return (
@@ -68,6 +69,7 @@ function App() {
             <Route path="/discover/:id" element={<DiscoverSessionScreen />} />
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/profile/edit" element={<EditProfileScreen />} />
+            <Route path="/instructions" element={<InstructionsScreen />} />
           </Route>
 
           <Route path="/500" element={<ServerErrorScreen />} />

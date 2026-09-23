@@ -1,4 +1,4 @@
-import { Compass, House, UserRound } from "lucide-react";
+import { CircleHelp, Compass, House, UserRound } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import AppLogo from "./AppLogo";
 
@@ -50,6 +50,22 @@ export default function Navbar() {
               </NavLink>
             );
           })}
+
+          <div className="mx-2 h-5 w-px bg-border" />
+
+          <NavLink
+            to="/instructions"
+            className={({ isActive }) =>
+              `flex items-center gap-2 border px-3 py-2 text-sm font-medium transition ${
+                isActive
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-primary/20 text-primary hover:border-primary/40 hover:bg-primary/5"
+              }`
+            }
+          >
+            <CircleHelp size={17} strokeWidth={1.8} />
+            <span className="hidden sm:inline">Import / Export</span>
+          </NavLink>
         </nav>
       </div>
     </header>

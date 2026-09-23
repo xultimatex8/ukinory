@@ -8,7 +8,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import AppHeader from "../../components/LogoHeader";
 import {
@@ -308,6 +308,15 @@ export default function DiscoverScreen() {
               <p className="mt-2 text-sm leading-relaxed text-text-muted">
                 Improve your recommendations using your Letterboxd history.
               </p>
+
+              <Link
+                to="/instructions"
+                className="mt-4 inline-flex cursor-pointer items-center gap-2 border border-border bg-surface-hover px-4 py-2
+                          text-xs font-medium text-text transition hover:border-primary hover:text-primary"
+              >
+                Don't know how?
+                <ArrowRight size={14} strokeWidth={1.8} />
+              </Link>
 
               {pendingFiles.length > 0 && (
                 <div className="mt-5 space-y-2">

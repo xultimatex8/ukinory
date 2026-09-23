@@ -115,9 +115,12 @@ export default function Footer() {
               Wikidata.
             </p>
 
-            <p className="max-w-xs text-xs text-text-muted sm:max-w-none">
+            <Link
+              to="/instructions"
+              className="w-fit max-w-xs text-xs text-primary underline-offset-4 transition hover:text-text sm:max-w-none"
+            >
               Letterboxd exports can be imported into Ukinory.
-            </p>
+            </Link>
           </div>
         </div>
 
