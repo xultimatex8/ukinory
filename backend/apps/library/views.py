@@ -1,3 +1,4 @@
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -6,6 +7,7 @@ from rest_framework.views import APIView
 from apps.library.models import Rating
 from apps.library.serializers import RateMovieSerializer
 from apps.library.services.ratings import rate_movie
+from apps.library.services.export_watchlist import watchlist_to_csv
 from apps.movies.models import Movie
 
 
@@ -58,3 +60,14 @@ class RateMovieView(APIView):
         )
  
         return Response(status=status.HTTP_200_OK)
+
+
+class WatchlistExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        csv_content = watchlist_to_csv(request.user)
+
+        response = HttpResponse(csv_content, content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="ukinory_full_watchlist.csv"'
+        return response

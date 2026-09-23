@@ -17,6 +17,7 @@ import {
   signOut,
   type User,
 } from "../../services/user";
+import { exportWatchlistCsv } from "../../services/library";
 import { ApiError } from "../../services/api";
 import DeleteAccountModal from "../../components/DeleteAccountModal";
 
@@ -33,6 +34,11 @@ export default function ProfileScreen() {
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  const [isExportingWatchlist, setIsExportingWatchlist] = useState(false);
+  const [exportWatchlistError, setExportWatchlistError] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -82,6 +88,23 @@ export default function ProfileScreen() {
       }
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportWatchlist = async () => {
+    try {
+      setIsExportingWatchlist(true);
+      setExportWatchlistError(null);
+
+      await exportWatchlistCsv();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setExportWatchlistError(error.detail);
+      } else {
+        setExportWatchlistError("Unable to export your watchlist.");
+      }
+    } finally {
+      setIsExportingWatchlist(false);
     }
   };
 
@@ -227,6 +250,35 @@ export default function ProfileScreen() {
               )}
             </div>
           )}
+
+          <div className="mt-6 border border-primary/20 bg-primary/5 p-5">
+            <p className="text-sm font-medium text-primary">
+              Take your watchlist to Letterboxd
+            </p>
+
+            <p className="mt-1 text-sm leading-relaxed text-text-muted">
+              Grab a CSV of everything on your watchlist and drop it
+              straight into Letterboxd's importer.
+            </p>
+
+            {exportWatchlistError && (
+              <p className="mt-3 text-sm text-red-400">
+                {exportWatchlistError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleExportWatchlist}
+              disabled={isExportingWatchlist}
+              className="mt-4 inline-flex cursor-pointer items-center justify-center gap-2 bg-primary px-4 py-2 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-auto disabled:opacity-50"
+            >
+              <Download size={16} />
+              {isExportingWatchlist
+                ? "Getting it ready…"
+                : "Download for Letterboxd"}
+            </button>
+          </div>
 
           <div className="mt-6 flex flex-col gap-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
