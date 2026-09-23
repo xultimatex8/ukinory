@@ -4,6 +4,7 @@ import pytest
 
 from apps.swipe_sessions.exceptions import (
     CandidateNotFoundError,
+    JustificationUnavailableError,
     NotSessionMemberError,
     SwipeSessionNotFoundError,
 )
@@ -39,6 +40,31 @@ class TestSwipeSessionCandidateJustificationView:
         assert response.status_code == 200
         assert response.data == {
             "justification": "This movie matches your taste.",
+            "available": True,
+        }
+
+    def test_returns_unavailable_when_quota_is_exceeded(
+        self,
+        authenticated_post,
+        candidate,
+        swipe_session,
+    ):
+        with patch(
+            "apps.swipe_sessions.views.get_candidate_justification",
+            side_effect=JustificationUnavailableError,
+        ):
+            request = authenticated_post()
+
+            response = SwipeSessionCandidateJustificationView.as_view()(
+                request,
+                pk=swipe_session.id,
+                candidate_id=candidate.id,
+            )
+
+        assert response.status_code == 200
+        assert response.data == {
+            "justification": None,
+            "available": False,
         }
 
     @pytest.mark.parametrize(

@@ -12,7 +12,7 @@ from apps.swipe_sessions.services.justification import get_candidate_justificati
 from apps.swipe_sessions.services.swipe import get_session_candidate, record_swipe
 from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.services.tmdb_metadata import fetch_live_display_metadata
-from apps.swipe_sessions.exceptions import CandidateNotFoundError, NotSessionMemberError, SwipeSessionFinishedError, SwipeSessionNotFoundError
+from apps.swipe_sessions.exceptions import CandidateNotFoundError, JustificationUnavailableError, NotSessionMemberError, SwipeSessionFinishedError, SwipeSessionNotFoundError
 
 
 class SwipeSessionListCreateView(APIView):
@@ -174,10 +174,19 @@ class SwipeSessionCandidateJustificationView(APIView):
                 {"detail": "This swipe session has already finished."},
                 status=status.HTTP_409_CONFLICT,
             )
+        except JustificationUnavailableError:
+            return Response(
+                {
+                    "justification": None,
+                    "available": False,
+                },
+                status=status.HTTP_200_OK,
+            )
 
         return Response(
             {
                 "justification": justification.text,
+                "available": True,
             }
         )
 

@@ -42,6 +42,10 @@ class JustificationError(SwipeSessionError):
     """Errors specific to justification generation, still a session error."""
 
 
+class JustificationUnavailableError(Exception):
+    pass
+
+
 class RecommendationError(SwipeSessionError):
     """Errors specific to recommendation retrieval, still a session error."""
 
