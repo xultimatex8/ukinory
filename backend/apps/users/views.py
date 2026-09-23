@@ -1,5 +1,9 @@
+import json
+
 from django.contrib.auth import get_user_model
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
+from django.http import HttpResponse
 from rest_framework import permissions, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -14,6 +18,7 @@ from .services.update_user import change_password, update_user
 from .services.guest_claim import claim_guest
 from .services.user_register import register_user
 from .services.delete_account import delete_account
+from .services.export_user_data import export_user_data
 
 from .serializers import ChangePasswordSerializer, ClaimGuestSerializer, DeleteAccountSerializer, RegisterSerializer, UpdateUserSerializer, UserSerializer
 
@@ -160,3 +165,17 @@ class ChangePasswordView(APIView):
             {"detail": "Password successfully changed."},
             status=status.HTTP_200_OK,
         )
+
+
+class ExportUserDataView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        data = export_user_data(request.user)
+        payload = json.dumps(data, indent=2, ensure_ascii=False, cls=DjangoJSONEncoder)
+
+        response = HttpResponse(payload, content_type="application/json")
+        response["Content-Disposition"] = (
+            f'attachment; filename="account-data-{request.user.pk}.json"'
+        )
+        return response
