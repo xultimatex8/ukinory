@@ -32,6 +32,11 @@ DEBUG = ENVIRONMENT != "production"
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "backend"]
 
+# Render sets this automatically for every web service (e.g. "ukinory.onrender.com").
+RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
 
 # Application definition
 
@@ -169,6 +174,19 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
 ]
 
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+if FRONTEND_URL:
+    CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
+
+CSRF_TRUSTED_ORIGINS = [origin for origin in CORS_ALLOWED_ORIGINS]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
@@ -194,7 +212,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL:
+if not DEBUG:
     database_url = urlparse(DATABASE_URL)
 
     DATABASES = {
