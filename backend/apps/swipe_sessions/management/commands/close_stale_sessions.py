@@ -1,14 +1,12 @@
-from datetime import timedelta
-
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 from django.utils import timezone
 
 from apps.common.enums import SwipeSessionStatus
 from apps.swipe_sessions.models import SwipeSession
-from apps.swipe_sessions.services.session import ensure_session_finished
+from apps.swipe_sessions.services.session import STALE_SESSION_TIMEOUT, ensure_session_finished
 
-STALE_AFTER = timedelta(minutes=2)
+STALE_AFTER = STALE_SESSION_TIMEOUT
 
 
 class Command(BaseCommand):
