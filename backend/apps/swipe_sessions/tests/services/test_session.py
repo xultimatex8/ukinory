@@ -229,7 +229,7 @@ class TestEndSwipeSession:
 
 class TestEnsureSessionActive:
     @pytest.mark.django_db
-    def test_allows_active_session_that_is_not_stale(
+    def test_allows_active_session_with_recent_last_seen(
         self,
         swipe_session,
     ):
@@ -242,6 +242,24 @@ class TestEnsureSessionActive:
         swipe_session.refresh_from_db()
 
         assert swipe_session.status == SwipeSessionStatus.ACTIVE
+
+    @pytest.mark.django_db
+    def test_allows_waiting_session_with_recent_created_at(
+        self,
+        swipe_session,
+    ):
+        swipe_session.status = SwipeSessionStatus.WAITING
+        swipe_session.last_seen_at = None
+        swipe_session.created_at = timezone.now() - timedelta(minutes=1)
+        swipe_session.save(
+            update_fields=["status", "last_seen_at", "created_at"]
+        )
+
+        ensure_session_active(swipe_session)
+
+        swipe_session.refresh_from_db()
+
+        assert swipe_session.status == SwipeSessionStatus.WAITING
 
     @pytest.mark.django_db
     def test_raises_for_finished_session(
@@ -259,12 +277,13 @@ class TestEnsureSessionActive:
         assert swipe_session.status == SwipeSessionStatus.FINISHED
 
     @pytest.mark.django_db
-    def test_finishes_stale_session_and_raises(
+    def test_finishes_stale_active_session(
         self,
         user,
         swipe_session,
     ):
         swipe_session.users.add(user)
+
         swipe_session.status = SwipeSessionStatus.ACTIVE
         swipe_session.last_seen_at = timezone.now() - timedelta(minutes=3)
         swipe_session.save(update_fields=["status", "last_seen_at"])
@@ -288,31 +307,34 @@ class TestEnsureSessionActive:
         )
 
     @pytest.mark.django_db
-    def test_does_not_consider_waiting_session_stale(
+    def test_finishes_stale_waiting_session_using_created_at(
         self,
+        user,
         swipe_session,
     ):
+        swipe_session.users.add(user)
+
         swipe_session.status = SwipeSessionStatus.WAITING
-        swipe_session.last_seen_at = timezone.now() - timedelta(minutes=3)
-        swipe_session.save(update_fields=["status", "last_seen_at"])
-
-        ensure_session_active(swipe_session)
-
-        swipe_session.refresh_from_db()
-
-        assert swipe_session.status == SwipeSessionStatus.WAITING
-
-    @pytest.mark.django_db
-    def test_does_not_consider_session_without_last_seen_stale(
-        self,
-        swipe_session,
-    ):
-        swipe_session.status = SwipeSessionStatus.ACTIVE
         swipe_session.last_seen_at = None
-        swipe_session.save(update_fields=["status", "last_seen_at"])
+        swipe_session.created_at = timezone.now() - timedelta(minutes=3)
+        swipe_session.save(
+            update_fields=["status", "last_seen_at", "created_at"]
+        )
 
-        ensure_session_active(swipe_session)
+        summary = MagicMock()
+
+        with patch(
+            "apps.swipe_sessions.services.session.export_watchlist_csv",
+            return_value=summary,
+        ) as export_watchlist:
+            with pytest.raises(SwipeSessionFinishedError):
+                ensure_session_active(swipe_session)
 
         swipe_session.refresh_from_db()
 
-        assert swipe_session.status == SwipeSessionStatus.ACTIVE
+        assert swipe_session.status == SwipeSessionStatus.FINISHED
+
+        export_watchlist.assert_called_once_with(
+            user=user,
+            session=swipe_session,
+        )
