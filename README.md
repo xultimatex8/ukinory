@@ -51,7 +51,7 @@ More detail and rationale behind these decisions in [`docs/tech-stack.md`](docs/
 
 ```bash
 git clone <REPOSITORY_URL>
-cd Ukinory
+cd ukinory
 ```
 
 ### 2. Set up environment variables
@@ -73,11 +73,63 @@ cp .env.example .env
 Edit `.env` and fill in the required values:
 
 ```env
-POSTGRES_DB=ukinory_db
-POSTGRES_USER=your_user
-POSTGRES_PASSWORD=your_password
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_HOST=
+POSTGRES_PORT=
+
+DJANGO_SECRET_KEY=
+
+ENVIRONMENT=
+
+GEMINI_API_KEY=
+
+EMBEDDING_MODEL=
+EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS=
+EMBEDDING_BATCH_MAX_ITEMS=
+
+EMBEDDING_SYNC_BUDGET_DAILY_CENTS=
+EMBEDDING_SYNC_BUDGET_WEEKLY_CENTS=
+EMBEDDING_BATCH_BUDGET_DAILY_CENTS=
+EMBEDDING_BATCH_BUDGET_WEEKLY_CENTS=
+JUSTIFICATION_BUDGET_DAILY_CENTS=0
+JUSTIFICATION_BUDGET_WEEKLY_CENTS=
+
+EUR_PER_USD=
+EMBEDDING_SYNC_PRICE_INPUT=
+EMBEDDING_BATCH_PRICE_INPUT=
+JUSTIFICATION_PRICE_INPUT=
+JUSTIFICATION_PRICE_OUTPUT=
+
+RECOMMENDATION_PROPAGATION_K=
+RECOMMENDATION_MIN_RATERS_FOR_CF=
+RECOMMENDATION_MIN_COMMON_MOVIES=
+RECOMMENDATION_MAX_SIMILAR_USERS=
+RECOMMENDATION_DEFAULT_POOL_SIZE=
+RECOMMENDATION_DEFAULT_STRATEGY=
+RECOMMENDATION_DEFAULT_ALPHA=
+RECOMMENDATION_JUSTIFICATION_MODEL=
+RECOMMENDATION_JUSTIFICATION_MAX_OUTPUT_TOKENS=
+RECOMMENDATION_MAX_HISTORY_MOVIES=
+
+POOL_REFILL_THRESHOLD=
+
+TMDB_API_KEY=
+TMDB_MIN_REQUEST_INTERVAL_SECONDS=
+TMDB_DISCOVER_MAX_PAGES=
+TMDB_DISCOVER_MIN_VOTE_COUNT=
+TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS=
+TMDB_DISCOVER_NEW_RELEASE_MIN_VOTE_COUNT=
+TMDB_DISCOVER_START_YEAR=
+TMDB_DISCOVER_PAGES_PER_BUCKET=
+TMDB_DISCOVER_DECADE_MIN_VOTE_COUNT=
+TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT=
+
+WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS=
+WIKIDATA_USER_AGENT=
+
+REDIS_URL=
 ```
 
 ### 3. Run the project
@@ -85,7 +137,7 @@ POSTGRES_PORT=5432
 Build and start all services:
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
 The application consists of three Docker containers:
@@ -112,7 +164,7 @@ docker compose exec backend python manage.py migrate
 The recommended development workflow is to leave Docker Compose running:
 
 ```bash
-docker compose up
+docker compose up -d
 ```
 
 Source code is mounted into the containers, so changes made to the project are automatically detected:
@@ -132,7 +184,7 @@ This stops and removes the containers while **preserving the PostgreSQL data** s
 If you need to rebuild the containers, for example after changing dependencies or Dockerfiles, use:
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
 To stop the containers and **delete all PostgreSQL data**, use:
@@ -140,3 +192,29 @@ To stop the containers and **delete all PostgreSQL data**, use:
 ```bash
 docker compose down -v
 ```
+
+### Running Jupyter Notebook
+
+Jupyter Notebook is available inside the backend container for data analysis and experimentation. It is optional and does not need to be running for the application itself.
+
+Make sure the Docker Compose services are running:
+
+```bash
+docker compose up -d
+```
+
+Then start Jupyter with:
+
+```bash
+docker compose exec backend jupyter notebook --ip=0.0.0.0 --port=8888 --allow-root --no-browser
+```
+
+The terminal will display a URL similar to:
+
+```text
+http://127.0.0.1:8888/tree?token=<generated-token>
+```
+
+Open the displayed URL in your browser to access Jupyter Notebook. The authentication token is generated automatically when Jupyter starts, so use the URL printed in the terminal rather than copying the example above.
+
+When you are finished, stop Jupyter with `Ctrl+C` in the terminal where it is running.
