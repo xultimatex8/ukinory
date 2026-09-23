@@ -9,7 +9,7 @@ import AppLogo from "./AppLogo";
 
 export default function Footer() {
   return (
-    <footer className="border-t border-border bg-background">
+    <footer className="mt-10 border-t border-border bg-background">
       <div className="mx-auto w-full max-w-5xl px-6 py-10">
         <div className="grid gap-8 sm:grid-cols-3">
           <div className="flex flex-col items-center gap-3 text-center sm:items-start sm:text-left">
