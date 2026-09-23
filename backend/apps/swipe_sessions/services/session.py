@@ -15,7 +15,7 @@ from apps.swipe_sessions.exceptions import NotSessionMemberError, SwipeSessionFi
 LEAVE_TOKEN_SALT = "swipe_sessions.leave"
 LEAVE_TOKEN_MAX_AGE = 60 * 60 * 6
 
-STALE_SESSION_TIMEOUT = timedelta(seconds=2)
+STALE_SESSION_TIMEOUT = timedelta(minutes=2)
 
 
 def get_user_swipe_session(*, session_id, user) -> SwipeSession:
