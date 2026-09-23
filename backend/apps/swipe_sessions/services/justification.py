@@ -16,7 +16,7 @@ from apps.swipe_sessions.models import (
     SwipeSession,
     SwipeSessionCandidate,
 )
-from apps.swipe_sessions.exceptions import CandidateNotFoundError, NotSessionMemberError, SwipeSessionNotFoundError
+from apps.swipe_sessions.exceptions import CandidateNotFoundError, JustificationUnavailableError, NotSessionMemberError, SwipeSessionNotFoundError
 from apps.swipe_sessions.services.session import ensure_session_active
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ class JustificationClient:
             api_quota.consume(QUOTA_CLIENT_NAME, reserved)
         except api_quota.QuotaExceeded as exc:
             logger.warning("Skipping justification for movie %s: %s", movie.pk, exc)
-            return ""
+            raise JustificationUnavailableError from exc
 
         try:
             response = self._client.models.generate_content(

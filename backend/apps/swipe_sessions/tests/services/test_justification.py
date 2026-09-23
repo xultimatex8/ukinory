@@ -8,6 +8,7 @@ from django.test import override_settings
 
 from apps.swipe_sessions.exceptions import (
     CandidateNotFoundError,
+    JustificationUnavailableError,
     NotSessionMemberError,
     SwipeSessionNotFoundError,
 )
@@ -20,6 +21,7 @@ from apps.swipe_sessions.services.justification import (
     ensure_candidate_justification,
     get_candidate_justification,
 )
+from apps.common.exceptions import QuotaExceeded
 
 
 class TestJustificationClient:
@@ -44,8 +46,10 @@ class TestJustificationClient:
     @patch("apps.swipe_sessions.services.justification.genai.Client")
     @patch("apps.swipe_sessions.services.justification._build_prompt")
     @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
+    @patch("apps.swipe_sessions.services.justification.api_quota.consume")
     def test_generate_uses_primary_model(
         self,
+        mock_consume,
         mock_history,
         mock_build_prompt,
         mock_client,
@@ -94,12 +98,13 @@ class TestJustificationClient:
         assert config.max_output_tokens == 80
         assert config.thinking_config.thinking_level == "MINIMAL"
 
-
     @patch("apps.swipe_sessions.services.justification.genai.Client")
     @patch("apps.swipe_sessions.services.justification._build_prompt")
     @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
+    @patch("apps.swipe_sessions.services.justification.api_quota.consume")
     def test_generate_returns_empty_string_when_primary_fail(
         self,
+        mock_consume,
         mock_history,
         mock_build_prompt,
         mock_client,
@@ -125,6 +130,42 @@ class TestJustificationClient:
         )
 
         assert result == ""
+
+    @patch("apps.swipe_sessions.services.justification.genai.Client")
+    @patch("apps.swipe_sessions.services.justification._build_prompt")
+    @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
+    @patch("apps.swipe_sessions.services.justification.api_quota.consume")
+    def test_generate_raises_when_quota_is_exceeded(
+        self,
+        mock_consume,
+        mock_history,
+        mock_build_prompt,
+        mock_client,
+    ):
+        mock_history.return_value = []
+        mock_build_prompt.return_value = "test prompt"
+
+        mock_consume.side_effect = QuotaExceeded(
+            "gemini_generate",
+            1,
+            0,
+        )
+
+        client = JustificationClient(
+            api_key="test-key",
+            model="primary-model",
+        )
+
+        movie = MagicMock()
+        movie.pk = 123
+
+        with pytest.raises(JustificationUnavailableError):
+            client.generate(
+                user=MagicMock(),
+                movie=movie,
+            )
+
+        mock_client.return_value.models.generate_content.assert_not_called()
 
 
 class TestEnsureCandidateJustification:

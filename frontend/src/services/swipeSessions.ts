@@ -28,8 +28,9 @@ export interface RecommendationResponse {
   movie: MovieRecommendation | null;
 }
 
-export interface JustificationResponse {
-  justification: string;
+interface JustificationResponse {
+  justification: string | null;
+  available: boolean;
 }
 
 export async function createIndividualSwipeSession(): Promise<SwipeSession> {

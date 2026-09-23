@@ -15,6 +15,7 @@ export default function WhyRecommended({
   const [showJustification, setShowJustification] = useState(false);
   const [justification, setJustification] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isAvailable, setIsAvailable] = useState(true);
 
   const handleToggle = async () => {
     if (isLoading) {
@@ -38,6 +39,11 @@ export default function WhyRecommended({
         sessionId,
         candidateId,
       );
+
+      if (!result.available) {
+        setIsAvailable(false);
+        return;
+      }
 
       if (result.justification) {
         setJustification(result.justification);
@@ -65,10 +71,18 @@ export default function WhyRecommended({
         <Sparkles size={11} />
         {isLoading
           ? "Thinking..."
-          : showJustification
-            ? "Hide explanation"
-            : "Why this movie"}
+          : !isAvailable
+            ? "Explanation unavailable"
+            : showJustification
+              ? "Hide explanation"
+              : "Why this movie"}
       </button>
+
+      {!isAvailable && (
+        <p className="mt-1.5 text-xs leading-relaxed text-white/50">
+          Explanations are currently unavailable.
+        </p>
+      )}
 
       {showJustification && (
         <div className="mt-1.5 text-xs leading-relaxed text-white/70">
