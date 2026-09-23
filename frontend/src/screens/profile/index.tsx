@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   Download,
   Edit,
   LogOut,
@@ -267,17 +268,27 @@ export default function ProfileScreen() {
               </p>
             )}
 
-            <button
-              type="button"
-              onClick={handleExportWatchlist}
-              disabled={isExportingWatchlist}
-              className="mt-4 inline-flex cursor-pointer items-center justify-center gap-2 bg-primary px-4 py-2 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-auto disabled:opacity-50"
-            >
-              <Download size={16} />
-              {isExportingWatchlist
-                ? "Getting it ready…"
-                : "Download for Letterboxd"}
-            </button>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleExportWatchlist}
+                disabled={isExportingWatchlist}
+                className="inline-flex cursor-pointer items-center justify-center gap-2 bg-primary px-4 py-2 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-auto disabled:opacity-50"
+              >
+                <Download size={16} />
+                {isExportingWatchlist
+                  ? "Getting it ready…"
+                  : "Download for Letterboxd"}
+              </button>
+
+              <Link
+                to="/instructions"
+                className="inline-flex cursor-pointer items-center justify-center gap-2 border border-border px-4 py-2 text-sm font-medium text-text-muted transition hover:border-text-muted hover:text-text"
+              >
+                Don't know how?
+                <ArrowRight size={16} />
+              </Link>
+            </div>
           </div>
 
           <div className="mt-6 flex flex-col gap-6">
