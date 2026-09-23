@@ -25,8 +25,6 @@ class FakeAPIError(APIError):
 @pytest.fixture(autouse=True)
 def embedding_api_key(settings):
     settings.GEMINI_API_KEY = "test-key"
-    settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 0.0
-    settings.EMBEDDING_MODEL = "gemini-embedding-test"
 
 
 @pytest.fixture(autouse=True)
@@ -71,19 +69,15 @@ class TestConfiguration:
 
         assert client.api_key == "explicit-key"
 
-    def test_reads_model_from_settings(self, settings):
-        settings.EMBEDDING_MODEL = "custom-embedding-model"
-
+    def test_uses_default_model(self):
         client = EmbeddingClient()
 
-        assert client.model == "custom-embedding-model"
+        assert client.model == "gemini-embedding-001"
 
-    def test_reads_min_request_interval_from_settings(self, settings):
-        settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 0.75
-
+    def test_uses_default_min_request_interval(self):
         client = EmbeddingClient()
 
-        assert client.min_request_interval == 0.75
+        assert client.min_request_interval == 0.85
 
 
 class TestEmbedHappyPath:
@@ -100,10 +94,8 @@ class TestEmbedHappyPath:
             [expected_value] * DIMENSIONS
         )
 
-    def test_sends_configured_model_text(self, settings):
-        settings.EMBEDDING_MODEL = "custom-model"
-
-        client = make_client()
+    def test_sends_configured_model_text(self):
+        client = make_client(model="custom-model")
         client._client.models.embed_content.return_value = embed_response(
             [0.0] * DIMENSIONS
         )
@@ -192,7 +184,6 @@ class TestSharedPacing:
     def test_stamps_timestamp_in_cache(self, settings):
         from django.core.cache import cache
 
-        settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
 
         client = make_client()
@@ -211,27 +202,25 @@ class TestSharedPacing:
     ):
         from django.core.cache import cache
 
-        settings.EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
 
-        client = make_client()
-        client._client.models.embed_content.return_value = embed_response(
-            [0.0] * DIMENSIONS
-        )
+        client = make_client(min_request_interval=0.85)
 
-        fake_clock = [1_000.0]
+        fake_clock = [1_000.4]
         monkeypatch.setattr(time, "time", lambda: fake_clock[0])
+
+        cache.set(
+            EMBEDDING_PACING_TIMESTAMP_KEY,
+            1_000.0,
+            timeout=60,
+        )
 
         sleeps: list[float] = []
         monkeypatch.setattr(time, "sleep", sleeps.append)
 
-        client.embed("first")
+        client._wait_for_pacing_shared()
 
-        fake_clock[0] = 1_000.4
-
-        client.embed("second")
-
-        assert any(s == pytest.approx(0.6) for s in sleeps)
+        assert sleeps == [pytest.approx(0.45)]
 
     def test_lock_is_released_even_if_request_raises(self, settings):
         from django.core.cache import cache

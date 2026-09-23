@@ -34,11 +34,13 @@ class TestJustificationClient:
 
     @patch("apps.swipe_sessions.services.justification.genai.Client")
     @override_settings(
-        RECOMMENDATION_JUSTIFICATION_MODEL="custom-model",
         GEMINI_API_KEY="test-api-key",
     )
     def test_uses_custom_settings(self, mock_client):
-        client = JustificationClient()
+        client = JustificationClient(
+            api_key="test-api-key",
+            model="custom-model",
+        )
 
         assert client.model == "custom-model"
         mock_client.assert_called_once_with(api_key="test-api-key")
@@ -445,7 +447,7 @@ def test_recent_liked_ratings_respects_max_history(
     )
 
     with patch(
-        "apps.swipe_sessions.services.justification.settings.RECOMMENDATION_MAX_HISTORY_MOVIES",
+        "apps.swipe_sessions.services.justification.DEFAULT_MAX_HISTORY_MOVIES",
         1,
     ):
         result = _recent_liked_ratings(user)

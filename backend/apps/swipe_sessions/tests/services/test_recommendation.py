@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.test import override_settings
 
 from apps.swipe_sessions.exceptions import (
     NotSessionMemberError,
@@ -12,7 +11,6 @@ from apps.swipe_sessions.exceptions import (
 )
 from apps.swipe_sessions.models import CandidateJustification, Swipe, SwipeSessionCandidate
 from apps.swipe_sessions.services.recommendation import (
-    DEFAULT_POOL_REFILL_THRESHOLD,
     get_next_recommendation,
     get_next_recommendation_for_session,
 )
@@ -232,7 +230,6 @@ class TestGetNextRecommendation:
         )
 
     @pytest.mark.django_db
-    @override_settings(POOL_REFILL_THRESHOLD=1)
     def test_does_not_refill_when_remaining_candidates_are_above_threshold(
         self,
         user,
@@ -253,9 +250,15 @@ class TestGetNextRecommendation:
             position=2,
         )
 
-        with patch(
-            "apps.swipe_sessions.services.recommendation.fill_candidate_pool"
-        ) as fill_pool:
+        with (
+            patch(
+                "apps.swipe_sessions.services.recommendation.fill_candidate_pool"
+            ) as fill_pool,
+            patch(
+                "apps.swipe_sessions.services.recommendation._get_remaining_candidates",
+                return_value=6,
+            ),
+        ):
             result = get_next_recommendation(
                 session=swipe_session,
                 user=user,
@@ -286,7 +289,6 @@ class TestGetNextRecommendation:
         )
 
         with (
-            override_settings(POOL_REFILL_THRESHOLD=2),
             patch(
                 "apps.swipe_sessions.services.recommendation.fill_candidate_pool"
             ) as fill_pool,
@@ -321,11 +323,10 @@ class TestGetNextRecommendation:
             text="You liked similar movies.",
         )
 
-        with override_settings(POOL_REFILL_THRESHOLD=0):
-            result = get_next_recommendation(
-                session=swipe_session,
-                user=user,
-            )
+        result = get_next_recommendation(
+            session=swipe_session,
+            user=user,
+        )
 
         assert result is not None
 

@@ -40,7 +40,6 @@ class FakeResponse:
 @pytest.fixture(autouse=True)
 def wikidata_user_agent(settings):
     settings.WIKIDATA_USER_AGENT = "ukinory-test/1.0 (test@example.com)"
-    settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 0.0
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +67,10 @@ class TestConfiguration:
     def test_missing_user_agent_raises(self, settings):
         settings.WIKIDATA_USER_AGENT = None
 
-        with pytest.raises(WikidataError, match="WIKIDATA_USER_AGENT is not configured"):
+        with pytest.raises(
+            WikidataError,
+            match="WIKIDATA_USER_AGENT is not configured",
+        ):
             WikidataClient()
 
     def test_sets_user_agent_header_from_settings(self, settings):
@@ -79,11 +81,9 @@ class TestConfiguration:
         assert client.session.headers["User-Agent"] == "my-agent/2.0"
 
     def test_reads_min_request_interval_from_settings(self, settings):
-        settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 0.75
-
         client = WikidataClient()
 
-        assert client.min_request_interval == 0.75
+        assert client.min_request_interval == 1.0
 
 
 class TestSparqlHappyPath:
@@ -148,7 +148,9 @@ class TestGetEntities:
 
     def test_uses_json_accept_header(self):
         client = make_client()
-        client.session.get.return_value = FakeResponse(200, entities_payload("Q1"))
+        client.session.get.return_value = FakeResponse(
+            200, entities_payload("Q1")
+        )
 
         client.get_entities(["Q1"], props="labels")
 
@@ -157,7 +159,9 @@ class TestGetEntities:
 
     def test_custom_languages_are_joined(self):
         client = make_client()
-        client.session.get.return_value = FakeResponse(200, entities_payload("Q1"))
+        client.session.get.return_value = FakeResponse(
+            200, entities_payload("Q1")
+        )
 
         client.get_entities(["Q1"], props="labels", languages=("fr", "de"))
 
@@ -178,7 +182,10 @@ class TestGetEntities:
         client = make_client()
 
         def respond(url, params=None, **kwargs):
-            return FakeResponse(200, entities_payload(*params["ids"].split("|")))
+            return FakeResponse(
+                200,
+                entities_payload(*params["ids"].split("|")),
+            )
 
         client.session.get.side_effect = respond
         qids = [f"Q{i}" for i in range(1, 121)]
@@ -201,7 +208,8 @@ class TestGetEntities:
     def test_api_error_payload_raises(self):
         client = make_client()
         client.session.get.return_value = FakeResponse(
-            200, {"error": {"code": "no-such-entity", "info": "nope"}}
+            200,
+            {"error": {"code": "no-such-entity", "info": "nope"}},
         )
 
         with pytest.raises(WikidataError, match="Wikidata API error"):
@@ -218,7 +226,10 @@ class TestErrorMapping:
 
     def test_other_4xx_raises_generic_wikidata_error(self):
         client = make_client()
-        client.session.get.return_value = FakeResponse(400, text="Malformed query")
+        client.session.get.return_value = FakeResponse(
+            400,
+            text="Malformed query",
+        )
 
         with pytest.raises(WikidataError):
             client.sparql("not a valid query")
@@ -280,7 +291,8 @@ class TestRateLimiting:
     def test_429_exhausted_raises_unavailable(self):
         client = make_client(max_retries=1)
         client.session.get.return_value = FakeResponse(
-            429, headers={"Retry-After": "5"}
+            429,
+            headers={"Retry-After": "5"},
         )
 
         with pytest.raises(WikidataUnavailableError):
@@ -291,7 +303,8 @@ class TestRateLimiting:
     def test_429_with_a_very_long_retry_after_aborts_immediately(self):
         client = make_client(max_retries=3)
         client.session.get.return_value = FakeResponse(
-            429, headers={"Retry-After": "3600"}
+            429,
+            headers={"Retry-After": "3600"},
         )
 
         with pytest.raises(WikidataUnavailableError, match="Retry-After"):
@@ -340,24 +353,30 @@ class TestSharedPacing:
     def test_stamps_timestamp_in_cache(self, settings):
         from django.core.cache import cache
 
-        settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
         client = make_client()
-        client.session.get.return_value = FakeResponse(200, bindings_payload())
+        client.session.get.return_value = FakeResponse(
+            200,
+            bindings_payload(),
+        )
 
         client.sparql("SELECT ?item WHERE { }")
 
         assert cache.get(WIKIDATA_PACING_TIMESTAMP_KEY) is not None
 
     def test_second_call_sleeps_out_the_remaining_interval(
-        self, settings, monkeypatch
+        self,
+        settings,
+        monkeypatch,
     ):
         from django.core.cache import cache
 
-        settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
         client = make_client()
-        client.session.get.return_value = FakeResponse(200, bindings_payload())
+        client.session.get.return_value = FakeResponse(
+            200,
+            bindings_payload(),
+        )
 
         fake_clock = [1_000.0]
         monkeypatch.setattr(time, "time", lambda: fake_clock[0])
@@ -370,10 +389,13 @@ class TestSharedPacing:
 
         assert any(s == pytest.approx(0.6) for s in sleeps)
 
-    def test_api_calls_share_the_same_pacing_as_sparql(self, settings, monkeypatch):
+    def test_api_calls_share_the_same_pacing_as_sparql(
+        self,
+        settings,
+        monkeypatch,
+    ):
         from django.core.cache import cache
 
-        settings.WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
         client = make_client()
         client.session.get.side_effect = [
