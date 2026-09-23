@@ -27,6 +27,21 @@ function PublicLayout() {
   );
 }
 
+function LegalLayout() {
+  const accessToken = localStorage.getItem("access_token");
+  const refreshToken = localStorage.getItem("refresh_token");
+
+  const isAuthenticated = accessToken && refreshToken;
+
+  return (
+    <>
+      {isAuthenticated && <Navbar />}
+      <Outlet />
+      <Footer />
+    </>
+  );
+}
+
 function AppLayout() {
   const accessToken = localStorage.getItem("access_token");
   const refreshToken = localStorage.getItem("refresh_token");
@@ -54,7 +69,9 @@ function App() {
             <Route path="/login" element={<LoginScreen />} />
             <Route path="/register" element={<RegisterScreen />} />
           </Route>
+        </Route>
 
+        <Route element={<LegalLayout />}>
           <Route path="/legal" element={<LegalScreen />} />
         </Route>
 
