@@ -1,5 +1,6 @@
 from datetime import timedelta
 import os
+from urllib.parse import parse_qsl, urlparse
 
 """
 Django settings for config project.
@@ -145,7 +146,7 @@ CRONJOBS = [
 
     ("30 * * * *", "django.core.management.call_command", ["sync_embedding_batches"]),
 
-    ("* * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
+    ("/5 * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
 
     ("0 * * * *", "django.core.management.call_command", ["delete_stale_guests"]),
 ]
@@ -191,16 +192,33 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB"),
-        "USER": os.getenv("POSTGRES_USER"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-        "HOST": os.getenv("POSTGRES_HOST", "db"),
-        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    database_url = urlparse(DATABASE_URL)
+
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": database_url.path.lstrip("/"),
+            "USER": database_url.username,
+            "PASSWORD": database_url.password,
+            "HOST": database_url.hostname,
+            "PORT": database_url.port or 5432,
+            "OPTIONS": dict(parse_qsl(database_url.query)),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("POSTGRES_DB"),
+            "USER": os.getenv("POSTGRES_USER"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+            "HOST": os.getenv("POSTGRES_HOST", "db"),
+            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        }
+    }
 
 
 CACHES = {
