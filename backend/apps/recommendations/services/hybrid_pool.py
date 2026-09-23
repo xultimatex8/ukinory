@@ -26,20 +26,10 @@ RATING_SCALE_MAX = 5.0
 
 def build_hybrid_pool(
     user,
-    pool_size: Optional[int] = None,
-    strategy: Optional[Strategy] = None,
-    alpha: Optional[float] = None,
+    pool_size: Optional[int] = DEFAULT_POOL_SIZE,
+    strategy: Optional[Strategy] = DEFAULT_STRATEGY,
+    alpha: Optional[float] = DEFAULT_ALPHA,
 ) -> list[ScoredCandidate]:
-    pool_size = _setting_or_default(
-        pool_size, "RECOMMENDATION_DEFAULT_POOL_SIZE", DEFAULT_POOL_SIZE
-    )
-    strategy = _setting_or_default(
-        strategy, "RECOMMENDATION_DEFAULT_STRATEGY", DEFAULT_STRATEGY
-    )
-    alpha = _setting_or_default(
-        alpha, "RECOMMENDATION_DEFAULT_ALPHA", DEFAULT_ALPHA
-    )
-
     content_candidates = build_candidate_pool(user, pool_size=pool_size)
 
     if strategy == "content":
@@ -82,10 +72,3 @@ def build_hybrid_pool(
 
     results.sort(key=lambda c: c.final_score, reverse=True)
     return results
-
-
-def _setting_or_default(explicit, setting_name: str, default):
-    if explicit is not None:
-        return explicit
-
-    return getattr(settings, setting_name, default)

@@ -55,9 +55,6 @@ class WikidataClient:
                 "Wikimedia's user-agent policy)."
             )
         self.session.headers["User-Agent"] = user_agent
-        self.min_request_interval = getattr(
-            settings, "WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
 
     def find_qid_by_tmdb_id(self, tmdb_id: int) -> Optional[str]:
         query = f"""

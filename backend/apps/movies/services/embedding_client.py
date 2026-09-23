@@ -69,10 +69,6 @@ class EmbeddingClient:
                 "GEMINI_API_KEY is not configured. Set it in Django settings "
                 "(loaded from the environment) before using EmbeddingClient."
             )
-        self.model = getattr(settings, "EMBEDDING_MODEL", self.model)
-        self.min_request_interval = getattr(
-            settings, "EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
         self._client = genai.Client(api_key=self.api_key)
 
     def embed(self, text: str) -> list[float]:

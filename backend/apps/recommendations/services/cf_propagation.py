@@ -13,10 +13,8 @@ DEFAULT_PROPAGATION_K = 10
 def propagate_cf_score(
     movie: Movie,
     cf_scores_by_movie_id: dict[int, float],
-    k: Optional[int] = None,
+    k: Optional[int] = DEFAULT_PROPAGATION_K,
 ) -> Optional[float]:
-    k = _setting_or_default(k, "RECOMMENDATION_PROPAGATION_K", DEFAULT_PROPAGATION_K)
-
     if movie.embedding is None or not cf_scores_by_movie_id:
         return None
 
@@ -35,10 +33,3 @@ def propagate_cf_score(
         denominator += similarity
 
     return (numerator / denominator) if denominator else None
-
-
-def _setting_or_default(explicit: Optional[int], setting_name: str, default: int) -> int:
-    if explicit is not None:
-        return explicit
-
-    return getattr(settings, setting_name, default)

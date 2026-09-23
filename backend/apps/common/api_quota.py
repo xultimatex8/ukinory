@@ -82,7 +82,7 @@ def estimate_tokens(text: str) -> int:
 
 def cost_units(client: str, input_tokens: int = 0, output_tokens: int = 0) -> int:
     pricing = getattr(settings, "API_PRICING_USD_PER_M_TOKENS", {})[client]
-    eur_per_usd = getattr(settings, "EUR_PER_USD", 0.90)
+    eur_per_usd = 0.90
     micro_eur = (
         input_tokens * pricing.get("input", 0.0)
         + output_tokens * pricing.get("output", 0.0)

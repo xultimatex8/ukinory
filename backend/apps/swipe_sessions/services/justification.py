@@ -30,28 +30,21 @@ DEFAULT_MAX_HISTORY_MOVIES = 5
 @dataclass(slots=True)
 class JustificationClient:
     api_key: Optional[str] = None
-    model: Optional[str] = None
+    model: Optional[str] = DEFAULT_MODEL
     _client: genai.Client = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.api_key = self.api_key or getattr(settings, "GEMINI_API_KEY", None)
-        self.model = self.model or getattr(
-            settings, "RECOMMENDATION_JUSTIFICATION_MODEL", DEFAULT_MODEL
-        )
         self._client = genai.Client(api_key=self.api_key)
 
     def generate(self, user, movie: Movie) -> str:
         history = _recent_liked_ratings(user)
         prompt = _build_prompt(movie, history)
 
-        max_output = getattr(
-            settings, "RECOMMENDATION_JUSTIFICATION_MAX_OUTPUT_TOKENS", DEFAULT_MAX_OUTPUT_TOKENS
-        )
-
         reserved = api_quota.cost_units(
             QUOTA_CLIENT_NAME,
             input_tokens=api_quota.estimate_tokens(prompt),
-            output_tokens=max_output,
+            output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
         )
         try:
             api_quota.consume(QUOTA_CLIENT_NAME, reserved)
@@ -64,7 +57,7 @@ class JustificationClient:
                 model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    max_output_tokens=max_output,
+                    max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
                     thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
                 ),
             )
@@ -148,15 +141,9 @@ def get_candidate_justification(
 
 
 def _recent_liked_ratings(user) -> list[Rating]:
-    max_history_movies = getattr(
-        settings,
-        "RECOMMENDATION_MAX_HISTORY_MOVIES",
-        DEFAULT_MAX_HISTORY_MOVIES,
-    )
-
     return list(
         Rating.objects.filter(user=user, rating__isnull=False)
-        .order_by("-rating", "-watched_date")[:max_history_movies]
+        .order_by("-rating", "-watched_date")[:DEFAULT_MAX_HISTORY_MOVIES]
     )
 
 
