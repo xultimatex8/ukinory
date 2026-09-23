@@ -89,11 +89,15 @@ def ensure_session_finished(session_id) -> SwipeExportSummary | None:
 
 
 def _is_stale(session: SwipeSession) -> bool:
-    return (
-        session.status == SwipeSessionStatus.ACTIVE
-        and session.last_seen_at is not None
-        and timezone.now() - session.last_seen_at > STALE_SESSION_TIMEOUT
-    )
+    if session.status not in (SwipeSessionStatus.WAITING, SwipeSessionStatus.ACTIVE):
+        return False
+
+    cutoff = timezone.now() - STALE_SESSION_TIMEOUT
+
+    if session.last_seen_at is not None:
+        return session.last_seen_at < cutoff
+
+    return session.created_at < cutoff
 
 
 def ensure_session_active(session) -> None:
