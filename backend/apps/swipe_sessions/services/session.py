@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -12,6 +14,8 @@ from apps.swipe_sessions.exceptions import NotSessionMemberError, SwipeSessionFi
 
 LEAVE_TOKEN_SALT = "swipe_sessions.leave"
 LEAVE_TOKEN_MAX_AGE = 60 * 60 * 6
+
+STALE_SESSION_TIMEOUT = timedelta(minutes=2)
 
 
 def get_user_swipe_session(*, session_id, user) -> SwipeSession:
@@ -84,6 +88,22 @@ def ensure_session_finished(session_id) -> SwipeExportSummary | None:
     return _finish_session(session)
 
 
+def _is_stale(session: SwipeSession) -> bool:
+    if session.status not in (SwipeSessionStatus.WAITING, SwipeSessionStatus.ACTIVE):
+        return False
+
+    cutoff = timezone.now() - STALE_SESSION_TIMEOUT
+
+    if session.last_seen_at is not None:
+        return session.last_seen_at < cutoff
+
+    return session.created_at < cutoff
+
+
 def ensure_session_active(session) -> None:
     if session.status == SwipeSessionStatus.FINISHED:
+        raise SwipeSessionFinishedError
+
+    if _is_stale(session):
+        ensure_session_finished(session.pk)
         raise SwipeSessionFinishedError
