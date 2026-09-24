@@ -83,7 +83,7 @@ class TestConfiguration:
     def test_reads_min_request_interval_from_settings(self, settings):
         client = WikidataClient()
 
-        assert client.min_request_interval == 1.0
+        assert client.min_request_interval == 0.25
 
 
 class TestSparqlHappyPath:
@@ -366,7 +366,6 @@ class TestSharedPacing:
 
     def test_second_call_sleeps_out_the_remaining_interval(
         self,
-        settings,
         monkeypatch,
     ):
         from django.core.cache import cache
@@ -384,14 +383,13 @@ class TestSharedPacing:
         monkeypatch.setattr(time, "sleep", sleeps.append)
 
         client.sparql("SELECT ?item WHERE { }")
-        fake_clock[0] = 1_000.4
+        fake_clock[0] = 1_000.1
         client.sparql("SELECT ?item WHERE { }")
 
-        assert any(s == pytest.approx(0.6) for s in sleeps)
+        assert any(s == pytest.approx(0.15) for s in sleeps)
 
     def test_api_calls_share_the_same_pacing_as_sparql(
         self,
-        settings,
         monkeypatch,
     ):
         from django.core.cache import cache
@@ -409,10 +407,10 @@ class TestSharedPacing:
         monkeypatch.setattr(time, "sleep", sleeps.append)
 
         client.sparql("SELECT ?item WHERE { }")
-        fake_clock[0] = 1_000.25
+        fake_clock[0] = 1_000.05
         client.get_entities(["Q1"], props="labels")
 
-        assert any(s == pytest.approx(0.75) for s in sleeps)
+        assert any(s == pytest.approx(0.2) for s in sleeps)
 
     def test_lock_is_released_even_if_request_raises(self, settings):
         from django.core.cache import cache
