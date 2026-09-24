@@ -1,3 +1,5 @@
+import { apiUrl } from "../api";
+
 export type LegalDocumentId = number | string;
 
 export type LegalDocumentType = "TERMS" | "PRIVACY";
@@ -11,7 +13,7 @@ export interface LegalDocument {
 }
 
 export async function getCurrentLegalDocuments(): Promise<LegalDocument[]> {
-  const response = await fetch("/api/legal/documents/");
+  const response = await fetch(apiUrl("/api/legal/documents/"));
 
   const result = await response.json();
 

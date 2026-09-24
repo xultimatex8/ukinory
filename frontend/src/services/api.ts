@@ -1,3 +1,5 @@
+import { apiUrl } from "../api";
+
 export class ApiError extends Error {
   status: number;
   detail: string;
@@ -68,7 +70,7 @@ export async function apiFetch(
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const response = await fetch(input, {
+  const response = await fetch(apiUrl(input), {
     ...init,
     headers,
   });
@@ -96,7 +98,7 @@ export async function apiFetch(
     throw await createApiError(response);
   }
 
-  const refreshResponse = await fetch("/api/auth/token/refresh/", {
+  const refreshResponse = await fetch(apiUrl("/api/auth/token/refresh/"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -130,7 +132,7 @@ export async function apiFetch(
   const retryHeaders = new Headers(init.headers);
   retryHeaders.set("Authorization", `Bearer ${tokens.access}`);
 
-  const retryResponse = await fetch(input, {
+  const retryResponse = await fetch(apiUrl(input), {
     ...init,
     headers: retryHeaders,
   });
