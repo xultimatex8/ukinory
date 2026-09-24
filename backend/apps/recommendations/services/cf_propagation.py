@@ -7,7 +7,7 @@ from pgvector.django import CosineDistance
 
 from apps.movies.models import Movie
 
-DEFAULT_PROPAGATION_K = 10
+DEFAULT_PROPAGATION_K = 5
 
 
 def propagate_cf_score(

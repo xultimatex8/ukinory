@@ -58,7 +58,6 @@ INSTALLED_APPS = [
 ]
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS") or 1.5)
 
 def _budget_units(default_eur_cents: float):
     return int(round(default_eur_cents * 10_000)) if default_eur_cents > 0 else None
@@ -75,16 +74,16 @@ API_PRICING_USD_PER_M_TOKENS = {
 
 API_QUOTAS = {
     "embedding_sync": {
-        "day": _budget_units(0.25),
-        "week": _budget_units(1.0),
+        "day": _budget_units(0.286),
+        "week": _budget_units(2.0),
     },
     "embedding_batch": {
-        "day": _budget_units(0.25),
-        "week": _budget_units(1.0),
+        "day": _budget_units(0.214),
+        "week": _budget_units(1.5),
     },
     "gemini_generate": {
-        "day": _budget_units(0.25),
-        "week": _budget_units(1.0),
+        "day": _budget_units(0.214),
+        "week": _budget_units(1.5),
     },
 }
 
