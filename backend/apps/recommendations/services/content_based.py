@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_POOL_SIZE = 20
 
 
-def build_candidate_pool(user, pool_size: Optional[int] = None) -> list[RecommendationCandidate]:
-    pool_size = _setting_or_default(pool_size, "RECOMMENDATION_DEFAULT_POOL_SIZE", DEFAULT_POOL_SIZE)
-
+def build_candidate_pool(user, pool_size: Optional[int] = DEFAULT_POOL_SIZE) -> list[RecommendationCandidate]:
     profile = build_taste_profile(user)
 
     excluded_ids = _excluded_movie_ids(user)
@@ -54,10 +52,3 @@ def _excluded_movie_ids(user) -> set[int]:
         Swipe.objects.filter(user=user).values_list("candidate__movie_id", flat=True)
     )
     return rated | watchlisted | swiped
-
-
-def _setting_or_default(explicit: Optional[int], setting_name: str, default: int) -> int:
-    if explicit is not None:
-        return explicit
-
-    return getattr(settings, setting_name, default)

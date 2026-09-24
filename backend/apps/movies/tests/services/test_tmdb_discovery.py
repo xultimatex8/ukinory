@@ -31,7 +31,7 @@ class TestDiscoverPopularTmdbIds:
     def test_collects_ids_from_a_single_page(self):
         client = make_client(page([movie(1), movie(2)], total_pages=1))
 
-        ids = discover_popular_tmdb_ids(client, max_pages=5)
+        ids = discover_popular_tmdb_ids(client, max_pages=25)
 
         assert ids == [1, 2]
 
@@ -41,7 +41,7 @@ class TestDiscoverPopularTmdbIds:
             page([movie(2)], total_pages=2),
         )
 
-        ids = discover_popular_tmdb_ids(client, max_pages=5)
+        ids = discover_popular_tmdb_ids(client, max_pages=25)
 
         assert ids == [1, 2]
         assert client.get.call_count == 2
@@ -58,9 +58,9 @@ class TestDiscoverPopularTmdbIds:
         assert client.get.call_count == 2
 
     def test_stops_early_when_a_page_comes_back_empty(self):
-        client = make_client(page([], total_pages=5))
+        client = make_client(page([], total_pages=25))
 
-        ids = discover_popular_tmdb_ids(client, max_pages=5)
+        ids = discover_popular_tmdb_ids(client, max_pages=25)
 
         assert ids == []
         assert client.get.call_count == 1
@@ -74,15 +74,13 @@ class TestDiscoverPopularTmdbIds:
         assert kwargs["params"]["sort_by"] == "popularity.desc"
         assert kwargs["params"]["vote_count.gte"] == 42
 
-    def test_uses_settings_defaults_when_not_specified(self, settings):
-        settings.TMDB_DISCOVER_MAX_PAGES = 1
-        settings.TMDB_DISCOVER_MIN_VOTE_COUNT = 77
+    def test_uses_settings_defaults_when_not_specified(self):
         client = make_client(page([]))
 
         discover_popular_tmdb_ids(client)
 
         _, kwargs = client.get.call_args
-        assert kwargs["params"]["vote_count.gte"] == 77
+        assert kwargs["params"]["vote_count.gte"] == 50
         assert client.get.call_count == 1
 
     def test_excludes_adult_content(self):
@@ -120,7 +118,7 @@ class TestDiscoverNewReleaseTmdbIds:
         discover_new_release_tmdb_ids(client, max_pages=1)
 
         _, kwargs = client.get.call_args
-        assert kwargs["params"]["vote_count.gte"] == 5
+        assert kwargs["params"]["vote_count.gte"] == 25
 
     def test_collects_ids_across_pages(self):
         client = make_client(
@@ -128,20 +126,20 @@ class TestDiscoverNewReleaseTmdbIds:
             page([movie(20)], total_pages=2),
         )
 
-        ids = discover_new_release_tmdb_ids(client, max_pages=5)
+        ids = discover_new_release_tmdb_ids(client, max_pages=25)
 
         assert ids == [10, 20]
 
-    def test_uses_settings_defaults_when_not_specified(self, settings):
-        settings.TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS = 10
-        settings.TMDB_DISCOVER_NEW_RELEASE_MIN_VOTE_COUNT = 1
+    def test_uses_settings_defaults_when_not_specified(self):
         client = make_client(page([]))
 
-        discover_new_release_tmdb_ids(client, max_pages=1, today=date(2026, 9, 13))
+        discover_new_release_tmdb_ids(
+            client, max_pages=1, today=date(2026, 9, 13)
+        )
 
         _, kwargs = client.get.call_args
-        assert kwargs["params"]["primary_release_date.gte"] == "2026-09-03"
-        assert kwargs["params"]["vote_count.gte"] == 1
+        assert kwargs["params"]["primary_release_date.gte"] == "2026-03-17"
+        assert kwargs["params"]["vote_count.gte"] == 25
 
 
 class TestDecadeBuckets:
@@ -198,7 +196,9 @@ class TestDiscoverByDecadeTmdbIds:
         assert second_call_kwargs["params"]["primary_release_date.gte"] == "2000-01-01"
         assert second_call_kwargs["params"]["primary_release_date.lte"] == "2005-12-31"
 
-    def test_defaults_to_configured_start_year_through_current_year(self, settings, monkeypatch):
+    def test_defaults_to_configured_start_year_through_current_year(
+        self, settings, monkeypatch
+    ):
         import apps.movies.services.tmdb_discovery as discovery_module
 
         class FixedDate(date):
@@ -212,7 +212,7 @@ class TestDiscoverByDecadeTmdbIds:
 
         discover_by_decade_tmdb_ids(client, max_pages_per_decade=1)
 
-        expected_calls = ((2026 - settings.TMDB_DISCOVER_START_YEAR) // 10) + 1
+        expected_calls = 10
         assert client.get.call_count == expected_calls
 
 
@@ -256,7 +256,9 @@ class TestDiscoverByGenreTmdbIds:
     def test_scopes_each_query_to_its_genre(self):
         client = make_client(page([]), page([]))
 
-        discover_by_genre_tmdb_ids(client, genre_ids=[28, 99], max_pages_per_genre=1)
+        discover_by_genre_tmdb_ids(
+            client, genre_ids=[28, 99], max_pages_per_genre=1
+        )
 
         first_call_kwargs = client.get.call_args_list[0].kwargs
         second_call_kwargs = client.get.call_args_list[1].kwargs
@@ -266,7 +268,9 @@ class TestDiscoverByGenreTmdbIds:
     def test_sorts_by_popularity(self):
         client = make_client(page([]))
 
-        discover_by_genre_tmdb_ids(client, genre_ids=[28], max_pages_per_genre=1)
+        discover_by_genre_tmdb_ids(
+            client, genre_ids=[28], max_pages_per_genre=1
+        )
 
         _, kwargs = client.get.call_args
         assert kwargs["params"]["sort_by"] == "popularity.desc"

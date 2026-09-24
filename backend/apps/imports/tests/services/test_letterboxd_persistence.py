@@ -647,9 +647,9 @@ class TestPersistLetterboxdRecords:
                 ],
             }
         )
- 
+
         persisted, movie_summary = persist_letterboxd_records(registered_user, result)
- 
+
         assert persisted == {"ratings": 1, "watchlist": 1}
         assert Rating.objects.filter(
             user=registered_user, title="Dune", release_year=2021
@@ -659,28 +659,28 @@ class TestPersistLetterboxdRecords:
         ).exists()
         assert movie_summary.matched == 0
         assert set(movie_summary.unmatched) == {"Dune (2021)", "Alien (1979)"}
- 
+
     def test_without_watchlist(self, registered_user, no_tmdb_matches):
         result = ExtractionResult(
             csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
         )
- 
+
         persisted, _ = persist_letterboxd_records(registered_user, result)
- 
+
         assert persisted == {"ratings": 1}
         assert WatchlistEntry.objects.count() == 0
- 
+
     def test_with_empty_result(self, registered_user):
         result = ExtractionResult(csvs={})
- 
+
         persisted, movie_summary = persist_letterboxd_records(registered_user, result)
- 
+
         assert persisted == {"ratings": 0}
         assert Rating.objects.count() == 0
         assert WatchlistEntry.objects.count() == 0
         assert movie_summary.matched == 0
         assert movie_summary.unmatched == []
- 
+
     def test_constructs_and_uses_a_tmdb_client_for_matching(self, registered_user):
         Movie.objects.create(tmdb_id=1, title="Dune (import spelling)", release_year=2021)
         result = ExtractionResult(
@@ -739,8 +739,11 @@ class TestPersistLetterboxdRecords:
     def test_films_needing_wikidata_are_resolved_in_one_batched_call(
         self, registered_user
     ):
-        movie = Movie.objects.create(
-            tmdb_id=438631, title="Dune", release_year=2021
+        movie_dune = Movie.objects.create(
+            tmdb_id=111, title="Dune", release_year=2021
+        )
+        movie_alien = Movie.objects.create(
+            tmdb_id=348, title="Alien", release_year=1979
         )
         result = ExtractionResult(
             csvs={
@@ -755,34 +758,37 @@ class TestPersistLetterboxdRecords:
         with patch(
             PATCH_TARGET.format("match_movie"), side_effect=fake_match_movie
         ), patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
             PATCH_TARGET.format("find_cached_movie_by_tmdb_id"), return_value=None
         ), patch(
             PATCH_TARGET.format("fetch_and_store_movies"),
             side_effect=[
                 MovieCacheSummary(
-                    stored={},
+                    stored={111: movie_dune},
                     already_stored=0,
                     without_metadata=0,
                 ),
                 MovieCacheSummary(
-                    stored={348: movie},
+                    stored={348: movie_alien},
                     already_stored=0,
                     without_metadata=0,
                 ),
             ],
-        ) as mock_fetch_and_store:
+        ) as mock_fetch_and_store, patch(
+            PATCH_TARGET.format("DEFAULT_MAX_HISTORY_MOVIES"), 1
+        ):
             persisted, movie_summary = persist_letterboxd_records(registered_user, result)
 
         assert mock_fetch_and_store.call_count == 2
-        mock_fetch_and_store.assert_any_call({438631})
+        mock_fetch_and_store.assert_any_call({111})
         mock_fetch_and_store.assert_any_call({348}, defer_embeddings=True)
         assert movie_summary.matched == 2
         assert persisted == {"ratings": 1, "watchlist": 1}
 
     def test_only_the_top_rated_films_are_embedded_synchronously(
-        self, registered_user, settings
+        self, registered_user
     ):
-        settings.RECOMMENDATION_MAX_HISTORY_MOVIES = 1
         result = ExtractionResult(
             csvs={
                 RATINGS_CSV: [
@@ -794,6 +800,8 @@ class TestPersistLetterboxdRecords:
         tmdb_ids = {"Dune": 438631, "Alien": 348}
 
         with patch(
+            PATCH_TARGET.format("DEFAULT_MAX_HISTORY_MOVIES"), 1
+        ), patch(
             PATCH_TARGET.format("find_cached_movie"), return_value=None
         ), patch(
             PATCH_TARGET.format("match_movie"),
