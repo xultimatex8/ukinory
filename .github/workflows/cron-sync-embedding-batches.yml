@@ -1,0 +1,27 @@
+name: cron-sync-embedding-batches
+
+on:
+  schedule:
+    - cron: "30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r backend/requirements.txt
+
+      - name: Run sync_embedding_batches
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          ENVIRONMENT: production
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python manage.py sync_embedding_batches

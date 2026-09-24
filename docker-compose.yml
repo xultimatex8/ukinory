@@ -1,0 +1,158 @@
+services:
+
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: postgres_db
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    ports:
+      - "5432:5432"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+
+    ports:
+      - "6379:6379"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  cron:
+    build:
+      context: ./backend
+    container_name: django_cron
+
+    entrypoint: []
+
+    command: >
+      sh -c "
+        python manage.py crontab remove &&
+        python manage.py crontab add &&
+        (env | grep -E '^(PATH=|DATABASE_URL=|DJANGO_SECRET_KEY=|REDIS_URL=|POSTGRES_|GEMINI_|EMBEDDING_|RECOMMENDATION_|JUSTIFICATION_|EUR_|POOL_|TMDB_|WIKIDATA_)'; crontab -l) | crontab - &&
+        cron -f
+      "
+
+    volumes:
+      - ./backend:/app
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+
+      DATABASE_URL: ${DATABASE_URL}
+
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      
+      WIKIDATA_USER_AGENT: ${WIKIDATA_USER_AGENT}
+
+      REDIS_URL: ${REDIS_URL}
+
+      ENVIRONMENT: ${ENVIRONMENT}
+      PYTHONPATH: /app
+
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+
+  backend:
+    build:
+      context: ./backend
+
+    container_name: django_backend
+
+    command: python -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000
+
+    volumes:
+      - ./backend:/app
+
+    ports:
+      - "8000:8000"
+      - "5678:5678"
+      - "8888:8888"
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+
+      DATABASE_URL: ${DATABASE_URL}
+
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+
+      TMDB_API_KEY: ${TMDB_API_KEY}
+
+      WIKIDATA_USER_AGENT: ${WIKIDATA_USER_AGENT}
+
+      REDIS_URL: ${REDIS_URL}
+
+      ENVIRONMENT: ${ENVIRONMENT}
+      PYTHONPATH: /app
+
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  frontend:
+    build:
+      context: ./frontend
+
+    container_name: react_frontend
+
+    command: npm run dev -- --host 0.0.0.0
+
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+    ports:
+      - "5173:5173"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+
+volumes:
+  postgres_data:
