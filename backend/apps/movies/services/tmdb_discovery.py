@@ -13,26 +13,21 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_PAGES = 5
 DEFAULT_MIN_VOTE_COUNT = 50
-DEFAULT_NEW_RELEASE_WINDOW_DAYS = 90
-DEFAULT_NEW_RELEASE_MIN_VOTE_COUNT = 5
-DEFAULT_START_YEAR = 1900
-DEFAULT_PAGES_PER_BUCKET = 1
-DEFAULT_DECADE_MIN_VOTE_COUNT = 100
-DEFAULT_GENRE_MIN_VOTE_COUNT = 50
+DEFAULT_NEW_RELEASE_WINDOW_DAYS = 180
+DEFAULT_NEW_RELEASE_MIN_VOTE_COUNT = 25
+DEFAULT_START_YEAR = 1930
+DEFAULT_PAGES_PER_BUCKET = 5
+DEFAULT_DECADE_MIN_VOTE_COUNT = 250
+DEFAULT_GENRE_MIN_VOTE_COUNT = 100
 
 TMDB_HARD_PAGE_LIMIT = 500
 
 
 def discover_popular_tmdb_ids(
     client: TMDbClient,
-    max_pages: Optional[int] = None,
-    min_vote_count: Optional[int] = None,
+    max_pages: Optional[int] = DEFAULT_MAX_PAGES,
+    min_vote_count: Optional[int] = DEFAULT_MIN_VOTE_COUNT,
 ) -> list[int]:
-    max_pages = _setting_or_default(max_pages, "TMDB_DISCOVER_MAX_PAGES", DEFAULT_MAX_PAGES)
-    min_vote_count = _setting_or_default(
-        min_vote_count, "TMDB_DISCOVER_MIN_VOTE_COUNT", DEFAULT_MIN_VOTE_COUNT
-    )
-
     logger.info(
         "TMDb popular discover: max_pages=%s, min_vote_count=%s",
         max_pages,
@@ -52,20 +47,11 @@ def discover_popular_tmdb_ids(
 
 def discover_new_release_tmdb_ids(
     client: TMDbClient,
-    max_pages: Optional[int] = None,
-    window_days: Optional[int] = None,
-    min_vote_count: Optional[int] = None,
+    max_pages: Optional[int] = DEFAULT_MAX_PAGES,
+    window_days: Optional[int] = DEFAULT_NEW_RELEASE_WINDOW_DAYS,
+    min_vote_count: Optional[int] = DEFAULT_NEW_RELEASE_MIN_VOTE_COUNT,
     today: Optional[date] = None,
 ) -> list[int]:
-    max_pages = _setting_or_default(max_pages, "TMDB_DISCOVER_MAX_PAGES", DEFAULT_MAX_PAGES)
-    window_days = _setting_or_default(
-        window_days, "TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS", DEFAULT_NEW_RELEASE_WINDOW_DAYS
-    )
-    min_vote_count = _setting_or_default(
-        min_vote_count,
-        "TMDB_DISCOVER_NEW_RELEASE_MIN_VOTE_COUNT",
-        DEFAULT_NEW_RELEASE_MIN_VOTE_COUNT,
-    )
     today = today or date.today()
     since = today - timedelta(days=window_days)
 
@@ -94,19 +80,12 @@ def discover_new_release_tmdb_ids(
 
 def discover_by_decade_tmdb_ids(
     client: TMDbClient,
-    start_year: Optional[int] = None,
+    start_year: Optional[int] = DEFAULT_START_YEAR,
     end_year: Optional[int] = None,
-    max_pages_per_decade: Optional[int] = None,
-    min_vote_count: Optional[int] = None,
+    max_pages_per_decade: Optional[int] = DEFAULT_PAGES_PER_BUCKET,
+    min_vote_count: Optional[int] = DEFAULT_DECADE_MIN_VOTE_COUNT,
 ) -> list[int]:
-    start_year = start_year or getattr(settings, "TMDB_DISCOVER_START_YEAR", DEFAULT_START_YEAR)
     end_year = end_year or date.today().year
-    max_pages_per_decade = _setting_or_default(
-        max_pages_per_decade, "TMDB_DISCOVER_PAGES_PER_BUCKET", DEFAULT_PAGES_PER_BUCKET
-    )
-    min_vote_count = _setting_or_default(
-        min_vote_count, "TMDB_DISCOVER_DECADE_MIN_VOTE_COUNT", DEFAULT_DECADE_MIN_VOTE_COUNT
-    )
 
     logger.info(
         "TMDb decade discover: start_year=%s, end_year=%s, "
@@ -151,16 +130,10 @@ def fetch_movie_genre_ids(client: TMDbClient) -> list[int]:
 def discover_by_genre_tmdb_ids(
     client: TMDbClient,
     genre_ids: Optional[list[int]] = None,
-    max_pages_per_genre: Optional[int] = None,
-    min_vote_count: Optional[int] = None,
+    max_pages_per_genre: Optional[int] = DEFAULT_PAGES_PER_BUCKET,
+    min_vote_count: Optional[int] = DEFAULT_GENRE_MIN_VOTE_COUNT,
 ) -> list[int]:
     genre_ids = genre_ids if genre_ids is not None else fetch_movie_genre_ids(client)
-    max_pages_per_genre = _setting_or_default(
-        max_pages_per_genre, "TMDB_DISCOVER_PAGES_PER_BUCKET", DEFAULT_PAGES_PER_BUCKET
-    )
-    min_vote_count = _setting_or_default(
-        min_vote_count, "TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT", DEFAULT_GENRE_MIN_VOTE_COUNT
-    )
 
     logger.info(
         "TMDb genre discover: max_pages_per_genre=%s, "
@@ -225,10 +198,3 @@ def _discover_ids(client: TMDbClient, max_pages: int, params: dict) -> list[int]
         page += 1
 
     return ids
-
-
-def _setting_or_default(explicit: Optional[int], setting_name: str, default: int) -> int:
-    if explicit is not None:
-        return explicit
-
-    return getattr(settings, setting_name, default)

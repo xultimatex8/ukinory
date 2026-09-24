@@ -38,7 +38,6 @@ class FakeResponse:
 @pytest.fixture(autouse=True)
 def tmdb_api_key(settings):
     settings.TMDB_API_KEY = "test-key"
-    settings.TMDB_MIN_REQUEST_INTERVAL_SECONDS = 0.0
 
 
 @pytest.fixture(autouse=True)
@@ -67,11 +66,9 @@ class TestConfiguration:
         assert client.api_key == "explicit-key"
 
     def test_reads_min_request_interval_from_settings(self, settings):
-        settings.TMDB_MIN_REQUEST_INTERVAL_SECONDS = 0.75
-
         client = TMDbClient()
 
-        assert client.min_request_interval == 0.75
+        assert client.min_request_interval == 0.075
 
 
 class TestGetHappyPath:
@@ -211,7 +208,6 @@ class TestSharedPacing:
     def test_stamps_timestamp_in_cache(self, settings):
         from django.core.cache import cache
 
-        settings.TMDB_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
         client = make_client()
         client.session.get.return_value = FakeResponse(200, {})
@@ -221,11 +217,10 @@ class TestSharedPacing:
         assert cache.get(TMDB_PACING_TIMESTAMP_KEY) is not None
 
     def test_second_call_sleeps_out_the_remaining_interval(
-        self, settings, monkeypatch
+        self, monkeypatch
     ):
         from django.core.cache import cache
 
-        settings.TMDB_MIN_REQUEST_INTERVAL_SECONDS = 1.0
         cache.clear()
         client = make_client()
         client.session.get.return_value = FakeResponse(200, {})
@@ -236,12 +231,12 @@ class TestSharedPacing:
         monkeypatch.setattr(time, "sleep", sleeps.append)
 
         client.get("/movie/1")
-        fake_clock[0] = 1_000.4
+        fake_clock[0] = 1_000.05
         client.get("/movie/2")
 
-        assert any(s == pytest.approx(0.6) for s in sleeps)
+        assert any(s == pytest.approx(0.025) for s in sleeps)
 
-    def test_lock_is_released_even_if_request_raises(self, settings):
+    def test_lock_is_released_even_if_request_raises(self):
         from django.core.cache import cache
         from apps.movies.services.tmdb_client import TMDB_PACING_LOCK_KEY
 

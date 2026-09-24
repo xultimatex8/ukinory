@@ -16,19 +16,13 @@ def get_next_recommendation(
     session,
     user,
 ) -> tuple[SwipeSessionCandidate, RecommendationCandidate] | None:
-    pool_refill_threshhold = getattr(
-        settings,
-        "POOL_REFILL_THRESHOLD",
-        DEFAULT_POOL_REFILL_THRESHOLD,
-    )
-
     candidate = _get_next_candidate(session, user)
 
     if candidate is None:
         fill_candidate_pool(session=session, user=user)
         candidate = _get_next_candidate(session, user)
 
-    elif _get_remaining_candidates(session, user) <= pool_refill_threshhold:
+    elif _get_remaining_candidates(session, user) <= DEFAULT_POOL_REFILL_THRESHOLD:
         fill_candidate_pool(session=session, user=user)
 
     if candidate is None:

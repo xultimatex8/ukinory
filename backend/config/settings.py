@@ -58,67 +58,37 @@ INSTALLED_APPS = [
 ]
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL") or "gemini-embedding-001"
-EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS") or 1.5)
 
-def _budget_units(name: str, default_eur_cents: float):
-    value = float(os.getenv(name) or default_eur_cents)
-    return int(round(value * 10_000)) if value > 0 else None
+def _budget_units(default_eur_cents: float):
+    return int(round(default_eur_cents * 10_000)) if default_eur_cents > 0 else None
 
-
-EUR_PER_USD = float(os.getenv("EUR_PER_USD") or 0.90)
 
 API_PRICING_USD_PER_M_TOKENS = {
-    "embedding_sync": {"input": float(os.getenv("EMBEDDING_SYNC_PRICE_INPUT") or 0.15)},
-    "embedding_batch": {"input": float(os.getenv("EMBEDDING_BATCH_PRICE_INPUT") or 0.075)},
+    "embedding_sync": {"input": float(0.15)},
+    "embedding_batch": {"input": float(0.075)},
     "gemini_generate": {
-        "input": float(os.getenv("JUSTIFICATION_PRICE_INPUT") or 0.25),
-        "output": float(os.getenv("JUSTIFICATION_PRICE_OUTPUT") or 1.50),
+        "input": float(0.25),
+        "output": float(1.50),
     },
 }
 
 API_QUOTAS = {
     "embedding_sync": {
-        "day": _budget_units("EMBEDDING_SYNC_BUDGET_DAILY_CENTS", 0.25),
-        "week": _budget_units("EMBEDDING_SYNC_BUDGET_WEEKLY_CENTS", 1.0),
+        "day": _budget_units(0.286),
+        "week": _budget_units(2.0),
     },
     "embedding_batch": {
-        "day": _budget_units("EMBEDDING_BATCH_BUDGET_DAILY_CENTS", 0.25),
-        "week": _budget_units("EMBEDDING_BATCH_BUDGET_WEEKLY_CENTS", 1.0),
+        "day": _budget_units(0.214),
+        "week": _budget_units(1.5),
     },
     "gemini_generate": {
-        "day": _budget_units("JUSTIFICATION_BUDGET_DAILY_CENTS", 0.25),
-        "week": _budget_units("JUSTIFICATION_BUDGET_WEEKLY_CENTS", 1.0),
+        "day": _budget_units(0.214),
+        "week": _budget_units(1.5),
     },
 }
 
-EMBEDDING_BATCH_MAX_ITEMS = int(os.getenv("EMBEDDING_BATCH_MAX_ITEMS") or 2000)
-
-RECOMMENDATION_PROPAGATION_K = int(os.getenv("RECOMMENDATION_PROPAGATION_K") or 10)
-RECOMMENDATION_MIN_RATERS_FOR_CF = int(os.getenv("RECOMMENDATION_MIN_RATERS_FOR_CF") or 5)
-RECOMMENDATION_MIN_COMMON_MOVIES = int(os.getenv("RECOMMENDATION_MIN_COMMON_MOVIES") or 3)
-RECOMMENDATION_MAX_SIMILAR_USERS = int(os.getenv("RECOMMENDATION_MAX_SIMILAR_USERS") or 30)
-RECOMMENDATION_DEFAULT_POOL_SIZE = int(os.getenv("RECOMMENDATION_DEFAULT_POOL_SIZE") or 20)
-RECOMMENDATION_DEFAULT_STRATEGY = (os.getenv("RECOMMENDATION_DEFAULT_STRATEGY") or "hybrid")
-RECOMMENDATION_DEFAULT_ALPHA = float(os.getenv("RECOMMENDATION_DEFAULT_ALPHA") or 0.5)
-RECOMMENDATION_JUSTIFICATION_MODEL = (os.getenv("RECOMMENDATION_JUSTIFICATION_MODEL") or "gemini-3.1-flash-lite")
-RECOMMENDATION_JUSTIFICATION_MAX_OUTPUT_TOKENS = int(os.getenv("RECOMMENDATION_JUSTIFICATION_MAX_OUTPUT_TOKENS") or 80)
-RECOMMENDATION_MAX_HISTORY_MOVIES = int(os.getenv("RECOMMENDATION_MAX_HISTORY_MOVIES") or 5)
-
-POOL_REFILL_THRESHOLD = int(os.getenv("POOL_REFILL_THRESHOLD") or 5)
-
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
-TMDB_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("TMDB_MIN_REQUEST_INTERVAL_SECONDS") or 0.25)
-TMDB_DISCOVER_MAX_PAGES = int(os.getenv("TMDB_DISCOVER_MAX_PAGES") or 5)
-TMDB_DISCOVER_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_MIN_VOTE_COUNT") or 50)
-TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS = int(os.getenv("TMDB_DISCOVER_NEW_RELEASE_WINDOW_DAYS") or 90)
-TMDB_DISCOVER_NEW_RELEASE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_NEW_RELEASE_MIN_VOTE_COUNT") or 5)
-TMDB_DISCOVER_START_YEAR = int(os.getenv("TMDB_DISCOVER_START_YEAR") or 1900)
-TMDB_DISCOVER_PAGES_PER_BUCKET = int(os.getenv("TMDB_DISCOVER_PAGES_PER_BUCKET") or 1)
-TMDB_DISCOVER_DECADE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_DECADE_MIN_VOTE_COUNT") or 100)
-TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT = int(os.getenv("TMDB_DISCOVER_GENRE_MIN_VOTE_COUNT") or 50)
 
-WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS = float(os.getenv("WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS") or 1.0)
 WIKIDATA_USER_AGENT = os.getenv("WIKIDATA_USER_AGENT")
 
 AUTH_USER_MODEL = "users.User"

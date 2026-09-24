@@ -24,7 +24,7 @@ DEFAULT_MAX_RETRIES = 5
 DEFAULT_RETRY_AFTER_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 8.0
 
-DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.25
+DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.075
 
 TMDB_PACING_TIMESTAMP_KEY = "tmdb:pacing:last_request_at"
 TMDB_PACING_LOCK_KEY = "tmdb:pacing:lock"
@@ -48,9 +48,6 @@ class TMDbClient:
                 "TMDB_API_KEY is not configured. Set it in Django settings "
                 "(loaded from the environment) before using TMDbClient."
             )
-        self.min_request_interval = getattr(
-            settings, "TMDB_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
 
     def get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> dict:
         url = f"{TMDB_BASE_URL}{path}"

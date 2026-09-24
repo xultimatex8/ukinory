@@ -21,7 +21,8 @@ from apps.movies.services.movie_cache import (
 )
 from apps.movies.services.tmdb_client import TMDbClient
 from apps.movies.services.tmdb_matching import match_movie
-from django.conf import settings
+
+from apps.swipe_sessions.services.justification import DEFAULT_MAX_HISTORY_MOVIES
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +264,7 @@ def persist_letterboxd_records(
         key=lambda k: (merged[k].liked, merged[k].rating),
         reverse=True,
     )
-    priority_keys = set(rated[: settings.RECOMMENDATION_MAX_HISTORY_MOVIES])
+    priority_keys = set(rated[: DEFAULT_MAX_HISTORY_MOVIES])
 
     movie_matches, movie_summary = _match_films(client, film_keys, priority_keys)
 

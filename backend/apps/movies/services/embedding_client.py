@@ -24,7 +24,7 @@ DEFAULT_MODEL = "gemini-embedding-001"
 DEFAULT_MAX_RETRIES = 3
 MAX_BACKOFF_SECONDS = 16.0
 
-DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 1.5
+DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.85
 
 EMBEDDING_PACING_TIMESTAMP_KEY = "embedding:pacing:last_request_at"
 EMBEDDING_PACING_LOCK_KEY = "embedding:pacing:lock"
@@ -69,10 +69,6 @@ class EmbeddingClient:
                 "GEMINI_API_KEY is not configured. Set it in Django settings "
                 "(loaded from the environment) before using EmbeddingClient."
             )
-        self.model = getattr(settings, "EMBEDDING_MODEL", self.model)
-        self.min_request_interval = getattr(
-            settings, "EMBEDDING_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
         self._client = genai.Client(api_key=self.api_key)
 
     def embed(self, text: str) -> list[float]:

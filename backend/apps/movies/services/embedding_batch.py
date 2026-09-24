@@ -50,7 +50,7 @@ def submit_pending_embeddings_batch(
     max_items: int | None = None,
     min_items: int = 1,
 ) -> EmbeddingBatchJob | None:
-    max_items = max_items or getattr(settings, "EMBEDDING_BATCH_MAX_ITEMS", DEFAULT_MAX_ITEMS)
+    max_items = max_items or DEFAULT_MAX_ITEMS
 
     budget = api_quota.remaining(QUOTA_BATCH)
     if budget is not None and budget <= 0:

@@ -12,9 +12,9 @@ from apps.recommendations.dtos.rating_matrix import RatingMatrix
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MIN_RATERS_FOR_CF = 5
-DEFAULT_MIN_COMMON_MOVIES = 3
-DEFAULT_MAX_SIMILAR_USERS = 30
+DEFAULT_MIN_RATERS_FOR_CF = 3
+DEFAULT_MIN_COMMON_MOVIES = 2
+DEFAULT_MAX_SIMILAR_USERS = 10
 
 
 def build_rating_matrix() -> RatingMatrix:
@@ -35,12 +35,8 @@ def build_rating_matrix() -> RatingMatrix:
 def _cosine(
     a: dict[int, float],
     b: dict[int, float],
-    min_common_movies: Optional[int] = None,
+    min_common_movies: Optional[int] = DEFAULT_MIN_COMMON_MOVIES,
 ) -> Optional[float]:
-    min_common_movies = _setting_or_default(
-        min_common_movies, "RECOMMENDATION_MIN_COMMON_MOVIES", DEFAULT_MIN_COMMON_MOVIES
-    )
-
     common = set(a) & set(b)
     if len(common) < min_common_movies:
         return None
@@ -55,12 +51,8 @@ def _cosine(
 def find_similar_users(
     user_id: int,
     matrix: RatingMatrix,
-    max_similar_users: Optional[int] = None,
+    max_similar_users: Optional[int] = DEFAULT_MAX_SIMILAR_USERS,
 ) -> list[tuple[int, float]]:
-    max_similar_users = _setting_or_default(
-        max_similar_users, "RECOMMENDATION_MAX_SIMILAR_USERS", DEFAULT_MAX_SIMILAR_USERS
-    )
-
     target = matrix.by_user.get(user_id)
     if not target:
         return []
@@ -81,12 +73,8 @@ def predict_cf_score(
     movie_id: int,
     matrix: RatingMatrix,
     similar_users: list[tuple[int, float]],
-    min_raters_for_cf: Optional[int] = None,
+    min_raters_for_cf: Optional[int] = DEFAULT_MIN_RATERS_FOR_CF,
 ) -> Optional[float]:
-    min_raters_for_cf = _setting_or_default(
-        min_raters_for_cf, "RECOMMENDATION_MIN_RATERS_FOR_CF", DEFAULT_MIN_RATERS_FOR_CF
-    )
-
     raters = matrix.by_movie.get(movie_id, {})
     if len(raters) < min_raters_for_cf:
         return None
@@ -100,10 +88,3 @@ def predict_cf_score(
         denominator += abs(sim)
 
     return (numerator / denominator) if denominator else None
-
-
-def _setting_or_default(explicit: Optional[int], setting_name: str, default: int) -> int:
-    if explicit is not None:
-        return explicit
-
-    return getattr(settings, setting_name, default)

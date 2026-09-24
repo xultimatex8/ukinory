@@ -27,7 +27,7 @@ MAX_RETRY_AFTER_SECONDS = 120.0
 
 MAX_ENTITIES_PER_REQUEST = 50
 
-DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.25
 
 WIKIDATA_PACING_TIMESTAMP_KEY = "wikidata:pacing:last_request_at"
 WIKIDATA_PACING_LOCK_KEY = "wikidata:pacing:lock"
@@ -55,9 +55,6 @@ class WikidataClient:
                 "Wikimedia's user-agent policy)."
             )
         self.session.headers["User-Agent"] = user_agent
-        self.min_request_interval = getattr(
-            settings, "WIKIDATA_MIN_REQUEST_INTERVAL_SECONDS", self.min_request_interval
-        )
 
     def find_qid_by_tmdb_id(self, tmdb_id: int) -> Optional[str]:
         query = f"""
