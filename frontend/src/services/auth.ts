@@ -1,5 +1,6 @@
 import type { User } from "./user";
 import type { LegalDocumentId } from "./legal";
+import { apiUrl } from "../api";
 
 export interface RegisterData {
   email: string;
@@ -17,7 +18,7 @@ export interface AuthResponse {
 export async function register(
   data: RegisterData,
 ): Promise<AuthResponse> {
-  const response = await fetch("/api/auth/register/", {
+  const response = await fetch(apiUrl("/api/auth/register/"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -38,7 +39,7 @@ export async function login(data: {
   email: string;
   password: string;
 }): Promise<AuthResponse> {
-  const response = await fetch("/api/auth/token/", {
+  const response = await fetch(apiUrl("/api/auth/token/"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -56,7 +57,7 @@ export async function login(data: {
 }
 
 export async function createGuest(): Promise<AuthResponse> {
-  const response = await fetch("/api/auth/guest/", {
+  const response = await fetch(apiUrl("/api/auth/guest/"), {
     method: "POST",
   });
 
