@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
@@ -15,7 +15,7 @@ from apps.movies.exceptions import (
     TMDbUnavailableError,
 )
 from apps.movies.services.tmdb_client import (
-    TMDB_PACING_TIMESTAMP_KEY,
+    TMDB_PACING_KEY,
     TMDbClient,
 )
 
@@ -205,46 +205,47 @@ class TestServerErrors:
 
 @pytest.mark.django_db
 class TestSharedPacing:
-    def test_stamps_timestamp_in_cache(self, settings):
-        from django.core.cache import cache
-
-        cache.clear()
+    @patch("apps.movies.services.tmdb_client.wait_for_pacing")
+    def test_stamps_timestamp_in_cache(self, mock_wait_for_pacing):
         client = make_client()
         client.session.get.return_value = FakeResponse(200, {})
 
         client.get("/movie/1")
 
-        assert cache.get(TMDB_PACING_TIMESTAMP_KEY) is not None
+        mock_wait_for_pacing.assert_called_once_with(
+            TMDB_PACING_KEY,
+            client.min_request_interval,
+        )
 
+    @patch("apps.movies.services.tmdb_client.wait_for_pacing")
     def test_second_call_sleeps_out_the_remaining_interval(
-        self, monkeypatch
+        self, mock_wait_for_pacing
     ):
-        from django.core.cache import cache
-
-        cache.clear()
         client = make_client()
         client.session.get.return_value = FakeResponse(200, {})
 
-        fake_clock = [1_000.0]
-        monkeypatch.setattr(time, "time", lambda: fake_clock[0])
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
         client.get("/movie/1")
-        fake_clock[0] = 1_000.05
         client.get("/movie/2")
 
-        assert any(s == pytest.approx(0.025) for s in sleeps)
+        assert mock_wait_for_pacing.call_count == 2
+        assert mock_wait_for_pacing.call_args_list[0].args == (
+            TMDB_PACING_KEY,
+            client.min_request_interval,
+        )
+        assert mock_wait_for_pacing.call_args_list[1].args == (
+            TMDB_PACING_KEY,
+            client.min_request_interval,
+        )
 
-    def test_lock_is_released_even_if_request_raises(self):
-        from django.core.cache import cache
-        from apps.movies.services.tmdb_client import TMDB_PACING_LOCK_KEY
-
-        cache.clear()
+    @patch("apps.movies.services.tmdb_client.wait_for_pacing")
+    def test_pacing_is_called_even_if_request_raises(self, mock_wait_for_pacing):
         client = make_client(max_retries=0)
         client.session.get.side_effect = requests.ConnectionError("boom")
 
         with pytest.raises(TMDbUnavailableError):
             client.get("/movie/1")
 
-        assert cache.get(TMDB_PACING_LOCK_KEY) is None
+        mock_wait_for_pacing.assert_called_once_with(
+            TMDB_PACING_KEY,
+            client.min_request_interval,
+        )

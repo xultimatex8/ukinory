@@ -16,7 +16,7 @@ from apps.movies.exceptions import (
 from apps.movies.services.wikidata_client import (
     MAX_ENTITIES_PER_REQUEST,
     WIKIDATA_API_URL,
-    WIKIDATA_PACING_TIMESTAMP_KEY,
+    WIKIDATA_PACING_KEY,
     WIKIDATA_SPARQL_URL,
     WikidataClient,
 )
@@ -350,10 +350,20 @@ class TestServerErrors:
 
 @pytest.mark.django_db
 class TestSharedPacing:
-    def test_stamps_timestamp_in_cache(self, settings):
-        from django.core.cache import cache
+    def test_stamps_timestamp_in_cache(self, monkeypatch):
+        from apps.movies.services import wikidata_client
 
-        cache.clear()
+        calls: list[tuple[str, float]] = []
+
+        def fake_wait_for_pacing(key: str, min_interval: float) -> None:
+            calls.append((key, min_interval))
+
+        monkeypatch.setattr(
+            wikidata_client,
+            "wait_for_pacing",
+            fake_wait_for_pacing,
+        )
+
         client = make_client()
         client.session.get.return_value = FakeResponse(
             200,
@@ -362,68 +372,98 @@ class TestSharedPacing:
 
         client.sparql("SELECT ?item WHERE { }")
 
-        assert cache.get(WIKIDATA_PACING_TIMESTAMP_KEY) is not None
+        assert calls == [
+            (WIKIDATA_PACING_KEY, client.min_request_interval),
+        ]
 
     def test_second_call_sleeps_out_the_remaining_interval(
         self,
         monkeypatch,
     ):
-        from django.core.cache import cache
+        from apps.movies.services import wikidata_client
 
-        cache.clear()
+        calls: list[tuple[str, float]] = []
+
+        def fake_wait_for_pacing(key: str, min_interval: float) -> None:
+            calls.append((key, min_interval))
+
+        monkeypatch.setattr(
+            wikidata_client,
+            "wait_for_pacing",
+            fake_wait_for_pacing,
+        )
+
         client = make_client()
         client.session.get.return_value = FakeResponse(
             200,
             bindings_payload(),
         )
 
-        fake_clock = [1_000.0]
-        monkeypatch.setattr(time, "time", lambda: fake_clock[0])
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
         client.sparql("SELECT ?item WHERE { }")
-        fake_clock[0] = 1_000.1
         client.sparql("SELECT ?item WHERE { }")
 
-        assert any(s == pytest.approx(0.15) for s in sleeps)
+        assert calls == [
+            (WIKIDATA_PACING_KEY, client.min_request_interval),
+            (WIKIDATA_PACING_KEY, client.min_request_interval),
+        ]
 
     def test_api_calls_share_the_same_pacing_as_sparql(
         self,
         monkeypatch,
     ):
-        from django.core.cache import cache
+        from apps.movies.services import wikidata_client
 
-        cache.clear()
+        calls: list[tuple[str, float]] = []
+
+        def fake_wait_for_pacing(key: str, min_interval: float) -> None:
+            calls.append((key, min_interval))
+
+        monkeypatch.setattr(
+            wikidata_client,
+            "wait_for_pacing",
+            fake_wait_for_pacing,
+        )
+
         client = make_client()
         client.session.get.side_effect = [
             FakeResponse(200, bindings_payload()),
             FakeResponse(200, entities_payload("Q1")),
         ]
 
-        fake_clock = [1_000.0]
-        monkeypatch.setattr(time, "time", lambda: fake_clock[0])
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
         client.sparql("SELECT ?item WHERE { }")
-        fake_clock[0] = 1_000.05
         client.get_entities(["Q1"], props="labels")
 
-        assert any(s == pytest.approx(0.2) for s in sleeps)
+        assert calls == [
+            (WIKIDATA_PACING_KEY, client.min_request_interval),
+            (WIKIDATA_PACING_KEY, client.min_request_interval),
+        ]
 
-    def test_lock_is_released_even_if_request_raises(self, settings):
-        from django.core.cache import cache
-        from apps.movies.services.wikidata_client import WIKIDATA_PACING_LOCK_KEY
+    def test_pacing_is_applied_even_if_request_raises(
+        self,
+        monkeypatch,
+    ):
+        from apps.movies.services import wikidata_client
 
-        cache.clear()
+        calls: list[tuple[str, float]] = []
+
+        def fake_wait_for_pacing(key: str, min_interval: float) -> None:
+            calls.append((key, min_interval))
+
+        monkeypatch.setattr(
+            wikidata_client,
+            "wait_for_pacing",
+            fake_wait_for_pacing,
+        )
+
         client = make_client(max_retries=0)
         client.session.get.side_effect = requests.ConnectionError("boom")
 
         with pytest.raises(WikidataUnavailableError):
             client.sparql("SELECT ?item WHERE { }")
 
-        assert cache.get(WIKIDATA_PACING_LOCK_KEY) is None
+        assert calls == [
+            (WIKIDATA_PACING_KEY, client.min_request_interval),
+        ]
 
 
 class TestFindQidByTmdbId:

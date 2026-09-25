@@ -26,3 +26,10 @@ class SwipeSessionStatus(models.TextChoices):
 class LegalDocumentType(models.TextChoices):
     TERMS = "TERMS", "Terms and Conditions"
     PRIVACY = "PRIVACY", "Privacy Policy"
+
+
+class ImportJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RUNNING = "running", "Running"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"

@@ -307,6 +307,9 @@ export default function DiscoverScreen() {
 
               <p className="mt-2 text-sm leading-relaxed text-text-muted">
                 Improve your recommendations using your Letterboxd history.
+                <span className="mt-1 block text-xs text-text-muted/70">
+                  First import can take up to several minutes, depending on size.
+                </span>
               </p>
 
               <Link
