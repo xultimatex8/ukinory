@@ -2,7 +2,7 @@ name: cron-seed-movie-catalog-daily
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 4 * * 1-6"
   workflow_dispatch:
 
 jobs:
