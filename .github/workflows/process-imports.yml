@@ -30,3 +30,4 @@ jobs:
           REDIS_URL: ${{ secrets.REDIS_URL }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           WIKIDATA_USER_AGENT: ${{ secrets.WIKIDATA_USER_AGENT }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
