@@ -1,0 +1,31 @@
+name: Process import jobs
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 * * * *"
+
+jobs:
+  run-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run RQ worker (burst mode)
+        run: python manage.py rqworker --burst default
+        env:
+          ENVIRONMENT: production
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          WIKIDATA_USER_AGENT: ${{ secrets.WIKIDATA_USER_AGENT }}

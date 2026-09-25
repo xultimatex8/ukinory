@@ -7,7 +7,6 @@ from typing import Any, Mapping, Optional
 
 import requests
 from django.conf import settings
-from django.core.cache import cache
 
 from apps.movies.exceptions import (
     TMDbError,
@@ -15,6 +14,7 @@ from apps.movies.exceptions import (
     TMDbRateLimitedError,
     TMDbUnavailableError,
 )
+from apps.movies.services.redis_pacing import wait_for_pacing
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,7 @@ MAX_BACKOFF_SECONDS = 8.0
 
 DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.075
 
-TMDB_PACING_TIMESTAMP_KEY = "tmdb:pacing:last_request_at"
-TMDB_PACING_LOCK_KEY = "tmdb:pacing:lock"
-PACING_LOCK_TIMEOUT_SECONDS = 2.0
-PACING_LOCK_POLL_SECONDS = 0.02
+TMDB_PACING_KEY = "tmdb:pacing:next_slot"
 
 
 @dataclass(slots=True)
@@ -57,7 +54,7 @@ class TMDbClient:
         attempt = 0
         while True:
             attempt += 1
-            self._wait_for_pacing()
+            wait_for_pacing(TMDB_PACING_KEY, self.min_request_interval)
             self._last_request_at = time.monotonic()
             try:
                 response = self.session.get(url, params=query, timeout=self.timeout)
@@ -101,29 +98,6 @@ class TMDbClient:
                 )
 
             return response.json()
-
-    def _wait_for_pacing(self) -> None:
-        if self.min_request_interval <= 0:
-            return
-        self._wait_for_pacing_shared()
-
-    def _wait_for_pacing_shared(self) -> None:
-        while not cache.add(
-            TMDB_PACING_LOCK_KEY, "1", timeout=PACING_LOCK_TIMEOUT_SECONDS
-        ):
-            time.sleep(PACING_LOCK_POLL_SECONDS)
-
-        try:
-            last = cache.get(TMDB_PACING_TIMESTAMP_KEY)
-            now = time.time()
-            if last is not None:
-                remaining = self.min_request_interval - (now - last)
-                if remaining > 0:
-                    time.sleep(remaining)
-                    now = time.time()
-            cache.set(TMDB_PACING_TIMESTAMP_KEY, now, timeout=60)
-        finally:
-            cache.delete(TMDB_PACING_LOCK_KEY)
 
     @staticmethod
     def _retry_after_seconds(response: requests.Response) -> float:
