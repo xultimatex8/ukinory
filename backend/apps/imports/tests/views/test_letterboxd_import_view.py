@@ -8,14 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 import pytest
 from django.urls import reverse
 
-from apps.imports.dtos.import_summary import ImportSummary, MovieMatchSummary
-from apps.imports.exceptions import LetterboxdImportError
-from apps.movies.exceptions import (
-    TMDbRateLimitedError,
-    TMDbUnavailableError,
-    WikidataError,
-    WikidataUnavailableError,
-)
+from apps.imports.models import ImportJob, ImportJobFile
 
 
 @pytest.fixture
@@ -34,136 +27,81 @@ class TestLetterboxdImportViewUnit:
         assert response.status_code == 400
         assert "error" in response.data
 
-    @patch("apps.imports.views.import_letterboxd_export")
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
     def test_single_zip_field_is_collected_as_one_upload(
-        self, mock_import, api_client, import_url
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
     ):
-        mock_import.return_value = ImportSummary(
-            imported={"ratings": 1}, missing=[], movies=MovieMatchSummary()
-        )
         zip_file = SimpleUploadedFile("export.zip", b"PK\x03\x04fake", content_type="application/zip")
- 
+
         response = api_client.post(import_url, data={"file": zip_file}, format="multipart")
- 
-        assert response.status_code == 200
-        args, _ = mock_import.call_args
-        _, uploads = args
-        assert len(uploads) == 1
-        assert uploads[0][1] == "export.zip"
- 
-    @patch("apps.imports.views.import_letterboxd_export")
+
+        assert response.status_code == 202
+
+        job = ImportJob.objects.get(pk=response.data["job_id"])
+        files = ImportJobFile.objects.filter(job=job)
+
+        assert files.count() == 1
+        assert files[0].filename == "export.zip"
+        mock_get_queue.return_value.enqueue.assert_called_once()
+        mock_trigger_worker.assert_called_once()
+
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
     def test_multiple_csv_fields_are_collected_as_a_list(
-        self, mock_import, api_client, import_url
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
     ):
-        mock_import.return_value = ImportSummary(
-            imported={}, missing=[], movies=MovieMatchSummary()
-        )
         ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
         watchlist = SimpleUploadedFile("watchlist.csv", WATCHLIST_CSV.encode(), content_type="text/csv")
- 
+
         response = api_client.post(
             import_url, data={"files": [ratings, watchlist]}, format="multipart"
         )
- 
-        assert response.status_code == 200
-        args, _ = mock_import.call_args
-        _, uploads = args
-        assert {name for _, name in uploads} == {"ratings.csv", "watchlist.csv"}
 
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_letterboxd_import_error_maps_to_422(self, mock_import, api_client, import_url):
-        mock_import.side_effect = LetterboxdImportError("'ratings.csv' is missing column 'Rating'.")
+        assert response.status_code == 202
+
+        job = ImportJob.objects.get(pk=response.data["job_id"])
+        files = ImportJobFile.objects.filter(job=job)
+
+        assert {file.filename for file in files} == {"ratings.csv", "watchlist.csv"}
+        mock_get_queue.return_value.enqueue.assert_called_once()
+        mock_trigger_worker.assert_called_once()
+
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
+    def test_response_shape(
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
+    ):
         ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
 
         response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
 
-        assert response.status_code == 422
-        assert "Rating" in response.data["error"]["message"]
+        assert response.status_code == 202
+        assert set(response.data) == {"job_id", "status", "status_url"}
+        assert response.data["job_id"] is not None
+        assert response.data["status_url"] == (
+            f"/api/imports/letterboxd/{response.data['job_id']}/status/"
+        )
 
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_value_error_maps_to_400(self, mock_import, api_client, import_url):
-        mock_import.side_effect = ValueError("Unknown canonical file name(s): bogus.csv.")
-        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
+    def test_uploads_too_large_returns_400(
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
+    ):
+        large_file = SimpleUploadedFile(
+            "large.csv",
+            b"x" * (50 * 1024 * 1024 + 1),
+            content_type="text/csv",
+        )
 
-        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
+        response = api_client.post(
+            import_url, data={"files": [large_file]}, format="multipart"
+        )
 
         assert response.status_code == 400
-        assert "bogus.csv" in response.data["error"]["message"]
-
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_tmdb_rate_limited_maps_to_429(self, mock_import, api_client, import_url):
-        mock_import.side_effect = TMDbRateLimitedError(retry_after=12.0)
-        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
-
-        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
-
-        assert response.status_code == 429
-        assert "rate-limiting" in response.data["error"]["message"]
-
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_tmdb_unavailable_maps_to_503(self, mock_import, api_client, import_url):
-        mock_import.side_effect = TMDbUnavailableError("network is down")
-        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
-
-        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
-
-        assert response.status_code == 503
-        assert "Couldn't reach TMDb" in response.data["error"]["message"]
-
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_wikidata_unavailable_maps_to_503(self, mock_import, api_client, import_url):
-        mock_import.side_effect = WikidataUnavailableError("network is down")
-        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
-
-        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
-
-        assert response.status_code == 503
-        assert "Couldn't reach Wikidata" in response.data["error"]["message"]
-
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_generic_wikidata_error_maps_to_503(self, mock_import, api_client, import_url):
-        mock_import.side_effect = WikidataError("WIKIDATA_USER_AGENT is not configured")
-        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
-
-        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
-
-        assert response.status_code == 503
-        assert "Wikidata metadata lookup failed" in response.data["error"]["message"]
-
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_response_shape(self, mock_import, api_client, import_url):
-        mock_import.return_value = ImportSummary(
-            imported={"ratings": 812, "diary": 340},
-            missing=["watched.csv"],
-            movies=MovieMatchSummary(
-                matched=800,
-                without_metadata=[],
-                unmatched=["Some Obscure Short (2019)"],
-                tmdb_error=None,
-            ),
-        )
-        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
-
-        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
-
-        assert response.data == {
-            "missing": ["watched.csv"],
-        }
-
-    @patch("apps.imports.views.import_letterboxd_export")
-    def test_response_shape_with_no_movies_matched(
-        self, mock_import, api_client, import_url
-    ):
-        mock_import.return_value = ImportSummary(
-            imported={"ratings": 1}, missing=[], movies=MovieMatchSummary()
-        )
-        ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
- 
-        response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
- 
-        assert response.data == {
-            "missing": [],
-        }
+        assert "too large" in response.data["error"]["message"]
+        mock_get_queue.return_value.enqueue.assert_not_called()
+        mock_trigger_worker.assert_not_called()
 
 
 def _build_zip(files: dict[str, str]) -> bytes:
@@ -174,61 +112,64 @@ def _build_zip(files: dict[str, str]) -> bytes:
     return buffer.getvalue()
 
 
-@pytest.fixture(autouse=True)
-def no_real_tmdb_calls():
-    from apps.movies.exceptions import MovieMatchNotFound
-
-    with patch(
-        "apps.imports.services.letterboxd_persistence.match_movie",
-        side_effect=MovieMatchNotFound("unused", None),
-    ):
-        yield
-
-
 @pytest.mark.django_db
 class TestLetterboxdImportViewIntegration:
-    def test_real_zip_end_to_end(self, api_client, import_url):
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
+    def test_real_zip_end_to_end(
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
+    ):
         zip_bytes = _build_zip({"ratings.csv": RATINGS_CSV, "watchlist.csv": WATCHLIST_CSV})
         zip_file = SimpleUploadedFile("export.zip", zip_bytes, content_type="application/zip")
 
         response = api_client.post(import_url, data={"file": zip_file}, format="multipart")
 
-        assert response.status_code == 200
-        assert set(response.data["missing"]) == {"diary.csv", "watched.csv", "liked_films.csv"}
+        assert response.status_code == 202
 
-    def test_real_csvs_without_zip(self, api_client, import_url):
+        job = ImportJob.objects.get(pk=response.data["job_id"])
+        assert ImportJobFile.objects.filter(job=job, filename="export.zip").exists()
+
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
+    def test_real_csvs_without_zip(
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
+    ):
         ratings = SimpleUploadedFile("ratings.csv", RATINGS_CSV.encode(), content_type="text/csv")
 
         response = api_client.post(import_url, data={"files": [ratings]}, format="multipart")
 
-        assert response.status_code == 200
-        assert set(response.data["missing"]) == {
-            "diary.csv",
-            "liked_films.csv",
-            "watched.csv",
-            "watchlist.csv",
-        }
+        assert response.status_code == 202
 
-    def test_malformed_csv_returns_422(self, api_client, import_url):
+        job = ImportJob.objects.get(pk=response.data["job_id"])
+        assert ImportJobFile.objects.filter(job=job, filename="ratings.csv").exists()
+
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
+    def test_malformed_csv_is_accepted_for_async_processing(
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
+    ):
         broken = SimpleUploadedFile(
             "ratings.csv", b"Name,Year\nMissing Rating Column,2020\n", content_type="text/csv"
         )
 
         response = api_client.post(import_url, data={"files": [broken]}, format="multipart")
 
-        assert response.status_code == 422
-        assert "Rating" in response.data["error"]["message"]
+        assert response.status_code == 202
 
-    def test_zip_detected_by_content_even_with_wrong_extension(self, api_client, import_url):
+        job = ImportJob.objects.get(pk=response.data["job_id"])
+        assert ImportJobFile.objects.filter(job=job, filename="ratings.csv").exists()
+
+    @patch("apps.imports.views.trigger_import_worker")
+    @patch("apps.imports.views.django_rq.get_queue")
+    def test_zip_detected_by_content_even_with_wrong_extension(
+        self, mock_get_queue, mock_trigger_worker, api_client, import_url
+    ):
         zip_bytes = _build_zip({"ratings.csv": RATINGS_CSV})
         mislabeled = SimpleUploadedFile("export.dat", zip_bytes, content_type="application/octet-stream")
 
         response = api_client.post(import_url, data={"file": mislabeled}, format="multipart")
 
-        assert response.status_code == 200
-        assert set(response.data["missing"]) == {
-            "diary.csv",
-            "liked_films.csv",
-            "watched.csv",
-            "watchlist.csv",
-        }
+        assert response.status_code == 202
+
+        job = ImportJob.objects.get(pk=response.data["job_id"])
+        assert ImportJobFile.objects.filter(job=job, filename="export.dat").exists()
