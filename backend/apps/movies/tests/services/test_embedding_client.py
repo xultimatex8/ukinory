@@ -10,8 +10,7 @@ from google.genai.errors import APIError
 from apps.movies.exceptions import EmbeddingError, EmbeddingUnavailableError
 from apps.movies.services.embedding_client import (
     DIMENSIONS,
-    EMBEDDING_PACING_LOCK_KEY,
-    EMBEDDING_PACING_TIMESTAMP_KEY,
+    EMBEDDING_PACING_KEY,
     EmbeddingClient,
 )
 
@@ -39,6 +38,15 @@ def mock_genai_client_class(monkeypatch):
 @pytest.fixture(autouse=True)
 def no_real_sleep(monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+
+@pytest.fixture(autouse=True)
+def mock_wait_for_pacing(monkeypatch):
+    mock = MagicMock()
+    monkeypatch.setattr(
+        "apps.movies.services.embedding_client.wait_for_pacing", mock
+    )
+    return mock
 
 
 def make_client(**overrides) -> EmbeddingClient:
@@ -179,58 +187,50 @@ class TestServerErrors:
         assert client._client.models.embed_content.call_count == 2
 
 
-@pytest.mark.django_db
-class TestSharedPacing:
-    def test_stamps_timestamp_in_cache(self, settings):
-        from django.core.cache import cache
+class TestPacing:
+    """Pacing itself (locking, backoff, sleeping) is redis_pacing's job and is
+    covered by its own tests. Here we only verify EmbeddingClient delegates
+    to it with the right key and interval, on every attempt."""
 
-        cache.clear()
-
-        client = make_client()
+    def test_calls_wait_for_pacing_with_configured_key_and_interval(
+        self, mock_wait_for_pacing
+    ):
+        client = make_client(min_request_interval=0.5)
         client._client.models.embed_content.return_value = embed_response(
             [0.0] * DIMENSIONS
         )
 
         client.embed("text")
 
-        assert cache.get(EMBEDDING_PACING_TIMESTAMP_KEY) is not None
+        mock_wait_for_pacing.assert_called_once_with(EMBEDDING_PACING_KEY, 0.5)
 
-    def test_second_call_sleeps_out_the_remaining_interval(
-        self,
-        settings,
-        monkeypatch,
+    def test_paces_before_every_attempt_including_retries(
+        self, mock_wait_for_pacing
     ):
-        from django.core.cache import cache
+        client = make_client(max_retries=1)
+        values = [1.0] * DIMENSIONS
 
-        cache.clear()
+        client._client.models.embed_content.side_effect = [
+            FakeAPIError(429),
+            embed_response(values),
+        ]
 
-        client = make_client(min_request_interval=0.85)
+        client.embed("text")
 
-        fake_clock = [1_000.4]
-        monkeypatch.setattr(time, "time", lambda: fake_clock[0])
-
-        cache.set(
-            EMBEDDING_PACING_TIMESTAMP_KEY,
-            1_000.0,
-            timeout=60,
+        assert mock_wait_for_pacing.call_count == 2
+        mock_wait_for_pacing.assert_called_with(
+            EMBEDDING_PACING_KEY, client.min_request_interval
         )
 
-        sleeps: list[float] = []
-        monkeypatch.setattr(time, "sleep", sleeps.append)
-
-        client._wait_for_pacing_shared()
-
-        assert sleeps == [pytest.approx(0.45)]
-
-    def test_lock_is_released_even_if_request_raises(self, settings):
-        from django.core.cache import cache
-
-        cache.clear()
-
+    def test_paces_even_when_request_ultimately_raises(
+        self, mock_wait_for_pacing
+    ):
         client = make_client(max_retries=0)
         client._client.models.embed_content.side_effect = FakeAPIError(500)
 
         with pytest.raises(EmbeddingUnavailableError):
             client.embed("text")
 
-        assert cache.get(EMBEDDING_PACING_LOCK_KEY) is None
+        mock_wait_for_pacing.assert_called_once_with(
+            EMBEDDING_PACING_KEY, client.min_request_interval
+        )
