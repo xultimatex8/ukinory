@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 QUOTA_CLIENT_NAME = "gemini_generate"
 DEFAULT_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_MAX_OUTPUT_TOKENS = 80
-DEFAULT_MAX_HISTORY_MOVIES = 10
+DEFAULT_MAX_HISTORY_MOVIES = 35
 
 
 @dataclass(slots=True)
