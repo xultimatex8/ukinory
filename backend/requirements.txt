@@ -21,3 +21,5 @@ jupyter_server==2.14.2
 tornado==6.4.1
 pandas
 numpy
+django-rq
+rq

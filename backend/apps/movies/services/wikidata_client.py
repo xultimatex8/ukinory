@@ -6,13 +6,13 @@ from typing import Optional
 
 import requests
 from django.conf import settings
-from django.core.cache import cache
 
 from apps.movies.exceptions import (
     WikidataError,
     WikidataNotFoundError,
     WikidataUnavailableError,
 )
+from apps.movies.services.redis_pacing import wait_for_pacing
 
 WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
@@ -29,10 +29,7 @@ MAX_ENTITIES_PER_REQUEST = 50
 
 DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.25
 
-WIKIDATA_PACING_TIMESTAMP_KEY = "wikidata:pacing:last_request_at"
-WIKIDATA_PACING_LOCK_KEY = "wikidata:pacing:lock"
-PACING_LOCK_TIMEOUT_SECONDS = 2.0
-PACING_LOCK_POLL_SECONDS = 0.02
+WIKIDATA_PACING_KEY = "wikidata:pacing:next_slot"
 
 SPARQL_ACCEPT = "application/sparql-results+json"
 JSON_ACCEPT = "application/json"
@@ -121,7 +118,7 @@ class WikidataClient:
         attempt = 0
         while True:
             attempt += 1
-            self._wait_for_pacing()
+            wait_for_pacing(WIKIDATA_PACING_KEY, self.min_request_interval)
             self._last_request_at = time.monotonic()
             try:
                 response = self.session.get(
@@ -172,29 +169,6 @@ class WikidataClient:
                 )
 
             return response.json()
-
-    def _wait_for_pacing(self) -> None:
-        if self.min_request_interval <= 0:
-            return
-        self._wait_for_pacing_shared()
-
-    def _wait_for_pacing_shared(self) -> None:
-        while not cache.add(
-            WIKIDATA_PACING_LOCK_KEY, "1", timeout=PACING_LOCK_TIMEOUT_SECONDS
-        ):
-            time.sleep(PACING_LOCK_POLL_SECONDS)
-
-        try:
-            last = cache.get(WIKIDATA_PACING_TIMESTAMP_KEY)
-            now = time.time()
-            if last is not None:
-                remaining = self.min_request_interval - (now - last)
-                if remaining > 0:
-                    time.sleep(remaining)
-                    now = time.time()
-            cache.set(WIKIDATA_PACING_TIMESTAMP_KEY, now, timeout=60)
-        finally:
-            cache.delete(WIKIDATA_PACING_LOCK_KEY)
 
     @staticmethod
     def _retry_after_seconds(response: requests.Response) -> float:

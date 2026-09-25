@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'django_crontab',
     'django.contrib.postgres',
     'django_extensions',
+    'django_rq',
 ]
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -210,16 +211,27 @@ else:
     }
 
 
+REDIS_URL = "redis://redis:6379/1" if DEBUG else os.getenv("REDIS_URL", "redis://redis:6379/1")
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": (
-            "redis://redis:6379/1"
-            if DEBUG
-            else os.getenv("REDIS_URL", "redis://redis:6379/1")
-        ),
+        "LOCATION": REDIS_URL,
     }
 }
+
+RQ_QUEUES = {
+    "default": {
+        "URL": REDIS_URL,
+        "DEFAULT_TIMEOUT": 1800,
+    },
+}
+
+# Disparo del worker vía GitHub Actions (ver apps/imports/services/github_dispatch.py)
+GITHUB_DISPATCH_TOKEN = os.getenv("GITHUB_DISPATCH_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO")  # p.ej. "tuusuario/turepo"
+GITHUB_WORKFLOW_FILE = os.getenv("GITHUB_WORKFLOW_FILE", "process-imports.yml")
+GITHUB_DISPATCH_REF = os.getenv("GITHUB_DISPATCH_REF", "main")
 
 
 # Password validation
