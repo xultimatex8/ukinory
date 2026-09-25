@@ -123,6 +123,26 @@ direction TB
     acceptedAt: datetime
   }
 
+  class ImportJob {
+    status: ImportJobStatus
+    startedAt: datetime
+    finishedAt: datetime
+    result: json
+    errorMessage: string
+  }
+
+  class ImportJobFile {
+    filename: string
+    content: binary
+  }
+
+  class ImportJobStatus {
+    PENDING
+    RUNNING
+    SUCCEEDED
+    FAILED
+  }
+
   class WatchlistSource {
     IMPORTED
     SWIPE_ADDED
@@ -175,6 +195,7 @@ direction TB
   <<Enum>> InviteStatus
   <<Enum>> LegalDocumentType
   <<Enum>> EmbeddingBatchJobState
+  <<Enum>> ImportJobStatus
 
   User "1" --> "0..*" Rating : has
   User "1" --> "0..*" WatchlistEntry : has
@@ -196,6 +217,8 @@ direction TB
   Movie "1" --> "0..*" RatingPrediction : predicted for
   User "1" --> "0..*" UserLegalAcceptance : accepts
   LegalDocument "1" --> "0..*" UserLegalAcceptance : accepted via
+  User "1" --> "0..*" ImportJob : starts
+  ImportJob "1" --> "0..*" ImportJobFile : contains
 
 ```
 
@@ -232,6 +255,10 @@ direction TB
 **LegalDocument** — versioned content for the Terms and Conditions and the Privacy Policy (`type` distinguishes the two), closing the FR-B09 gap. Each edit to either document is a new row rather than an in-place update, so historical versions stay available for exactly the reason FR-B09 exists: knowing which text a given acceptance record refers to, even after the content is later revised.
 
 **UserLegalAcceptance** — the record that a specific registered `User` accepted a specific `LegalDocument` version at a specific time, closing the FR-B08 gap. Created only at registration (or when claiming a guest account), never for guest sessions — matching FR-B08's requirement that guests see the documents non-blockingly rather than being forced to accept them. A guest who later claims their account produces the acceptance row at that point, same as any other registration.
+
+**ImportJob** — tracks the asynchronous processing of a Letterboxd export uploaded by a `User`. `status` moves through `PENDING` → `RUNNING` → `SUCCEEDED`/`FAILED`; `startedAt`/`finishedAt` mark when processing began and ended, `result` holds the outcome of the import once it succeeds, and `errorMessage` captures the failure reason (truncated to 2000 characters) when it fails.
+
+**ImportJobFile** — the uploaded export file(s) belonging to an `ImportJob`, stored as binary `content` alongside the original `filename`.
 
 ## Design notes
 
