@@ -21,6 +21,7 @@ jobs:
       - run: pip install -r backend/requirements.txt
 
       - name: Run RQ worker (burst mode)
+        working-directory: backend
         run: python manage.py rqworker --burst default
         env:
           ENVIRONMENT: production
