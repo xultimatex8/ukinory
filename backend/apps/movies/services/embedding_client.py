@@ -7,13 +7,13 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from django.conf import settings
-from django.core.cache import cache
 from google import genai
 from google.genai.errors import APIError
 
 from apps.common import api_quota
 from apps.movies.exceptions import EmbeddingError, EmbeddingUnavailableError
 from apps.movies.dtos.batch_result import BatchResult
+from apps.movies.services.redis_pacing import wait_for_pacing
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,7 @@ MAX_BACKOFF_SECONDS = 16.0
 
 DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.85
 
-EMBEDDING_PACING_TIMESTAMP_KEY = "embedding:pacing:last_request_at"
-EMBEDDING_PACING_LOCK_KEY = "embedding:pacing:lock"
-PACING_LOCK_TIMEOUT_SECONDS = 2.0
-PACING_LOCK_POLL_SECONDS = 0.02
+EMBEDDING_PACING_KEY = "embedding:pacing:next_slot"
 
 DIMENSIONS = 768
 
@@ -94,7 +91,7 @@ class EmbeddingClient:
                 QUOTA_SYNC,
                 sum(api_quota.text_cost(QUOTA_SYNC, t) for t in contents),
             )
-            self._wait_for_pacing()
+            wait_for_pacing(EMBEDDING_PACING_KEY, self.min_request_interval)
             self._last_request_at = time.monotonic()
             try:
                 response = self._client.models.embed_content(
@@ -178,28 +175,6 @@ class EmbeddingClient:
             api_quota.consume(client_name, units)
         except api_quota.QuotaExceeded as exc:
             raise EmbeddingUnavailableError(str(exc)) from exc
-
-    def _wait_for_pacing(self) -> None:
-        if self.min_request_interval <= 0:
-            return
-        self._wait_for_pacing_shared()
-
-    def _wait_for_pacing_shared(self) -> None:
-        while not cache.add(
-            EMBEDDING_PACING_LOCK_KEY, "1", timeout=PACING_LOCK_TIMEOUT_SECONDS
-        ):
-            time.sleep(PACING_LOCK_POLL_SECONDS)
-        try:
-            last = cache.get(EMBEDDING_PACING_TIMESTAMP_KEY)
-            now = time.time()
-            if last is not None:
-                remaining = self.min_request_interval - (now - last)
-                if remaining > 0:
-                    time.sleep(remaining)
-                    now = time.time()
-            cache.set(EMBEDDING_PACING_TIMESTAMP_KEY, now, timeout=60)
-        finally:
-            cache.delete(EMBEDDING_PACING_LOCK_KEY)
 
     @staticmethod
     def _sleep_backoff(attempt: int) -> None:
