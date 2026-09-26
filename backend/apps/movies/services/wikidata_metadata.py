@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Any, Optional
 
 from apps.movies.exceptions import TMDbNotFoundError
@@ -13,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE = 50
 LANGUAGES = ("en", "es")
+
+_METADATA_WORKERS = 5
 
 _QID_RE = re.compile(r"Q\d+")
 
@@ -36,56 +40,77 @@ def fetch_movies_metadata(
     tmdb_client: Optional[TMDbClient] = None,
 ) -> dict[int, dict[str, Any]]:
     tmdb_client = tmdb_client or TMDbClient()
-    results: dict[int, dict[str, Any]] = {}
+
+    qid_by_tmdb_id = _resolve_qids(tmdb_client, client, tmdb_ids)
+    if not qid_by_tmdb_id:
+        return {}
 
     labels: dict[str, str] = {}
+    labels_lock = Lock()
 
-    for start in range(0, len(tmdb_ids), batch_size):
-        chunk = tmdb_ids[start : start + batch_size]
+    qid_items = list(qid_by_tmdb_id.items())
+    chunks = [
+        dict(qid_items[start : start + batch_size])
+        for start in range(0, len(qid_items), batch_size)
+    ]
 
-        qid_by_tmdb_id = _resolve_qids(tmdb_client, chunk)
-        if not qid_by_tmdb_id:
-            continue
+    def process_chunk(chunk_qids: dict[int, str]) -> dict[int, dict[str, Any]]:
+        chunk_results: dict[int, dict[str, Any]] = {}
 
         entities = client.get_entities(
-            sorted(set(qid_by_tmdb_id.values())),
+            sorted(set(chunk_qids.values())),
             props="claims|labels|descriptions",
             languages=LANGUAGES,
         )
 
         related_qids: set[str] = set()
-        for qid in qid_by_tmdb_id.values():
+        for qid in chunk_qids.values():
             entity = entities.get(qid)
             if entity is None:
                 continue
             for prop in (P_GENRE, P_DIRECTOR, P_LANGUAGE):
                 related_qids.update(_item_ids(entity, prop))
 
-        missing = sorted(related_qids - labels.keys())
+        with labels_lock:
+            missing = sorted(related_qids - labels.keys())
+
         if missing:
             label_entities = client.get_entities(
                 missing, props="labels", languages=LANGUAGES
             )
-            for qid in missing:
-                labels[qid] = _pick_label(label_entities.get(qid))
+            with labels_lock:
+                for qid in missing:
+                    labels.setdefault(qid, _pick_label(label_entities.get(qid)))
 
-        for tmdb_id, qid in qid_by_tmdb_id.items():
+        with labels_lock:
+            labels_snapshot = dict(labels)
+
+        for tmdb_id, qid in chunk_qids.items():
             entity = entities.get(qid)
             if entity is None:
                 continue
-            metadata = _build_metadata(qid, entity, labels)
+            metadata = _build_metadata(qid, entity, labels_snapshot)
             if not metadata["title"]:
                 logger.warning(
                     "Skipping TMDb ID %s (%s): Wikidata entity has no en/es label.",
                     tmdb_id, qid,
                 )
                 continue
-            results[tmdb_id] = metadata
+            chunk_results[tmdb_id] = metadata
+
+        return chunk_results
+
+    results: dict[int, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=_METADATA_WORKERS) as pool:
+        for chunk_result in pool.map(process_chunk, chunks):
+            results.update(chunk_result)
 
     return results
 
 
-def _resolve_qids(tmdb_client: TMDbClient, tmdb_ids: list[int]) -> dict[int, str]:
+def _resolve_qids(
+    tmdb_client: TMDbClient, wikidata_client: WikidataClient, tmdb_ids: list[int]
+) -> dict[int, str]:
     resolved: dict[int, str] = {}
 
     for tmdb_id, wikidata_id in Movie.objects.filter(tmdb_id__in=tmdb_ids).values_list(
@@ -93,6 +118,10 @@ def _resolve_qids(tmdb_client: TMDbClient, tmdb_ids: list[int]) -> dict[int, str
     ):
         if wikidata_id and _QID_RE.fullmatch(wikidata_id):
             resolved[tmdb_id] = wikidata_id
+
+    still_missing = [tmdb_id for tmdb_id in tmdb_ids if tmdb_id not in resolved]
+    if still_missing:
+        resolved.update(wikidata_client.find_qids_by_tmdb_ids(still_missing))
 
     for tmdb_id in tmdb_ids:
         if tmdb_id in resolved:

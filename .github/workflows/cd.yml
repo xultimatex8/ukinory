@@ -1,47 +1,21 @@
-name: CI
+name: CD
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  release:
+    types:
+      - published
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: cd-production
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  backend:
-    name: Backend
+  validate:
+    name: Validate Release
     runs-on: ubuntu-latest
-
-    services:
-      db:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_DB: test_db
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     env:
       POSTGRES_DB: test_db
@@ -56,8 +30,10 @@ jobs:
       WIKIDATA_USER_AGENT: ${{ secrets.WIKIDATA_USER_AGENT }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -66,7 +42,7 @@ jobs:
           cache: "pip"
           cache-dependency-path: backend/requirements.txt
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         working-directory: backend
         run: pip install -r requirements.txt
 
@@ -74,18 +50,9 @@ jobs:
         working-directory: backend
         run: python manage.py check
 
-      - name: Run tests
+      - name: Run backend tests
         working-directory: backend
         run: pytest
-
-
-  frontend:
-    name: Frontend
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -94,21 +61,22 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
-      - name: Lint
+      - name: Lint frontend
         working-directory: frontend
         run: npm run lint --if-present
 
-      - name: Build
+      - name: Build frontend
         working-directory: frontend
         run: npm run build
 
 
   docker:
-    name: Docker Compose
+    name: Validate Docker
+    needs: validate
     runs-on: ubuntu-latest
 
     env:
@@ -118,8 +86,10 @@ jobs:
       WIKIDATA_USER_AGENT: ${{ secrets.WIKIDATA_USER_AGENT }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Create CI environment
         run: |
@@ -162,3 +132,46 @@ jobs:
       - name: Stop services
         if: always()
         run: docker compose --env-file .env.ci down -v
+
+
+  deploy-render:
+    name: Deploy Backend to Render
+    needs: docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Render deploy
+        run: curl --fail --request POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+
+
+  deploy-vercel:
+    name: Deploy Frontend to Vercel
+    needs: docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel
+
+      - name: Deploy to Vercel
+        working-directory: frontend
+        run: vercel --prod --token="${{ secrets.VERCEL_TOKEN }}" --yes
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

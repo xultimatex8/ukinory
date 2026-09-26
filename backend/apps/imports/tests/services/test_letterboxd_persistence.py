@@ -702,7 +702,12 @@ class TestPersistLetterboxdRecords:
     def test_same_film_across_ratings_and_watchlist_is_matched_once(
         self, registered_user
     ):
-        Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
+        movie = Movie.objects.create(
+            tmdb_id=1,
+            title="Dune",
+            release_year=2021,
+        )
+
         result = ExtractionResult(
             csvs={
                 RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
@@ -711,11 +716,39 @@ class TestPersistLetterboxdRecords:
         )
 
         with patch(
-            PATCH_TARGET.format("find_cached_movie"), wraps=find_cached_movie
+            PATCH_TARGET.format("find_cached_movie"),
+            return_value=movie,
         ) as mock_find_cached_movie:
-            persist_letterboxd_records(registered_user, result)
+            persisted, movie_summary = persist_letterboxd_records(
+                registered_user,
+                result,
+            )
 
-        mock_find_cached_movie.assert_called_once()
+        mock_find_cached_movie.assert_called_once_with("Dune", 2021)
+
+        assert persisted == {
+            "ratings": 1,
+            "watchlist": 1,
+        }
+
+        assert movie_summary.matched == 1
+        assert movie_summary.unmatched == []
+        assert movie_summary.without_metadata == []
+        assert movie_summary.tmdb_error is None
+
+        rating = Rating.objects.get(
+            user=registered_user,
+            title="Dune",
+            release_year=2021,
+        )
+        assert rating.movie_id == movie.id
+
+        watchlist_entry = WatchlistEntry.objects.get(
+            user=registered_user,
+            title="Dune",
+            release_year=2021,
+        )
+        assert watchlist_entry.movie_id == movie.id
 
     def test_a_systemic_tmdb_failure_does_not_block_csv_persistence(
         self, registered_user

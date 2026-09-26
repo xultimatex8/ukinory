@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
-from typing import Mapping
+from typing import Mapping, Optional
 
 from django.db import transaction
 
@@ -25,6 +27,8 @@ from apps.movies.services.tmdb_matching import match_movie
 from apps.swipe_sessions.services.justification import DEFAULT_MAX_HISTORY_MOVIES
 
 logger = logging.getLogger(__name__)
+
+_MATCH_WORKERS = 8
 
 
 @dataclass(slots=True)
@@ -124,67 +128,121 @@ def _needs_embedding(movie: Movie) -> bool:
     return movie.embedding is None and movie.embedding_batch_id is None
 
 
+@dataclass(slots=True)
+class _MatchOutcome:
+    key: FilmKey
+    cached_movie: Optional[Movie] = None
+    pending_tmdb_id: Optional[int] = None
+    not_found: bool = False
+    tmdb_error: Optional[str] = None
+
+
+def _resolve_one(client: TMDbClient, key: FilmKey) -> _MatchOutcome:
+    title, year = key
+
+    cached = find_cached_movie(title, year)
+    if cached is not None:
+        return _MatchOutcome(key=key, cached_movie=cached)
+
+    try:
+        match = match_movie(client, title, year)
+    except MovieMatchNotFound:
+        return _MatchOutcome(key=key, not_found=True)
+    except TMDbError as exc:
+        return _MatchOutcome(key=key, tmdb_error=str(exc))
+
+    cached_by_tmdb_id = find_cached_movie_by_tmdb_id(match.tmdb_id)
+    if cached_by_tmdb_id is not None:
+        return _MatchOutcome(key=key, cached_movie=cached_by_tmdb_id)
+
+    return _MatchOutcome(key=key, pending_tmdb_id=match.tmdb_id)
+
+
 def _match_films(
     client: TMDbClient,
     film_keys: set[FilmKey],
     priority_keys: set[FilmKey],
 ) -> tuple[dict[FilmKey, Movie], MovieMatchSummary]:
+    t_start = time.perf_counter()
     matches: dict[FilmKey, Movie] = {}
     summary = MovieMatchSummary()
     pending_tmdb_id_by_key: dict[FilmKey, int] = {}
     priority_ids: set[int] = set()
 
-    for title, year in sorted(film_keys):
-        key = (title, year)
-        is_priority = key in priority_keys
+    sorted_keys = sorted(film_keys)
+    stop_after_tmdb_error = False
 
-        if summary.tmdb_error is not None:
-            summary.unmatched.append(f"{title} ({year})")
-            continue
+    with ThreadPoolExecutor(max_workers=_MATCH_WORKERS) as pool:
+        future_to_key = {
+            pool.submit(_resolve_one, client, key): key for key in sorted_keys
+        }
 
-        cached = find_cached_movie(title, year)
-        if cached is not None:
-            matches[key] = cached
-            summary.matched += 1
-            if is_priority and _needs_embedding(cached):
-                priority_ids.add(cached.tmdb_id)
-            continue
+        for future in future_to_key:
+            key = future_to_key[future]
+            title, year = key
+            is_priority = key in priority_keys
 
-        try:
-            match = match_movie(client, title, year)
-        except MovieMatchNotFound:
-            summary.unmatched.append(f"{title} ({year})")
-            continue
-        except TMDbError as exc:
-            logger.warning(
-                "Stopping TMDb matching for this import after a systemic "
-                "failure: %s",
-                exc,
-            )
-            summary.tmdb_error = str(exc)
-            summary.unmatched.append(f"{title} ({year})")
-            continue
+            if stop_after_tmdb_error:
+                summary.unmatched.append(f"{title} ({year})")
+                continue
 
-        cached_by_tmdb_id = find_cached_movie_by_tmdb_id(match.tmdb_id)
-        if cached_by_tmdb_id is not None:
-            matches[key] = cached_by_tmdb_id
-            summary.matched += 1
-            if is_priority and _needs_embedding(cached_by_tmdb_id):
-                priority_ids.add(cached_by_tmdb_id.tmdb_id)
-            continue
+            outcome = future.result()
 
-        pending_tmdb_id_by_key[key] = match.tmdb_id
-        if is_priority:
-            priority_ids.add(match.tmdb_id)
+            if outcome.tmdb_error is not None:
+                logger.warning(
+                    "Stopping TMDb matching for this import after a systemic "
+                    "failure: %s",
+                    outcome.tmdb_error,
+                )
+                summary.tmdb_error = outcome.tmdb_error
+                summary.unmatched.append(f"{title} ({year})")
+                stop_after_tmdb_error = True
+                continue
+
+            if outcome.not_found:
+                summary.unmatched.append(f"{title} ({year})")
+                continue
+
+            if outcome.cached_movie is not None:
+                matches[key] = outcome.cached_movie
+                summary.matched += 1
+                if is_priority and _needs_embedding(outcome.cached_movie):
+                    priority_ids.add(outcome.cached_movie.tmdb_id)
+                continue
+
+            pending_tmdb_id_by_key[key] = outcome.pending_tmdb_id
+            if is_priority:
+                priority_ids.add(outcome.pending_tmdb_id)
+
+    t_matched = time.perf_counter()
+    logger.info(
+        "_match_films: matching phase for %d film(s) took %.2fs "
+        "(%d matched so far, %d pending tmdb ids, %d priority)",
+        len(sorted_keys), t_matched - t_start,
+        summary.matched, len(pending_tmdb_id_by_key), len(priority_ids),
+    )
 
     other_ids = set(pending_tmdb_id_by_key.values()) - priority_ids
     stored: dict[int, Movie] = {}
 
     if priority_ids:
         stored.update(fetch_and_store_movies(priority_ids).stored)
+    t_priority = time.perf_counter()
+    if priority_ids:
+        logger.info(
+            "_match_films: fetch_and_store_movies(priority=%d) took %.2fs",
+            len(priority_ids), t_priority - t_matched,
+        )
+
     if other_ids:
         stored.update(
             fetch_and_store_movies(other_ids, defer_embeddings=True).stored
+        )
+    t_other = time.perf_counter()
+    if other_ids:
+        logger.info(
+            "_match_films: fetch_and_store_movies(deferred=%d) took %.2fs",
+            len(other_ids), t_other - t_priority,
         )
 
     for key, tmdb_id in pending_tmdb_id_by_key.items():
@@ -195,6 +253,13 @@ def _match_films(
         else:
             title, year = key
             summary.without_metadata.append(f"{title} ({year})")
+
+    logger.info(
+        "_match_films: total %.2fs for %d film(s) "
+        "(matched=%d unmatched=%d without_metadata=%d)",
+        time.perf_counter() - t_start, len(sorted_keys),
+        summary.matched, len(summary.unmatched), len(summary.without_metadata),
+    )
 
     return matches, summary
 
