@@ -7,6 +7,7 @@ import pytest
 
 from apps.movies.exceptions import TMDbNotFoundError
 from apps.movies.models import Movie
+from apps.movies.services import wikidata_metadata as wikidata_metadata_module
 from apps.movies.services.wikidata_metadata import (
     DEFAULT_BATCH_SIZE,
     fetch_movies_metadata,
@@ -19,6 +20,19 @@ SECOND = "Q11574"
 HOUR = "Q25235"
 
 DUNE_QID = "Q15147339"
+
+
+@pytest.fixture(autouse=True)
+def single_metadata_worker(monkeypatch):
+    """fetch_movies_metadata now processes its batch_size chunks concurrently
+    via a thread pool (see wikidata_metadata._METADATA_WORKERS). That's fine
+    in production, but it makes the ORDER in which chunk-level get_entities
+    calls land on the mock non-deterministic. None of these tests care about
+    real concurrency -- they're testing the batching/dedup business logic --
+    so we force a single worker here, which makes chunk processing run one
+    at a time in submission order, identical to the pre-parallel behaviour
+    these assertions were written against."""
+    monkeypatch.setattr(wikidata_metadata_module, "_METADATA_WORKERS", 1)
 
 
 def _item_claim(qid: str, rank: str = "normal") -> dict:
@@ -114,7 +128,9 @@ def make_tmdb_client(qid_by_tmdb_id: dict[int, Optional[str]]) -> MagicMock:
 
 
 def make_wikidata_client(
-    entities: dict[str, dict], labels: Optional[dict[str, dict]] = None
+    entities: dict[str, dict],
+    labels: Optional[dict[str, dict]] = None,
+    qids_by_tmdb_id: Optional[dict[int, str]] = None,
 ) -> MagicMock:
     client = MagicMock()
     labels = labels or {}
@@ -124,6 +140,14 @@ def make_wikidata_client(
         return {qid: source[qid] for qid in qids if qid in source}
 
     client.get_entities.side_effect = fake_get_entities
+
+    # Defaults to "SPARQL resolved nothing", so _resolve_qids falls straight
+    # through to the per-item TMDb external_ids fallback exactly like before
+    # this method existed -- which is what every test below except
+    # TestSparqlQidResolution actually wants to exercise. Pass
+    # qids_by_tmdb_id explicitly to test the SPARQL-hit path instead.
+    client.find_qids_by_tmdb_ids.return_value = dict(qids_by_tmdb_id or {})
+
     return client
 
 
@@ -281,6 +305,68 @@ class TestQidResolution:
             fetch_movies_metadata(make_wikidata_client({}), [1])
 
         mock_tmdb_cls.assert_called_once_with()
+
+
+@pytest.mark.django_db
+class TestSparqlQidResolution:
+    def test_sparql_hit_resolves_without_calling_tmdb(self):
+        tmdb = make_tmdb_client({})  # would raise TMDbNotFoundError if called
+        wikidata = make_wikidata_client(
+            {DUNE_QID: dune_entity()},
+            DUNE_LABELS,
+            qids_by_tmdb_id={438631: DUNE_QID},
+        )
+
+        results = fetch_movies_metadata(wikidata, [438631], tmdb_client=tmdb)
+
+        tmdb.get.assert_not_called()
+        assert results[438631]["wikidata_id"] == DUNE_QID
+
+    def test_sparql_is_called_once_for_the_whole_id_list_not_per_batch(self):
+        ids = [1, 2, 3, 4, 5]
+        tmdb = make_tmdb_client({i: f"Q{i}" for i in ids})
+        wikidata = make_wikidata_client(
+            {f"Q{i}": movie_entity(f"Q{i}", label=f"Movie {i}") for i in ids},
+            qids_by_tmdb_id={i: f"Q{i}" for i in ids},
+        )
+
+        results = fetch_movies_metadata(wikidata, ids, batch_size=2, tmdb_client=tmdb)
+
+        assert set(results) == set(ids)
+        wikidata.find_qids_by_tmdb_ids.assert_called_once()
+        (call_args, _) = wikidata.find_qids_by_tmdb_ids.call_args
+        assert sorted(call_args[0]) == ids
+        tmdb.get.assert_not_called()
+
+    def test_ids_the_sparql_batch_misses_still_fall_back_to_tmdb(self):
+        tmdb = make_tmdb_client({11: "Q2"})
+        wikidata = make_wikidata_client(
+            {DUNE_QID: dune_entity(), "Q2": movie_entity("Q2", label="Star Wars")},
+            DUNE_LABELS,
+            qids_by_tmdb_id={438631: DUNE_QID},  # SPARQL resolves 438631 but not 11
+        )
+
+        results = fetch_movies_metadata(wikidata, [438631, 11], tmdb_client=tmdb)
+
+        tmdb.get.assert_called_once_with("/movie/11/external_ids")
+        assert set(results) == {438631, 11}
+
+    def test_movie_cached_locally_skips_both_sparql_and_tmdb_for_that_id(self):
+        Movie.objects.create(
+            tmdb_id=438631, title="Dune", release_year=2021, wikidata_id=DUNE_QID
+        )
+        tmdb = make_tmdb_client({11: "Q2"})
+        wikidata = make_wikidata_client(
+            {DUNE_QID: dune_entity(), "Q2": movie_entity("Q2", label="Star Wars")},
+            DUNE_LABELS,
+            qids_by_tmdb_id={11: "Q2"},
+        )
+
+        fetch_movies_metadata(wikidata, [438631, 11], tmdb_client=tmdb)
+
+        (call_args, _) = wikidata.find_qids_by_tmdb_ids.call_args
+        assert call_args[0] == [11]
+        tmdb.get.assert_not_called()
 
 
 @pytest.mark.django_db
