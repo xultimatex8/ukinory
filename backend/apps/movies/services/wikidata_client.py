@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -13,6 +14,8 @@ from apps.movies.exceptions import (
     WikidataUnavailableError,
 )
 from apps.movies.services.redis_pacing import wait_for_pacing
+
+logger = logging.getLogger(__name__)
 
 WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
@@ -69,6 +72,37 @@ class WikidataClient:
 
     def sparql(self, query: str) -> dict:
         return self._sparql(query)
+
+    def find_qids_by_tmdb_ids(
+        self, tmdb_ids: list[int], chunk_size: int = 300
+    ) -> dict[int, str]:
+        resolved: dict[int, str] = {}
+
+        for start in range(0, len(tmdb_ids), chunk_size):
+            chunk = tmdb_ids[start : start + chunk_size]
+            values = " ".join(f'"{tmdb_id}"' for tmdb_id in chunk)
+            query = f"""
+            SELECT ?item ?tmdb_id WHERE {{
+              VALUES ?tmdb_id {{ {values} }}
+              ?item wdt:{TMDB_MOVIE_ID_PROPERTY} ?tmdb_id.
+            }}
+            """
+            try:
+                payload = self._sparql(query)
+            except WikidataUnavailableError:
+                logger.warning(
+                    "SPARQL batch QID lookup failed for a chunk of %d id(s); "
+                    "those will fall back to per-item resolution.",
+                    len(chunk),
+                )
+                continue
+
+            for binding in payload.get("results", {}).get("bindings", []):
+                tmdb_id = int(binding["tmdb_id"]["value"])
+                qid = binding["item"]["value"].rsplit("/", 1)[-1]
+                resolved[tmdb_id] = qid
+
+        return resolved
 
     def get_entities(
         self,
