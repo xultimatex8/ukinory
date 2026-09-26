@@ -68,7 +68,7 @@ class TestConfiguration:
     def test_reads_min_request_interval_from_settings(self, settings):
         client = TMDbClient()
 
-        assert client.min_request_interval == 0.075
+        assert client.min_request_interval == 0.05
 
 
 class TestGetHappyPath:
