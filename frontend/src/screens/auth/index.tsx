@@ -39,7 +39,7 @@ export default function AuthScreen() {
 
   return (
     <main className="min-h-screen bg-background text-text">
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center px-6">
+      <div className="py-10 mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center px-6">
         <AppHeader
           title="Find what you want to watch"
           description="Discover movies tailored to your taste and find your next favorite."

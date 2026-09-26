@@ -122,7 +122,7 @@ export default function RegisterScreen() {
 
   return (
     <main className="min-h-screen bg-background text-text">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6">
+      <div className="py-10 mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6">
         <AppHeader
           title={isClaiming ? "Claim your account" : "Create your account"}
           description={
