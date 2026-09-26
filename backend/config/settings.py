@@ -124,6 +124,8 @@ CRONJOBS = [
 
     ("/5 * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
 
+    ("/5 * * * *", "django.core.management.call_command", ["cleanup_stale_import_jobs"]),
+
     ("0 * * * *", "django.core.management.call_command", ["delete_stale_guests"]),
 ]
 
