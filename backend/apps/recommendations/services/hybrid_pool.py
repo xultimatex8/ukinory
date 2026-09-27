@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 import logging
 from typing import Literal, Optional
 
@@ -24,20 +23,24 @@ logger = logging.getLogger(__name__)
 Strategy = Literal["content", "collaborative", "hybrid"]
 DEFAULT_POOL_SIZE = 20
 DEFAULT_STRATEGY: Strategy = "hybrid"
-DEFAULT_ALPHA = 0.5
 
 RATING_SCALE_MAX = 5.0
 
-SKIP_PENALTY_COOLDOWN_DAYS = 90
-SKIP_PENALTY_FULL_FADE_DAYS = 270
-SKIP_PENALTY_MAX = 0.35
+ALPHA_MIN = 0.3
+ALPHA_MAX = 0.8
+NEIGHBORS_FOR_FULL_TRUST = 12
+AVG_SIMILARITY_FOR_FULL_TRUST = 0.35
+
+SKIP_PENALTY_COOLDOWN_DAYS = 60
+SKIP_PENALTY_FULL_FADE_DAYS = 180
+SKIP_PENALTY_MAX = 0.3
 
 
 def build_hybrid_pool(
     user,
     pool_size: Optional[int] = DEFAULT_POOL_SIZE,
     strategy: Optional[Strategy] = DEFAULT_STRATEGY,
-    alpha: Optional[float] = DEFAULT_ALPHA,
+    alpha: Optional[float] = None,
 ) -> list[ScoredCandidate]:
     content_candidates = build_candidate_pool(user, pool_size=pool_size)
 
@@ -60,6 +63,8 @@ def build_hybrid_pool(
     matrix = build_rating_matrix()
     similar_users = find_similar_users(user.id, matrix)
 
+    effective_alpha = alpha if alpha is not None else _adaptive_alpha(similar_users)
+
     direct_cf_scores = {
         movie_id: score
         for movie_id in matrix.by_movie
@@ -77,7 +82,7 @@ def build_hybrid_pool(
             final = cf_normalized if cf_normalized is not None else 0.0
         else:
             cf_component = cf_normalized if cf_normalized is not None else candidate.similarity
-            final = alpha * candidate.similarity + (1 - alpha) * cf_component
+            final = effective_alpha * candidate.similarity + (1 - effective_alpha) * cf_component
 
         final *= skip_penalties.get(candidate.movie.id, 1.0)
 
@@ -92,6 +97,19 @@ def build_hybrid_pool(
         )
 
     return _sorted(results)
+
+
+def _adaptive_alpha(similar_users: list[tuple[int, float]]) -> float:
+    if not similar_users:
+        return ALPHA_MAX
+
+    count_score = min(len(similar_users) / NEIGHBORS_FOR_FULL_TRUST, 1.0)
+
+    avg_similarity = sum(sim for _, sim in similar_users) / len(similar_users)
+    quality_score = min(avg_similarity / AVG_SIMILARITY_FOR_FULL_TRUST, 1.0)
+
+    evidence = count_score * quality_score
+    return ALPHA_MAX - (ALPHA_MAX - ALPHA_MIN) * evidence
 
 
 def _sorted(results: list[ScoredCandidate]) -> list[ScoredCandidate]:

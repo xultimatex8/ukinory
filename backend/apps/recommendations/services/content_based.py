@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_POOL_SIZE = 20
 
 SWIPE_COOLDOWN_DAYS: dict = {
-    SwipeAction.SKIP: 90,
+    SwipeAction.SKIP: 60,
 }
 DEFAULT_SWIPE_COOLDOWN_DAYS = 30
 
