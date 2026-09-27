@@ -40,8 +40,13 @@ def build_candidate_pool(user, pool_size: Optional[int] = DEFAULT_POOL_SIZE) -> 
     ranked = (
         queryset
         .annotate(distance=CosineDistance("embedding", profile.tolist()))
-        .order_by("distance")[:pool_size]
+        .order_by()
     )
+
+    movies = sorted(
+        ranked,
+        key=lambda movie: movie.distance
+    )[:pool_size]
 
     return [
         RecommendationCandidate(movie=m, similarity=1 - m.distance)
