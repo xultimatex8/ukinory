@@ -4,6 +4,8 @@ import logging
 from typing import Literal, Optional
 
 from django.conf import settings
+from django.db.models import Max
+from django.utils import timezone
 
 from apps.recommendations.services.collaborative import (
     build_rating_matrix,
@@ -13,33 +15,55 @@ from apps.recommendations.services.collaborative import (
 from apps.recommendations.services.cf_propagation import propagate_cf_score
 from apps.recommendations.services.content_based import build_candidate_pool
 from apps.recommendations.dtos.candidate import ScoredCandidate
+from apps.swipe_sessions.models import Swipe
+from apps.common.enums import SwipeAction
 
 logger = logging.getLogger(__name__)
 
 Strategy = Literal["content", "collaborative", "hybrid"]
 DEFAULT_POOL_SIZE = 20
 DEFAULT_STRATEGY: Strategy = "hybrid"
-DEFAULT_ALPHA = 0.5
 
 RATING_SCALE_MAX = 5.0
+
+ALPHA_MIN = 0.3
+ALPHA_MAX = 0.8
+NEIGHBORS_FOR_FULL_TRUST = 12
+AVG_SIMILARITY_FOR_FULL_TRUST = 0.35
+
+SKIP_PENALTY_COOLDOWN_DAYS = 60
+SKIP_PENALTY_FULL_FADE_DAYS = 180
+SKIP_PENALTY_MAX = 0.3
 
 
 def build_hybrid_pool(
     user,
     pool_size: Optional[int] = DEFAULT_POOL_SIZE,
     strategy: Optional[Strategy] = DEFAULT_STRATEGY,
-    alpha: Optional[float] = DEFAULT_ALPHA,
+    alpha: Optional[float] = None,
 ) -> list[ScoredCandidate]:
     content_candidates = build_candidate_pool(user, pool_size=pool_size)
 
+    skip_penalties = _skip_penalties(user, {c.movie.id for c in content_candidates})
+
     if strategy == "content":
-        return [
-            ScoredCandidate(c.movie, c.similarity, None, False, c.similarity)
-            for c in content_candidates
-        ]
+        return _sorted(
+            [
+                ScoredCandidate(
+                    c.movie,
+                    c.similarity,
+                    None,
+                    False,
+                    c.similarity * skip_penalties.get(c.movie.id, 1.0),
+                )
+                for c in content_candidates
+            ]
+        )
 
     matrix = build_rating_matrix()
     similar_users = find_similar_users(user.id, matrix)
+
+    effective_alpha = alpha if alpha is not None else _adaptive_alpha(similar_users)
 
     direct_cf_scores = {
         movie_id: score
@@ -58,7 +82,9 @@ def build_hybrid_pool(
             final = cf_normalized if cf_normalized is not None else 0.0
         else:
             cf_component = cf_normalized if cf_normalized is not None else candidate.similarity
-            final = alpha * candidate.similarity + (1 - alpha) * cf_component
+            final = effective_alpha * candidate.similarity + (1 - effective_alpha) * cf_component
+
+        final *= skip_penalties.get(candidate.movie.id, 1.0)
 
         results.append(
             ScoredCandidate(
@@ -70,5 +96,48 @@ def build_hybrid_pool(
             )
         )
 
+    return _sorted(results)
+
+
+def _adaptive_alpha(similar_users: list[tuple[int, float]]) -> float:
+    if not similar_users:
+        return ALPHA_MAX
+
+    count_score = min(len(similar_users) / NEIGHBORS_FOR_FULL_TRUST, 1.0)
+
+    avg_similarity = sum(sim for _, sim in similar_users) / len(similar_users)
+    quality_score = min(avg_similarity / AVG_SIMILARITY_FOR_FULL_TRUST, 1.0)
+
+    evidence = count_score * quality_score
+    return ALPHA_MAX - (ALPHA_MAX - ALPHA_MIN) * evidence
+
+
+def _sorted(results: list[ScoredCandidate]) -> list[ScoredCandidate]:
     results.sort(key=lambda c: c.final_score, reverse=True)
     return results
+
+
+def _skip_penalties(user, movie_ids: set[int]) -> dict[int, float]:
+    if not movie_ids:
+        return {}
+
+    now = timezone.now()
+    span = SKIP_PENALTY_FULL_FADE_DAYS - SKIP_PENALTY_COOLDOWN_DAYS
+
+    last_skips = (
+        Swipe.objects.filter(
+            user=user,
+            action=SwipeAction.SKIP,
+            candidate__movie_id__in=movie_ids,
+        )
+        .values("candidate__movie_id")
+        .annotate(last_skipped_at=Max("created_at"))
+    )
+
+    penalties: dict[int, float] = {}
+    for row in last_skips:
+        days_since = (now - row["last_skipped_at"]).total_seconds() / 86400.0
+        progress = min(max((days_since - SKIP_PENALTY_COOLDOWN_DAYS) / span, 0.0), 1.0)
+        penalties[row["candidate__movie_id"]] = (1 - SKIP_PENALTY_MAX) + SKIP_PENALTY_MAX * progress
+
+    return penalties

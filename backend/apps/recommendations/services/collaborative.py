@@ -12,9 +12,11 @@ from apps.recommendations.dtos.rating_matrix import RatingMatrix
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MIN_RATERS_FOR_CF = 3
-DEFAULT_MIN_COMMON_MOVIES = 2
-DEFAULT_MAX_SIMILAR_USERS = 10
+DEFAULT_MIN_RATERS_FOR_CF = 4
+
+DEFAULT_MIN_COMMON_MOVIES = 4
+
+DEFAULT_MAX_SIMILAR_USERS = 15
 
 
 def build_rating_matrix() -> RatingMatrix:
