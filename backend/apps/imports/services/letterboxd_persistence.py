@@ -270,6 +270,7 @@ _BULK_BATCH_SIZE = 500
 def persist_ratings(
     user, csvs: Mapping[str, list], movie_matches: Mapping[FilmKey, Movie]
 ) -> int:
+    t_start = time.perf_counter()
     merged = _merge_rating_sources(csvs)
 
     objs = [
@@ -284,6 +285,7 @@ def persist_ratings(
         )
         for (title, year), entry in merged.items()
     ]
+    t_built = time.perf_counter()
 
     if objs:
         Rating.objects.bulk_create(
@@ -293,6 +295,13 @@ def persist_ratings(
             update_fields=["rating", "watched_date", "liked", "movie"],
             batch_size=_BULK_BATCH_SIZE,
         )
+    t_done = time.perf_counter()
+
+    logger.info(
+        "persist_ratings: %d row(s) built in %.2fs, bulk_create took %.2fs "
+        "(total %.2fs).",
+        len(objs), t_built - t_start, t_done - t_built, t_done - t_start,
+    )
 
     return len(merged)
 
@@ -300,6 +309,7 @@ def persist_ratings(
 def persist_watchlist(
     user, rows: list, movie_matches: Mapping[FilmKey, Movie]
 ) -> int:
+    t_start = time.perf_counter()
     deduped: dict[FilmKey, WatchlistEntry] = {}
     for row in rows:
         key = _film_key(row)
@@ -314,6 +324,7 @@ def persist_watchlist(
             source=WatchlistSource.IMPORTED,
             movie=movie_matches.get(key),
         )
+    t_built = time.perf_counter()
 
     if deduped:
         WatchlistEntry.objects.bulk_create(
@@ -323,6 +334,13 @@ def persist_watchlist(
             update_fields=["added_date", "source", "movie"],
             batch_size=_BULK_BATCH_SIZE,
         )
+    t_done = time.perf_counter()
+
+    logger.info(
+        "persist_watchlist: %d row(s) built in %.2fs, bulk_create took "
+        "%.2fs (total %.2fs).",
+        len(deduped), t_built - t_start, t_done - t_built, t_done - t_start,
+    )
 
     return len(deduped)
 
@@ -352,6 +370,7 @@ def persist_letterboxd_records(
 
     movie_matches, movie_summary = _match_films(client, film_keys, priority_keys)
 
+    t_persist_start = time.perf_counter()
     with transaction.atomic():
         persisted: dict[str, int] = {
             "ratings": persist_ratings(user, result.csvs, movie_matches)
@@ -360,5 +379,9 @@ def persist_letterboxd_records(
             persisted["watchlist"] = persist_watchlist(
                 user, result.csvs[WATCHLIST_CSV], movie_matches
             )
+    logger.info(
+        "persist_letterboxd_records: persistence phase took %.2fs (%s).",
+        time.perf_counter() - t_persist_start, persisted,
+    )
 
     return persisted, movie_summary
