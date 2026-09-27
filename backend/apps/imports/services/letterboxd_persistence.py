@@ -264,21 +264,34 @@ def _match_films(
     return matches, summary
 
 
+_BULK_BATCH_SIZE = 500
+
+
 def persist_ratings(
     user, csvs: Mapping[str, list], movie_matches: Mapping[FilmKey, Movie]
 ) -> int:
     merged = _merge_rating_sources(csvs)
-    for (title, year), entry in merged.items():
-        Rating.objects.update_or_create(
+
+    objs = [
+        Rating(
             user=user,
             title=title,
             release_year=year,
-            defaults={
-                "rating": entry.rating,
-                "watched_date": entry.watched_date,
-                "liked": entry.liked,
-                "movie": movie_matches.get((title, year)),
-            },
+            rating=entry.rating,
+            watched_date=entry.watched_date,
+            liked=entry.liked,
+            movie=movie_matches.get((title, year)),
+        )
+        for (title, year), entry in merged.items()
+    ]
+
+    if objs:
+        Rating.objects.bulk_create(
+            objs,
+            update_conflicts=True,
+            unique_fields=["user", "title", "release_year"],
+            update_fields=["rating", "watched_date", "liked", "movie"],
+            batch_size=_BULK_BATCH_SIZE,
         )
 
     return len(merged)
@@ -287,25 +300,31 @@ def persist_ratings(
 def persist_watchlist(
     user, rows: list, movie_matches: Mapping[FilmKey, Movie]
 ) -> int:
-    count = 0
+    deduped: dict[FilmKey, WatchlistEntry] = {}
     for row in rows:
         key = _film_key(row)
         if not key:
             continue
         title, year = key
-        WatchlistEntry.objects.update_or_create(
+        deduped[key] = WatchlistEntry(
             user=user,
             title=title,
             release_year=year,
-            defaults={
-                "added_date": _parse_date(row.get("Date")),
-                "source": WatchlistSource.IMPORTED,
-                "movie": movie_matches.get(key),
-            },
+            added_date=_parse_date(row.get("Date")),
+            source=WatchlistSource.IMPORTED,
+            movie=movie_matches.get(key),
         )
-        count += 1
 
-    return count
+    if deduped:
+        WatchlistEntry.objects.bulk_create(
+            list(deduped.values()),
+            update_conflicts=True,
+            unique_fields=["user", "title", "release_year"],
+            update_fields=["added_date", "source", "movie"],
+            batch_size=_BULK_BATCH_SIZE,
+        )
+
+    return len(deduped)
 
 
 def _collect_film_keys(csvs: Mapping[str, list]) -> set[FilmKey]:
