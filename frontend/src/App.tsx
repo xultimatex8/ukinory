@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Analytics } from "@vercel/analytics/react";
 
 import AuthScreen from "./screens/auth";
 import RegisterScreen from "./screens/register";
@@ -93,6 +94,8 @@ function App() {
           <Route path="*" element={<NotFoundScreen />} />
         </Route>
       </Routes>
+
+      <Analytics />
     </BrowserRouter>
   );
 }
