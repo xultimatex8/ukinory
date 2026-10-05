@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from apps.common.enums import SwipeSessionStatus
+from apps.common.enums import SessionStatus
 from apps.swipe_sessions.dtos.swipe_summary import SwipeExportSummary
 from apps.swipe_sessions.models import SwipeSession
 from apps.swipe_sessions.services.candidate_pool import fill_candidate_pool
@@ -40,10 +40,10 @@ def create_swipe_session(user, session_type: str) -> SwipeSession:
 
 @transaction.atomic
 def start_swipe_session(user, session: SwipeSession) -> SwipeSession:
-    if session.status != SwipeSessionStatus.WAITING:
+    if session.status != SessionStatus.WAITING:
         raise ValueError("Swipe session has already started or finished.")
 
-    session.status = SwipeSessionStatus.ACTIVE
+    session.status = SessionStatus.ACTIVE
     session.last_seen_at = timezone.now()
     session.save(update_fields=["status", "last_seen_at"])
 
@@ -57,7 +57,7 @@ def touch_session(session_id) -> None:
 
 
 def _finish_session(session: SwipeSession) -> SwipeExportSummary | None:
-    session.status = SwipeSessionStatus.FINISHED
+    session.status = SessionStatus.FINISHED
     session.save(update_fields=["status"])
 
     user = session.users.first()
@@ -69,7 +69,7 @@ def _finish_session(session: SwipeSession) -> SwipeExportSummary | None:
 
 @transaction.atomic
 def end_swipe_session(user, session: SwipeSession) -> SwipeExportSummary:
-    if session.status != SwipeSessionStatus.ACTIVE:
+    if session.status != SessionStatus.ACTIVE:
         raise ValueError("Swipe session has not started yet.")
 
     return _finish_session(session)
@@ -82,14 +82,14 @@ def ensure_session_finished(session_id) -> SwipeExportSummary | None:
     except SwipeSession.DoesNotExist:
         return None
 
-    if session.status == SwipeSessionStatus.FINISHED:
+    if session.status == SessionStatus.FINISHED:
         return None
 
     return _finish_session(session)
 
 
 def _is_stale(session: SwipeSession) -> bool:
-    if session.status not in (SwipeSessionStatus.WAITING, SwipeSessionStatus.ACTIVE):
+    if session.status not in (SessionStatus.WAITING, SessionStatus.ACTIVE):
         return False
 
     cutoff = timezone.now() - STALE_SESSION_TIMEOUT
@@ -101,7 +101,7 @@ def _is_stale(session: SwipeSession) -> bool:
 
 
 def ensure_session_active(session) -> None:
-    if session.status == SwipeSessionStatus.FINISHED:
+    if session.status == SessionStatus.FINISHED:
         raise SwipeSessionFinishedError
 
     if _is_stale(session):

@@ -5,12 +5,12 @@ from django.db import models
 
 from apps.common.models import BaseModel
 from apps.movies.models import Movie
-from apps.common.enums import SwipeAction, SwipeSessionStatus, SwipeSessionType
+from apps.common.enums import SwipeAction, SessionStatus, SwipeSessionType
 
 
 class SwipeSession(BaseModel):
     type = models.CharField(max_length=16, choices=SwipeSessionType.choices)
-    status = models.CharField(max_length=16, choices=SwipeSessionStatus.choices, default=SwipeSessionStatus.WAITING)
+    status = models.CharField(max_length=16, choices=SessionStatus.choices, default=SessionStatus.WAITING)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     users = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="swipe_sessions")

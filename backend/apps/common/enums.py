@@ -17,7 +17,7 @@ class SwipeSessionType(models.TextChoices):
     PAIRED = "PAIRED", "Paired"
 
 
-class SwipeSessionStatus(models.TextChoices):
+class SessionStatus(models.TextChoices):
     WAITING = "WAITING", "Waiting"
     ACTIVE = "ACTIVE", "Active"
     FINISHED = "FINISHED", "Finished"
