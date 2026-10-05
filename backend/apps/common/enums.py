@@ -33,3 +33,14 @@ class ImportJobStatus(models.TextChoices):
     RUNNING = "running", "Running"
     SUCCEEDED = "succeeded", "Succeeded"
     FAILED = "failed", "Failed"
+
+
+class InviteType(models.TextChoices):
+    COMPARISON = "comparison"
+    PAIRED_SWIPE = "paired_swipe"
+
+
+class InviteStatus(models.TextChoices):
+    PENDING = "Pending"
+    ACCEPTED = "Accepted"
+    EXPIRED = "Expired"

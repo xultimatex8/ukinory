@@ -12,4 +12,5 @@ urlpatterns = [
     path("api/library/", include("apps.library.urls")),
     path("api/swipe-sessions/", include("apps.swipe_sessions.urls")),
     path("api/legal/", include("apps.legal.urls")),
+    path("api/invites/", include("apps.invites.urls")),
 ]

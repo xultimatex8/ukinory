@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'apps.recommendations',
     'apps.swipe_sessions',
     'apps.legal',
+    'apps.invites',
     'django_crontab',
     'django.contrib.postgres',
     'django_extensions',
@@ -125,6 +126,8 @@ CRONJOBS = [
     ("/5 * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
 
     ("/5 * * * *", "django.core.management.call_command", ["cleanup_stale_import_jobs"]),
+
+    ("*/5 * * * *", "django.core.management.call_command", ["expire_stale_invites"]),
 
     ("0 * * * *", "django.core.management.call_command", ["delete_stale_guests"]),
 ]
