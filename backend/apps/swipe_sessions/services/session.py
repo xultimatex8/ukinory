@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from apps.common.enums import SessionStatus
+from apps.common.enums import SessionStatus, SessionType
 from apps.swipe_sessions.dtos.swipe_summary import SwipeExportSummary
 from apps.swipe_sessions.models import SwipeSession
 from apps.swipe_sessions.services.candidate_pool import fill_candidate_pool
@@ -32,7 +32,7 @@ def get_user_swipe_session(*, session_id, user) -> SwipeSession:
 
 @transaction.atomic
 def create_swipe_session(user, session_type: str) -> SwipeSession:
-    session = SwipeSession.objects.create(type=session_type)
+    session = SwipeSession.objects.create(type=session_type, session_type=SessionType.SWIPE_SESSION)
     session.users.add(user)
 
     return session

@@ -44,3 +44,8 @@ class InviteStatus(models.TextChoices):
     PENDING = "Pending"
     ACCEPTED = "Accepted"
     EXPIRED = "Expired"
+
+
+class SessionType(models.TextChoices):
+    SWIPE_SESSION = "SWIPE_SESSION", "Swipe Session"
+    COMPARISON_SESSION = "COMPARISON_SESSION", "Comparison Session"
