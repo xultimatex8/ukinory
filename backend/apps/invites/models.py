@@ -4,7 +4,7 @@ from django.db import models
 
 from apps.common.models import BaseModel
 from apps.common.enums import InviteStatus, InviteType
-from config import settings
+from django.conf import settings
 
 class Invite(BaseModel):
     inviter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_invites")

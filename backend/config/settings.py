@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'apps.swipe_sessions',
     'apps.legal',
     'apps.invites',
+    'apps.comparisons',
     'django_crontab',
     'django.contrib.postgres',
     'django_extensions',
