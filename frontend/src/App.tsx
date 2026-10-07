@@ -18,6 +18,9 @@ import EditProfileScreen from "./screens/profile/edit";
 import Footer from "./components/Footer";
 import LegalScreen from "./screens/legal";
 import InstructionsScreen from "./screens/instructions";
+import ComparisonScreen from "./screens/comparison";
+import ComparisonRoomScreen from "./screens/comparison/room";
+import JoinComparisonScreen from "./screens/comparison/join";
 
 function PublicLayout() {
   return (
@@ -88,8 +91,11 @@ function App() {
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/profile/edit" element={<EditProfileScreen />} />
             <Route path="/instructions" element={<InstructionsScreen />} />
+            <Route path="/comparison" element={<ComparisonScreen />} />
+            <Route path="/comparison/room/:id" element={<ComparisonRoomScreen />} />
           </Route>
 
+          <Route path="/comparison/join/:code" element={<JoinComparisonScreen />} />
           <Route path="/500" element={<ServerErrorScreen />} />
           <Route path="*" element={<NotFoundScreen />} />
         </Route>

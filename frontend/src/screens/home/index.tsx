@@ -30,7 +30,7 @@ const features = [
     description: "Compare your movie taste with someone else.",
     action: "Compare tastes",
     icon: GitCompareArrows,
-    to: ""
+    to: "comparison"
   },
   {
     title: "Profile",
