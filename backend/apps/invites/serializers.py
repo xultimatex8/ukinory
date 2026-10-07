@@ -1,11 +1,6 @@
 from rest_framework import serializers
 
-from apps.common.enums import InviteType
 from apps.invites.models import Invite
-
-
-class CreateInviteSerializer(serializers.Serializer):
-    type = serializers.ChoiceField(choices=InviteType.choices)
 
 
 class InviteSerializer(serializers.ModelSerializer):

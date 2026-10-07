@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-from django.conf import settings
 from django.db import models
 
-from apps.common.models import BaseModel
-from apps.common.enums import SessionStatus
+from apps.common.models import BaseModel, Session
+from apps.common.enums import GenerationStatus
 
 
-class ComparisonSession(BaseModel):
-    status = models.CharField(
-        max_length=16,
-        choices=SessionStatus.choices,
-        default=SessionStatus.WAITING,
-    )
+class ComparisonSession(Session):
+    """
+    Comparison room (max. 2 users), similar to SwipeSession.
 
-    users = models.ManyToManyField(
-        settings.AUTH_USER_MODEL,
-        related_name="comparison_sessions",
-    )
+    WAITING  -> the creator is alone, waiting for their friend
+    ACTIVE   -> both users have joined; the comparison is generated / displayed
+    FINISHED -> room closed
+    """
 
 
 class Comparison(BaseModel):
@@ -26,6 +22,13 @@ class Comparison(BaseModel):
         on_delete=models.CASCADE,
         related_name="comparison",
     )
+
+    generation_status = models.CharField(
+        max_length=16,
+        choices=GenerationStatus.choices,
+        default=GenerationStatus.PENDING,
+    )
+    generation_started_at = models.DateTimeField(null=True, blank=True)
 
     generated_at = models.DateTimeField(null=True, blank=True)
     inputs_hash = models.CharField(max_length=64, blank=True, default="")

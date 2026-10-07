@@ -23,18 +23,20 @@ RECOMMENDATION_LIMIT = 10
 
 
 def list_comparisons(user):
-    return Comparison.objects.filter(users=user).prefetch_related("users")
+    return Comparison.objects.filter(
+        session__users=user
+    ).prefetch_related("session__users")
 
 
 def _get_comparison(user, comparison_id) -> tuple[Comparison, list]:
     try:
-        comparison = Comparison.objects.prefetch_related("users").get(
+        comparison = Comparison.objects.prefetch_related("session__users").get(
             pk=comparison_id
         )
     except (Comparison.DoesNotExist, ValueError, ValidationError) as exc:
         raise ComparisonNotFoundError from exc
 
-    users = sorted(comparison.users.all(), key=lambda u: str(u.pk))
+    users = sorted(comparison.session.users.all(), key=lambda u: str(u.pk))
     if user.pk not in {u.pk for u in users}:
         raise NotComparisonMemberError
     return comparison, users

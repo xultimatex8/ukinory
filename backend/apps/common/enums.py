@@ -49,3 +49,11 @@ class InviteStatus(models.TextChoices):
 class SessionType(models.TextChoices):
     SWIPE_SESSION = "SWIPE_SESSION", "Swipe Session"
     COMPARISON_SESSION = "COMPARISON_SESSION", "Comparison Session"
+
+
+class GenerationStatus(models.TextChoices):
+    PENDING = "pending"
+    RUNNING = "running"
+    READY = "ready"
+    NEEDS_DATA = "needs_data"
+    FAILED = "failed"

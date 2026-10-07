@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 QUOTA_CLIENT_NAME = "gemini_generate"
 DEFAULT_MODEL = "gemini-3.1-flash-lite"
-DEFAULT_MAX_OUTPUT_TOKENS = 1200
+DEFAULT_MAX_OUTPUT_TOKENS = 400
 MAX_DESCRIPTION_CHARS = 400
 
 
@@ -26,7 +26,6 @@ def _labels(user_ids: Sequence[str]) -> dict[str, str]:
 
 
 def _anonymise(public: dict, labels: dict[str, str]) -> dict:
-    """Swap user ids for 'User A/B' so the LLM never sees internal ids."""
     out = dict(public)
     out["library_sizes"] = {
         labels[k]: v for k, v in public["library_sizes"].items()

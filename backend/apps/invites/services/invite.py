@@ -17,7 +17,7 @@ CODE_BYTES = 32
 MAX_PENDING_INVITES_PER_USER = 20
 
 
-def create_invite(*, user, invite_type: str) -> Invite:
+def create_invite(*, user, invite_type: str, session=None) -> Invite:
     pending = Invite.objects.filter(
         inviter=user, status=InviteStatus.PENDING,
         expires_at__gt=timezone.now(),
@@ -26,7 +26,7 @@ def create_invite(*, user, invite_type: str) -> Invite:
         raise TooManyPendingInvitesError
     
     return Invite.objects.create(
-        inviter=user, type=invite_type,
+        inviter=user, type=invite_type, session=session,
         code=secrets.token_urlsafe(CODE_BYTES),
         expires_at=timezone.now() + INVITE_TTL,
     )

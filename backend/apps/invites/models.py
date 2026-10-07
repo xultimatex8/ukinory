@@ -7,6 +7,11 @@ from apps.common.enums import InviteStatus, InviteType
 from django.conf import settings
 
 class Invite(BaseModel):
+    session = models.ForeignKey(
+        "common.Session", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="invites",
+    )
+    
     inviter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_invites")
     accepted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                     on_delete=models.CASCADE, related_name="accepted_invites")

@@ -41,6 +41,7 @@ if RENDER_EXTERNAL_HOSTNAME:
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -64,6 +65,7 @@ INSTALLED_APPS = [
     'django.contrib.postgres',
     'django_extensions',
     'django_rq',
+    'channels',
 ]
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -233,11 +235,19 @@ RQ_QUEUES = {
     },
 }
 
-# Disparo del worker vía GitHub Actions (ver apps/imports/services/github_dispatch.py)
 GITHUB_DISPATCH_TOKEN = os.getenv("GITHUB_DISPATCH_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO")  # p.ej. "tuusuario/turepo"
+GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_WORKFLOW_FILE = os.getenv("GITHUB_WORKFLOW_FILE", "process-imports.yml")
 GITHUB_DISPATCH_REF = os.getenv("GITHUB_DISPATCH_REF", "main")
+
+
+ASGI_APPLICATION = "config.asgi.application"
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [REDIS_URL]},
+    }
+}
 
 
 # Password validation
