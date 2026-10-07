@@ -26,10 +26,10 @@ class InviteServiceTests(TestCase):
         )
         self.guest = User.objects.create_user(is_guest=True)
         self.handler = mock.Mock(return_value=mock.Mock(pk=1))
-        patcher = mock.patch.dict(
-            registry._handlers,
-            {InviteType.COMPARISON.value: self.handler},
-            clear=True,
+        patcher = mock.patch.object(
+            registry,
+            "get_acceptance_handler",
+            return_value=self.handler,
         )
         patcher.start()
         self.addCleanup(patcher.stop)
