@@ -20,7 +20,11 @@ export type RoomPhase =
   | "failed"
   | "ready";
 
-export type FatalRoomError = "not_found" | "forbidden" | null;
+export type FatalRoomError =
+  | "not_found"
+  | "forbidden"
+  | "closed"
+  | null;
 
 const POLL_FAST_MS = 3000;
 const POLL_SLOW_MS = 15000;
@@ -78,6 +82,12 @@ export function useComparisonRoom(roomId: string | undefined) {
 
       roomLoadedRef.current = true;
       setRoom(state);
+
+      if (state.status === "FINISHED") {
+        setFatal("closed");
+        return;
+      }
+
       setError(null);
     } catch (err) {
       handleFailure(err, roomLoadedRef.current);
@@ -196,7 +206,7 @@ export function useComparisonRoom(roomId: string | undefined) {
   }, [roomId, room, result, fatal, kickGeneration]);
 
   useEffect(() => {
-    if (!roomId || result || room?.generation_status !== "ready") {
+    if (!roomId || result || fatal || room?.generation_status !== "ready") {
       return;
     }
 
@@ -217,10 +227,11 @@ export function useComparisonRoom(roomId: string | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [roomId, room?.generation_status, result, handleFailure]);
+  }, [roomId, room?.generation_status, result, fatal, handleFailure]);
 
   const reload = useCallback(() => {
     setError(null);
+    setFatal(null);
     void refresh();
   }, [refresh]);
 

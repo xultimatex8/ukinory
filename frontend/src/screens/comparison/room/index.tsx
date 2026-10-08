@@ -5,15 +5,19 @@ import {
   FileArchive,
   FileText,
   Loader2,
+  LogOut,
   Trash2,
   Upload,
 } from "lucide-react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
-import AppLogo from "../../../components/AppLogo";
+import LeaveRoomModal from "../../../components/LeaveRoomModal";
 import ErrorScreen from "../../../components/ErrorScreen";
 import { getCurrentUser, type User } from "../../../services/user";
-import type { Invite } from "../../../services/comparisons";
+import {
+  leaveRoom,
+  type Invite,
+} from "../../../services/comparisons";
 import { useComparisonRoom } from "../../../hooks/useComparisonRoom";
 import InviteSharePanel from "../../../components/InviteSharePanel";
 import { importExport, type ImportResult } from "../../../services/imports";
@@ -420,6 +424,7 @@ function ImportSection({ onImported }: { onImported: () => void }) {
 export default function ComparisonRoomScreen() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const initialInvite =
     (location.state as { invite?: Invite } | null)?.invite ?? null;
 
@@ -437,6 +442,30 @@ export default function ComparisonRoomScreen() {
 
   const [me, setMe] = useState<User | null>(null);
   const [meChecked, setMeChecked] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+
+  const handleLeave = async () => {
+    if (!id || isLeaving) return;
+
+    setIsLeaving(true);
+    setLeaveError(null);
+
+    try {
+      await leaveRoom(id);
+      navigate("/");
+    } catch {
+      setIsLeaving(false);
+      setLeaveError("Unable to leave the room. Please try again.");
+    }
+  };
+
+  const handleConfirmLeave = () => {
+    if (isLeaving) return;
+
+    void handleLeave();
+  };
 
   useEffect(() => {
     if (!result) return;
@@ -475,6 +504,15 @@ export default function ComparisonRoomScreen() {
     );
   }
 
+  if (fatal === "closed") {
+    return (
+      <ErrorScreen
+        message="This comparison room is closed."
+        buttonText="Back to home"
+      />
+    );
+  }
+
   if (error) {
     return <ErrorScreen message={error} onRetry={reload} />;
   }
@@ -487,9 +525,22 @@ export default function ComparisonRoomScreen() {
   return (
     <main className="min-h-screen bg-background text-text">
       <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-6 sm:px-6 sm:py-10">
-        <div className="mb-10 flex items-center justify-center">
-          <AppLogo />
-        </div>
+        {room && room.status !== "FINISHED" && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setLeaveError(null);
+                setIsLeaveModalOpen(true);
+              }}
+              disabled={isLeaving}
+              className="flex cursor-pointer items-center gap-2 border border-border bg-surface px-4 py-2 text-xs font-medium text-text-muted transition hover:bg-surface-hover hover:text-text disabled:cursor-auto disabled:opacity-50"
+            >
+              <LogOut size={14} strokeWidth={1.7} />
+              Leave room
+            </button>
+          </div>
+        )}
 
         {phase === "loading" && (
           <Waiting
@@ -630,6 +681,15 @@ export default function ComparisonRoomScreen() {
           </div>
         )}
       </div>
+
+      {isLeaveModalOpen && (
+        <LeaveRoomModal
+          isLeaving={isLeaving}
+          error={leaveError}
+          onClose={() => setIsLeaveModalOpen(false)}
+          onLeave={handleConfirmLeave}
+        />
+      )}
     </main>
   );
 }

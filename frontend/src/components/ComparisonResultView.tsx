@@ -173,10 +173,6 @@ function MovieHeading({
   );
 }
 
-/**
- * Username with an optional "(You)" suffix. The name truncates when the
- * column is narrow, while the "(You)" tag always stays visible.
- */
 function UserLabel({ name, isYou }: { name: string; isYou: boolean }) {
   return (
     <span
@@ -247,10 +243,6 @@ function PairStat({
   );
 }
 
-/**
- * Shared card for every film in the page. `children` is the stats block
- * (PairStat) that sticks to the bottom of the card.
- */
 function MovieCard({
   title,
   year,
@@ -585,11 +577,11 @@ export default function ComparisonResultView({
 
       <section>
         <h2 className="text-lg font-semibold text-text">
-          Watch these together
+          Recommended for both of you
         </h2>
 
         <p className="mt-1 text-sm text-text-muted">
-          Movies neither of you has seen, picked for both tastes.
+          Movies neither of you has seen, picked to match both of your tastes.
         </p>
 
         {recommendations.length === 0 ? (

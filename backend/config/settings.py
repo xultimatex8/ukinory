@@ -140,6 +140,8 @@ CRONJOBS = [
 
     ("*/5 * * * *", "django.core.management.call_command", ["expire_stale_invites"]),
 
+    ("*/5 * * * *", "django.core.management.call_command", ["close_stale_rooms"]),
+
     ("0 * * * *", "django.core.management.call_command", ["delete_stale_guests"]),
 ]
 

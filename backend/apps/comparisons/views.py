@@ -22,6 +22,7 @@ from apps.comparisons.services.room import (
     build_room_state,
     create_room,
     get_user_room,
+    leave_room,
     regenerate_invite,
     request_generation,
     touch_room,
@@ -104,6 +105,22 @@ class RoomDetailView(APIView):
         touch_room(room.pk)
 
         return Response(build_room_state(room, request.user))
+
+
+class RoomLeaveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, room_id):
+        room = get_user_room(
+            room_id=room_id,
+            user=request.user,
+        )
+        leave_room(
+            room=room,
+            user=request.user,
+        )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class RoomInviteView(APIView):

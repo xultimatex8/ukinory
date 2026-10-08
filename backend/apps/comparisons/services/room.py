@@ -27,7 +27,7 @@ from apps.library.models import Rating
 logger = logging.getLogger(__name__)
 
 MAX_PARTICIPANTS = 2
-WAITING_ROOM_TIMEOUT = timedelta(minutes=30)
+STALE_ROOM_TIMEOUT = timedelta(minutes=30)
 RUNNING_TIMEOUT = timedelta(minutes=2)
 
 
@@ -171,10 +171,46 @@ def run_generation(comparison_id) -> str:
 
 
 def close_stale_rooms() -> int:
-    cutoff = timezone.now() - WAITING_ROOM_TIMEOUT
-    qs = ComparisonSession.objects.filter(status=SessionStatus.WAITING).filter(
-        Q(last_seen_at__lt=cutoff) | Q(last_seen_at__isnull=True, created_at__lt=cutoff)
+    cutoff = timezone.now() - STALE_ROOM_TIMEOUT
+
+    stale_rooms = ComparisonSession.objects.filter(
+        status__in=[
+            SessionStatus.WAITING,
+            SessionStatus.ACTIVE,
+        ],
+    ).filter(
+        Q(last_seen_at__lt=cutoff)
+        | Q(last_seen_at__isnull=True, created_at__lt=cutoff)
     )
-    count = qs.count()
-    qs.delete()
-    return count
+
+    closed = 0
+
+    for room in stale_rooms:
+        if room.status == SessionStatus.WAITING:
+            room.delete()
+        else:
+            room.status = SessionStatus.FINISHED
+            room.save(update_fields=["status"])
+
+        closed += 1
+
+    return closed
+
+
+@transaction.atomic
+def leave_room(*, room: ComparisonSession, user) -> None:
+    if room.status == SessionStatus.FINISHED:
+        raise RoomClosedError
+
+    if not room.users.filter(pk=user.pk).exists():
+        raise NotRoomMemberError
+
+    room.users.remove(user)
+
+    if room.status == SessionStatus.WAITING:
+        if not room.users.exists():
+            room.delete()
+        return
+
+    room.status = SessionStatus.FINISHED
+    room.save(update_fields=["status"])

@@ -100,6 +100,12 @@ export async function regenerateInvite(roomId: string): Promise<Invite> {
   return response.json();
 }
 
+export async function leaveRoom(roomId: string): Promise<void> {
+  await apiFetch(`${ROOMS_PATH}/${roomId}/leave/`, {
+    method: "DELETE",
+  });
+}
+
 export async function generateComparison(roomId: string): Promise<RoomState> {
   const response = await apiFetch(`${COMPARISONS_PATH}/${roomId}/generate/`, {
     method: "POST",
