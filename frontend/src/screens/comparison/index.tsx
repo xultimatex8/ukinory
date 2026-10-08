@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowRight,
   Check,
@@ -13,7 +13,6 @@ import { useNavigate } from "react-router-dom";
 import AppHeader from "../../components/LogoHeader";
 import { createComparisonRoom } from "../../services/comparisons";
 import { importExport, type ImportResult } from "../../services/imports";
-import { getLibraryStats, type LibraryStats } from "../../services/library";
 import { getErrorMessage } from "../../utils/errors";
 
 function extractInviteCode(value: string): string {
@@ -32,36 +31,7 @@ export default function ComparisonScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
   const [codeInput, setCodeInput] = useState("");
-
-  const hasLibraryData =
-    libraryStats === null ? null : libraryStats.rated_total > 0;
-
-  const refreshLibraryStats = async () => {
-    try {
-      setLibraryStats(await getLibraryStats());
-    } catch {
-      setLibraryStats(null);
-    }
-  };
-
-  useEffect(() => {
-    const loadLibraryStats = async () => {
-      try {
-        const [stats] = await Promise.all([
-          getLibraryStats(),
-          new Promise((resolve) => setTimeout(resolve, 350)),
-        ]);
-
-        setLibraryStats(stats);
-      } catch {
-        setLibraryStats(null);
-      }
-    };
-
-    void loadLibraryStats();
-  }, []);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
@@ -141,8 +111,6 @@ export default function ComparisonScreen() {
 
       setImportResult(result);
       setPendingFiles([]);
-
-      await refreshLibraryStats();
     } catch (error) {
       if (typeof error === "object" && error !== null && "error" in error) {
         const backendError = error as { error?: { message?: string } };
@@ -247,7 +215,7 @@ export default function ComparisonScreen() {
             <button
               type="button"
               onClick={() => void handleCreateRoom()}
-              disabled={isCreatingRoom || isImporting || !hasLibraryData}
+              disabled={isCreatingRoom || isImporting}
               className={`group flex min-h-44 cursor-pointer flex-col border border-border bg-surface p-6 text-left disabled:cursor-auto disabled:opacity-60 disabled:border-border disabled:bg-surface ${
                 !isImporting
                   ? "transition hover:border-primary hover:bg-surface-hover"
