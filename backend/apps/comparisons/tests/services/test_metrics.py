@@ -802,6 +802,7 @@ class ComputeMetricsTests(TestCase):
             result.public["agreements"],
             [
                 {
+                    "movie_id": None,
                     "title": "Dune",
                     "release_year": 2021,
                     "ratings": {

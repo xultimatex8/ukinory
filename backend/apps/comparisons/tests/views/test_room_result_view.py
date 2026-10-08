@@ -95,6 +95,12 @@ class TestRoomResultView:
         }
 
     @patch(
+        "apps.comparisons.views.attach_participants"
+    )
+    @patch(
+        "apps.comparisons.views.attach_tmdb_metadata"
+    )
+    @patch(
         "apps.comparisons.views.serialize_result"
     )
     @patch(
@@ -108,6 +114,8 @@ class TestRoomResultView:
         mock_get_user_room,
         mock_get_comparison_result,
         mock_serialize_result,
+        mock_attach_tmdb_metadata,
+        mock_attach_participants,
         api_client,
         user,
     ):
@@ -124,12 +132,17 @@ class TestRoomResultView:
 
         mock_get_user_room.return_value = room
         mock_get_comparison_result.return_value = result
-        mock_serialize_result.return_value = {
+
+        serialized = {
             "comparison": "comparison-id",
             "metrics": {"taste_overlap": 0.5},
             "narrative": "You have similar tastes.",
             "recommendations": [],
         }
+
+        mock_serialize_result.return_value = serialized
+        mock_attach_tmdb_metadata.return_value = serialized
+        mock_attach_participants.return_value = serialized
 
         response = api_client.get(
             reverse(
@@ -141,18 +154,19 @@ class TestRoomResultView:
         )
 
         assert response.status_code == 200
-        assert response.data == {
-            "comparison": "comparison-id",
-            "metrics": {"taste_overlap": 0.5},
-            "narrative": "You have similar tastes.",
-            "recommendations": [],
-        }
+        assert response.data == serialized
 
         mock_get_comparison_result.assert_called_once_with(
             user=user,
             comparison_id=comparison.pk,
         )
         mock_serialize_result.assert_called_once_with(result)
+        mock_attach_tmdb_metadata.assert_called_once_with(serialized)
+        mock_attach_participants.assert_called_once_with(
+            serialized,
+            result.comparison,
+            user,
+        )
 
     @patch(
         "apps.comparisons.views.get_comparison_result"

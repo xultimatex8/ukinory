@@ -7,10 +7,10 @@ from django.test import TestCase, override_settings
 from apps.common.exceptions import QuotaExceeded
 from apps.comparisons.services.narrative import (
     DEFAULT_MODEL,
-    MAX_DESCRIPTION_CHARS,
+    QUOTA_CLIENT_NAME,
     ComparisonNarrativeClient,
-    _anonymise,
     _build_prompt,
+    _compact_public,
     _labels,
     _parse,
 )
@@ -21,8 +21,8 @@ class LabelsTests(TestCase):
         self.assertEqual(
             _labels(["10", "20"]),
             {
-                "10": "User A",
-                "20": "User B",
+                "10": "A",
+                "20": "B",
             },
         )
 
@@ -30,15 +30,15 @@ class LabelsTests(TestCase):
         self.assertEqual(
             _labels(["1", "2", "3"]),
             {
-                "1": "User A",
-                "2": "User B",
-                "3": "User C",
+                "1": "A",
+                "2": "B",
+                "3": "C",
             },
         )
 
 
-class AnonymiseTests(TestCase):
-    def test_anonymises_library_sizes(self):
+class CompactPublicTests(TestCase):
+    def test_compacts_library_sizes(self):
         public = {
             "library_sizes": {
                 "10": 100,
@@ -48,7 +48,7 @@ class AnonymiseTests(TestCase):
             "divergences": [],
         }
 
-        result = _anonymise(
+        result = _compact_public(
             public,
             _labels(["10", "20"]),
         )
@@ -56,12 +56,12 @@ class AnonymiseTests(TestCase):
         self.assertEqual(
             result["library_sizes"],
             {
-                "User A": 100,
-                "User B": 80,
+                "A": 100,
+                "B": 80,
             },
         )
 
-    def test_anonymises_ratings(self):
+    def test_compacts_ratings(self):
         public = {
             "library_sizes": {
                 "10": 100,
@@ -89,7 +89,7 @@ class AnonymiseTests(TestCase):
             ],
         }
 
-        result = _anonymise(
+        result = _compact_public(
             public,
             _labels(["10", "20"]),
         )
@@ -97,39 +97,113 @@ class AnonymiseTests(TestCase):
         self.assertEqual(
             result["agreements"][0]["ratings"],
             {
-                "User A": 5.0,
-                "User B": 4.5,
+                "A": 5.0,
+                "B": 4.5,
             },
         )
 
         self.assertEqual(
             result["divergences"][0]["ratings"],
             {
-                "User A": 2.0,
-                "User B": 5.0,
+                "A": 2.0,
+                "B": 5.0,
             },
         )
 
-    def test_does_not_mutate_public(self):
+    def test_compacts_movie_metadata(self):
         public = {
+            "compatibility_score": 85,
+            "taste_similarity": 0.8,
+            "common_count": 30,
+            "mean_rating_gap": 0.5,
+            "rating_correlation": 0.7,
             "library_sizes": {
                 "10": 100,
                 "20": 80,
             },
+            "agreements": [
+                {
+                    "title": "Dune",
+                    "release_year": 2021,
+                    "ratings": {
+                        "10": 5.0,
+                        "20": 4.5,
+                    },
+                }
+            ],
+            "divergences": [],
+        }
+
+        result = _compact_public(
+            public,
+            _labels(["10", "20"]),
+        )
+
+        self.assertEqual(
+            result["compatibility_score"],
+            85,
+        )
+
+        self.assertEqual(
+            result["taste_similarity"],
+            0.8,
+        )
+
+        self.assertEqual(
+            result["common_films"],
+            30,
+        )
+
+        self.assertEqual(
+            result["mean_rating_gap"],
+            0.5,
+        )
+
+        self.assertEqual(
+            result["rating_correlation"],
+            0.7,
+        )
+
+        self.assertEqual(
+            result["agreements"][0]["title"],
+            "Dune",
+        )
+
+        self.assertEqual(
+            result["agreements"][0]["year"],
+            2021,
+        )
+
+    def test_does_not_mutate_public(self):
+        public = {
+            "compatibility_score": 85,
+            "taste_similarity": 0.8,
+            "library_sizes": {
+                "10": 100,
+                "20": 80,
+            },
+            "common_count": 30,
+            "mean_rating_gap": 0.5,
+            "rating_correlation": 0.7,
             "agreements": [],
             "divergences": [],
         }
 
         original = {
+            "compatibility_score": 85,
+            "taste_similarity": 0.8,
             "library_sizes": {
                 "10": 100,
                 "20": 80,
             },
+            "common_count": 30,
+            "mean_rating_gap": 0.5,
+            "rating_correlation": 0.7,
             "agreements": [],
             "divergences": [],
         }
 
-        _anonymise(
+        _compact_public(
             public,
             _labels(["10", "20"]),
         )
@@ -195,7 +269,7 @@ class BuildPromptTests(TestCase):
         )
 
         self.assertIn(
-            "Compatibility metrics:",
+            "Metrics:",
             prompt,
         )
 
@@ -205,12 +279,12 @@ class BuildPromptTests(TestCase):
         )
 
         self.assertIn(
-            "User A",
+            "A",
             prompt,
         )
 
         self.assertIn(
-            "User B",
+            "B",
             prompt,
         )
 
@@ -241,7 +315,7 @@ class BuildPromptTests(TestCase):
         )
 
         self.assertIn(
-            "taste fit: User A=0.91, User B=0.84",
+            "fit A=0.91 B=0.84",
             prompt,
         )
 
@@ -250,12 +324,60 @@ class BuildPromptTests(TestCase):
             prompt,
         )
 
+    def test_prompt_contains_individual_profiles(self):
+        prompt = _build_prompt(
+            self._public(),
+            {
+                "profiles": {
+                    "10": {
+                        "favourite_genres": ["Science Fiction"],
+                        "favourite_directors": ["Denis Villeneuve"],
+                    },
+                    "20": {
+                        "favourite_genres": ["Drama"],
+                        "favourite_directors": ["Christopher Nolan"],
+                    },
+                },
+                "shared_genres": ["Science Fiction"],
+                "shared_directors": [],
+            },
+            [],
+            ["10", "20"],
+        )
+
+        self.assertIn(
+            "Individual taste data:",
+            prompt,
+        )
+
+        self.assertIn(
+            "A:",
+            prompt,
+        )
+
+        self.assertIn(
+            "B:",
+            prompt,
+        )
+
+        self.assertIn(
+            "Denis Villeneuve",
+            prompt,
+        )
+
+        self.assertIn(
+            "Christopher Nolan",
+            prompt,
+        )
+
     def test_prompt_truncates_description(self):
         candidate = self._candidate()
 
-        candidate.movie.wikidata_description = "x" * (
-            MAX_DESCRIPTION_CHARS + 100
+        long_description = " ".join(
+            ["A very long movie description"] * 100
         )
+
+        candidate.movie.wikidata_description = long_description
 
         prompt = _build_prompt(
             self._public(),
@@ -265,7 +387,7 @@ class BuildPromptTests(TestCase):
         )
 
         self.assertNotIn(
-            "x" * (MAX_DESCRIPTION_CHARS + 1),
+            long_description,
             prompt,
         )
 
@@ -306,18 +428,20 @@ class ParseTests(TestCase):
         text = """
         {
             "narrative": "You both enjoy science fiction.",
+            "individual": {
+                "A": "This person prefers science fiction.",
+                "B": "This person also enjoys science fiction."
+            },
             "recommendations": [
-                {
-                    "index": 1,
-                    "reason": "It matches both profiles."
-                }
+                "It matches both profiles."
             ]
         }
         """
 
         result = _parse(
             text,
-            2,
+            1,
+            ["10", "20"],
         )
 
         self.assertIsNotNone(result)
@@ -334,11 +458,24 @@ class ParseTests(TestCase):
             },
         )
 
+        self.assertEqual(
+            result.individual,
+            {
+                "10": "This person prefers science fiction.",
+                "20": "This person also enjoys science fiction.",
+            },
+        )
+
     def test_parse_strips_narrative_and_reason(self):
         result = _parse(
             '{"narrative": "  Summary  ", '
-            '"recommendations": [{"index": 1, "reason": "  Reason  "}]}',
+            '"individual": {'
+            '"A": "  User A taste  ", '
+            '"B": "  User B taste  "'
+            '}, '
+            '"recommendations": ["  Reason  "]}',
             1,
+            ["10", "20"],
         )
 
         self.assertEqual(
@@ -353,15 +490,28 @@ class ParseTests(TestCase):
             },
         )
 
+        self.assertEqual(
+            result.individual,
+            {
+                "10": "User A taste",
+                "20": "User B taste",
+            },
+        )
+
     def test_parse_ignores_out_of_range_indices(self):
         result = _parse(
             '{"narrative": "Summary", '
+            '"individual": {'
+            '"A": "User A taste", '
+            '"B": "User B taste"'
+            '}, '
             '"recommendations": ['
             '{"index": 0, "reason": "zero"},'
             '{"index": 1, "reason": "valid"},'
             '{"index": 3, "reason": "three"}'
             ']}',
             2,
+            ["10", "20"],
         )
 
         self.assertEqual(
@@ -373,8 +523,13 @@ class ParseTests(TestCase):
 
     def test_parse_allows_missing_recommendations(self):
         result = _parse(
-            '{"narrative": "Summary"}',
+            '{"narrative": "Summary", '
+            '"individual": {'
+            '"A": "User A taste", '
+            '"B": "User B taste"'
+            '}}',
             2,
+            ["10", "20"],
         )
 
         self.assertIsNotNone(result)
@@ -394,22 +549,42 @@ class ParseTests(TestCase):
             _parse(
                 "not json",
                 2,
+                ["10", "20"],
             )
         )
 
     def test_parse_missing_narrative_returns_none(self):
         self.assertIsNone(
             _parse(
-                '{"recommendations": []}',
+                '{"individual": {'
+                '"A": "User A taste", '
+                '"B": "User B taste"'
+                '}, "recommendations": []}',
                 2,
+                ["10", "20"],
             )
         )
 
     def test_parse_empty_narrative_returns_none(self):
         self.assertIsNone(
             _parse(
-                '{"narrative": "   "}',
+                '{"narrative": "   ", '
+                '"individual": {'
+                '"A": "User A taste", '
+                '"B": "User B taste"'
+                '}}',
                 2,
+                ["10", "20"],
+            )
+        )
+
+    def test_parse_missing_individual_returns_none(self):
+        self.assertIsNone(
+            _parse(
+                '{"narrative": "Summary", '
+                '"recommendations": []}',
+                2,
+                ["10", "20"],
             )
         )
 
@@ -417,16 +592,26 @@ class ParseTests(TestCase):
         self.assertIsNone(
             _parse(
                 '{"narrative": "Summary", '
-                '"recommendations": [{"reason": "Missing index"}]}',
+                '"individual": {'
+                '"A": "User A taste", '
+                '"B": "User B taste"'
+                '}, '
+                '"recommendations": [{"index": 1}]}',
                 1,
+                ["10", "20"],
             )
         )
 
     def test_parse_converts_values_to_strings(self):
         result = _parse(
             '{"narrative": 123, '
-            '"recommendations": [{"index": 1, "reason": 456}]}',
+            '"individual": {'
+            '"A": 456, '
+            '"B": 789'
+            '}, '
+            '"recommendations": [999]}',
             1,
+            ["10", "20"],
         )
 
         self.assertEqual(
@@ -437,7 +622,15 @@ class ParseTests(TestCase):
         self.assertEqual(
             result.reasons,
             {
-                1: "456",
+                1: "999",
+            },
+        )
+
+        self.assertEqual(
+            result.individual,
+            {
+                "10": "456",
+                "20": "789",
             },
         )
 
@@ -500,7 +693,7 @@ class ComparisonNarrativeClientTests(TestCase):
         mock_cost_units.return_value = 5
 
         mock_consume.side_effect = QuotaExceeded(
-            "gemini_generate",
+            QUOTA_CLIENT_NAME,
             "day",
             10,
         )
@@ -537,7 +730,10 @@ class ComparisonNarrativeClientTests(TestCase):
             result,
         )
 
-        mock_consume.assert_called_once()
+        mock_consume.assert_called_once_with(
+            QUOTA_CLIENT_NAME,
+            5,
+        )
 
         mock_client.return_value.models.generate_content.assert_not_called()
 
@@ -572,13 +768,13 @@ class ComparisonNarrativeClientTests(TestCase):
         )
 
         mock_cost_units.assert_called_once_with(
-            "gemini_generate",
+            QUOTA_CLIENT_NAME,
             input_tokens=50,
             output_tokens=25,
         )
 
         mock_adjust.assert_called_once_with(
-            "gemini_generate",
+            QUOTA_CLIENT_NAME,
             2,
         )
 
@@ -651,8 +847,12 @@ class ComparisonNarrativeClientTests(TestCase):
         response = mock.Mock()
         response.text = (
             '{"narrative": "You have similar tastes.", '
+            '"individual": {'
+            '"A": "This person enjoys science fiction.", '
+            '"B": "This person also enjoys science fiction."'
+            '}, '
             '"recommendations": ['
-            '{"index": 1, "reason": "Good fit."}'
+            '"Good fit."'
             ']}'
         )
         response.usage_metadata = usage
@@ -713,13 +913,21 @@ class ComparisonNarrativeClientTests(TestCase):
             },
         )
 
+        self.assertEqual(
+            result.individual,
+            {
+                "1": "This person enjoys science fiction.",
+                "2": "This person also enjoys science fiction.",
+            },
+        )
+
         mock_consume.assert_called_once_with(
-            "gemini_generate",
+            QUOTA_CLIENT_NAME,
             10,
         )
 
         mock_adjust.assert_called_once_with(
-            "gemini_generate",
+            QUOTA_CLIENT_NAME,
             2,
         )
 

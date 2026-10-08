@@ -106,6 +106,12 @@ class TestComparisonDetailView:
         }
 
     @patch(
+        "apps.comparisons.views.attach_participants"
+    )
+    @patch(
+        "apps.comparisons.views.attach_tmdb_metadata"
+    )
+    @patch(
         "apps.comparisons.views.serialize_result"
     )
     @patch(
@@ -115,6 +121,8 @@ class TestComparisonDetailView:
         self,
         mock_get_result,
         mock_serialize_result,
+        mock_attach_tmdb_metadata,
+        mock_attach_participants,
         api_client,
         user,
     ):
@@ -122,12 +130,17 @@ class TestComparisonDetailView:
 
         result = MagicMock()
         mock_get_result.return_value = result
-        mock_serialize_result.return_value = {
+
+        serialized = {
             "comparison": "comparison-id",
             "metrics": {"taste_overlap": 0.5},
             "narrative": "You have similar tastes.",
             "recommendations": [],
         }
+
+        mock_serialize_result.return_value = serialized
+        mock_attach_tmdb_metadata.return_value = serialized
+        mock_attach_participants.return_value = serialized
 
         response = api_client.get(
             reverse(
@@ -137,18 +150,19 @@ class TestComparisonDetailView:
         )
 
         assert response.status_code == 200
-        assert response.data == {
-            "comparison": "comparison-id",
-            "metrics": {"taste_overlap": 0.5},
-            "narrative": "You have similar tastes.",
-            "recommendations": [],
-        }
+        assert response.data == serialized
 
         mock_get_result.assert_called_once_with(
             user=user,
             comparison_id="comparison-id",
         )
         mock_serialize_result.assert_called_once_with(result)
+        mock_attach_tmdb_metadata.assert_called_once_with(serialized)
+        mock_attach_participants.assert_called_once_with(
+            serialized,
+            result.comparison,
+            user,
+        )
 
     @patch(
         "apps.comparisons.views.get_comparison_result"
