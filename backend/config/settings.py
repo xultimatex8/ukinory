@@ -101,8 +101,8 @@ API_QUOTAS = {
         "week": _budget_units(1.5),
     },
     "gemini_narrative": {
-        "day": _budget_units(0.428),
-        "week": _budget_units(3.0),
+        "day": _budget_units(1.0),
+        "week": _budget_units(7.0),
     },
 }
 

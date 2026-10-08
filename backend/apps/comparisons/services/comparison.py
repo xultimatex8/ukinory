@@ -16,7 +16,7 @@ from apps.comparisons.models import Comparison, ComparisonNarrative
 from apps.comparisons.services.metrics import METRICS_VERSION, compute_metrics
 from apps.comparisons.services.narrative import ComparisonNarrativeClient
 from apps.comparisons.services.snapshot import compute_inputs_hash, load_library
-from apps.movies.models import Movie  # adjust the import if Movie lives elsewhere
+from apps.movies.models import Movie
 from apps.movies.services.tmdb_metadata import fetch_card_metadata_bulk
 from apps.recommendations.services.joint_profile import (
     DEFAULT_POOL_SIZE,
@@ -26,8 +26,8 @@ from apps.recommendations.services.joint_profile import (
     user_taste_profiles,
 )
 
-RECOMMENDATION_LIMIT = 10
-FIT_VERSION = 2
+RECOMMENDATION_LIMIT = 5
+FIT_VERSION = 1
 
 
 def _json_safe(value):

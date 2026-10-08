@@ -10,12 +10,7 @@ import numpy as np
 from apps.comparisons.services.snapshot import RatedFilm, UserLibrary
 
 
-# Bump whenever the shape of `public` / `internal` changes, so cached
-# `metrics_json` gets recomputed without invalidating `inputs_hash`
-# (and therefore without regenerating the Gemini narrative).
-# v2: agreements / divergences entries include `movie_id`.
-# v3: `internal` includes per-user taste profiles (for individual feedback).
-METRICS_VERSION = 3
+METRICS_VERSION = 1
 
 TOP_N = 5
 PROFILE_TOP_GENRES = 4
@@ -130,7 +125,6 @@ def compute_metrics(
     def entry(fa: RatedFilm, fb: RatedFilm) -> dict:
         movie_id = fa.movie_id if fa.movie_id is not None else fb.movie_id
         return {
-            # Stringified: the pk may be a UUID, which JSONField can't encode.
             "movie_id": str(movie_id) if movie_id is not None else None,
             "title": fa.title,
             "release_year": fa.release_year,

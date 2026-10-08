@@ -229,12 +229,12 @@ function PairStat({
       </p>
 
       <div className="grid grid-cols-2 divide-x divide-border pb-2.5 pt-1 text-center">
-        <div className="min-w-0 px-1">
+        <div className="min-w-0 px-3">
           <p className="text-[11px] text-text-muted">{youLabel}</p>
           <PairStatValue withStar={withStar}>{youValue}</PairStatValue>
         </div>
 
-        <div className="min-w-0 px-1">
+        <div className="min-w-0 px-3">
           <p className="text-[11px] text-text-muted">{partnerLabel}</p>
           <PairStatValue withStar={withStar}>{partnerValue}</PairStatValue>
         </div>

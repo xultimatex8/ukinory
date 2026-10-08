@@ -18,8 +18,29 @@ logger = logging.getLogger(__name__)
 QUOTA_CLIENT_NAME = "gemini_narrative"
 DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
-DEFAULT_MAX_OUTPUT_TOKENS = 600
-MAX_DESCRIPTION_CHARS = 160
+BASE_OUTPUT_TOKENS = 650
+OUTPUT_TOKENS_PER_REC = 62
+DEFAULT_MAX_OUTPUT_TOKENS = BASE_OUTPUT_TOKENS + OUTPUT_TOKENS_PER_REC * 10
+
+MAX_DESCRIPTION_CHARS = 100
+PROMPT_ENTRIES = 3
+MAX_ANGLES = 3
+
+STYLE_REFERENCE = (
+    'narrative: "Alien and Amélie are where you two meet, but one of you '
+    "hands out five stars like candy while the other treats a four as a "
+    "rave. Your biggest fight is Blade Runner, a masterpiece or a nap "
+    'depending on who you ask. Settle it with a double feature."\n'
+    'individual: "Horror and sci-fi loyalist who keeps coming back to '
+    "Carpenter. A famously tough grader: a four from them is practically "
+    'a rave."\n'
+    'recommendation: "Carpenter-style dread for one of you and a slow-burn '
+    'romance for the other, so nobody loses the coin toss."'
+)
+
+
+def _max_output_tokens(n_candidates: int) -> int:
+    return BASE_OUTPUT_TOKENS + OUTPUT_TOKENS_PER_REC * n_candidates
 
 
 def _json(data) -> str:
@@ -58,8 +79,8 @@ def _compact_public(public: dict, labels: dict[str, str]) -> dict:
         "library_sizes": {
             labels[k]: v for k, v in public["library_sizes"].items()
         },
-        "agreements": [entry(e) for e in public["agreements"]],
-        "divergences": [entry(e) for e in public["divergences"]],
+        "agreements": [entry(e) for e in public["agreements"][:PROMPT_ENTRIES]],
+        "divergences": [entry(e) for e in public["divergences"][:PROMPT_ENTRIES]],
     }
 
 
@@ -73,6 +94,101 @@ def _profiles_block(internal: dict, labels: dict[str, str]) -> str:
     return "\n".join(lines) or "(none)"
 
 
+def _fmt_ratings(entry: dict, labels: dict[str, str]) -> str:
+    return " vs ".join(
+        f"{labels[uid]}={rating}"
+        for uid, rating in entry["ratings"].items()
+        if uid in labels
+    )
+
+
+def _story_angles(public: dict, internal: dict, labels: dict[str, str]) -> list[str]:
+    angles: list[str] = []
+
+    sim = public.get("taste_similarity")
+    corr = public.get("rating_correlation")
+    common = public.get("common_count") or 0
+    sizes = list((public.get("library_sizes") or {}).values())
+    divergences = public.get("divergences") or []
+    agreements = public.get("agreements") or []
+    profiles = internal.get("profiles") or {}
+    shared_directors = internal.get("shared_directors") or []
+    shared_genres = internal.get("shared_genres") or []
+
+    if sim is not None and corr is not None and sim >= 0.6 and corr < 0.3:
+        angles.append(
+            "Similar taste on paper, but they score the same films very "
+            "differently."
+        )
+    elif sim is not None and sim < 0.3:
+        angles.append("Their tastes pull in clearly different directions.")
+
+    if divergences:
+        d = divergences[0]
+        angles.append(f"Sharpest clash: {d['title']} ({_fmt_ratings(d, labels)}).")
+
+    means = {
+        uid: p.get("mean_rating")
+        for uid, p in profiles.items()
+        if uid in labels and p.get("mean_rating") is not None
+    }
+    if len(means) == 2:
+        (u1, m1), (u2, m2) = means.items()
+        if abs(m1 - m2) >= 0.7:
+            generous, tough = (u1, u2) if m1 > m2 else (u2, u1)
+            angles.append(
+                f"Rating style gap: {labels[generous]} is far more generous "
+                f"than {labels[tough]}."
+            )
+
+    if agreements:
+        a = agreements[0]
+        angles.append(
+            f"Common ground: both rated {a['title']} very high "
+            f"({_fmt_ratings(a, labels)})."
+        )
+
+    if shared_directors:
+        angles.append(f"Shared favourite director: {shared_directors[0]}.")
+    elif shared_genres:
+        angles.append(f"Shared favourite genre: {shared_genres[0]}.")
+
+    if common < 10:
+        angles.append("They have rated very few of the same films.")
+    if len(sizes) == 2 and min(sizes) > 0 and max(sizes) / min(sizes) >= 3:
+        angles.append("One of them has rated far more films than the other.")
+
+    return angles[:MAX_ANGLES] or [
+        "No standout pattern: focus on their favourite films and genres."
+    ]
+
+
+def _candidate_line(
+    i: int, c: JointCandidate, labels: dict[str, str], user_ids: Sequence[str]
+) -> str:
+    m = c.movie
+    genres = ", ".join(g.name for g in m.genres.all())
+    directors = ", ".join(
+        [d for d in (m.directors or []) if isinstance(d, str)][:2]
+    )
+    fit = " ".join(
+        f"{labels[uid]}={s:.2f}" for uid, s in zip(user_ids, c.per_user)
+    )
+
+    tilt = ""
+    if len(c.per_user) == 2 and abs(c.per_user[0] - c.per_user[1]) >= 0.25:
+        lean = user_ids[0] if c.per_user[0] > c.per_user[1] else user_ids[1]
+        tilt = f" (leans {labels[lean]})"
+
+    desc = _shorten(m.wikidata_description, MAX_DESCRIPTION_CHARS)
+    parts = [f"{i}. {m.title} ({m.release_year})", genres]
+    if directors:
+        parts.append(f"dir. {directors}")
+    parts.append(f"fit {fit}{tilt}")
+    parts.append(desc)
+    return " | ".join(p for p in parts if p)
+
+
 def _build_prompt(
     public: dict,
     internal: dict,
@@ -82,18 +198,18 @@ def _build_prompt(
     labels = _labels(user_ids)
     letters = _letters(user_ids)
 
-    lines = []
-    for i, c in enumerate(candidates, 1):
-        m = c.movie
-        genres = ", ".join(g.name for g in m.genres.all())
-        fit = " ".join(
-            f"{labels[uid]}={s:.2f}" for uid, s in zip(user_ids, c.per_user)
+    candidates_block = (
+        "\n".join(
+            _candidate_line(i, c, labels, user_ids)
+            for i, c in enumerate(candidates, 1)
         )
-        desc = _shorten(m.wikidata_description, MAX_DESCRIPTION_CHARS)
-        lines.append(
-            f"{i}. {m.title} ({m.release_year}) | {genres} | fit {fit} | {desc}"
-        )
-    candidates_block = "\n".join(lines) or "(none)"
+        or "(none)"
+    )
+
+    angles_block = "\n".join(
+        f"{n}. {a}"
+        for n, a in enumerate(_story_angles(public, internal, labels), 1)
+    )
 
     individual_schema = ", ".join(f'"{letter}": str' for letter in letters)
     schema = (
@@ -103,29 +219,45 @@ def _build_prompt(
     if candidates:
         recs_rule = (
             f"- recommendations: exactly {len(candidates)} strings, in the "
-            "order of the candidates; each is ONE sentence (max 15 words) "
-            "on why that movie suits both.\n"
+            "order of the candidates; each is ONE sentence (max 25 words) "
+            "tying the film to something concrete: a shared director or "
+            "genre, a film they both loved, or the pull between them. "
+            "Do not mention or repeat the recommended film's title. "
+            "The recommendation must make sense without naming the film. "
+            "If a candidate 'leans' toward one person, pitch it as a compromise. "
+            "Never just 'great film'. No labels A/B; say 'one of you'.\n"
         )
     else:
         recs_rule = "- recommendations: an empty list.\n"
 
     return (
-        "You compare the movie taste of two people, A and B. Use ONLY the "
-        "data below; never invent films, ratings or facts. Be concise.\n"
-        f"Return minified JSON only: {schema}\n"
-        "- narrative: 2-3 sentences (max 60 words) on how your tastes "
-        "overlap and diverge, addressed to both of them (you both / one of "
-        "you). Do not list numbers or use the labels A/B.\n"
-        "- individual: for each person, 1-2 sentences (max 30 words) on "
-        "their own taste: favourite genres and directors, how generously "
-        "they rate, what sets them apart. Third person; never use names, "
-        "the labels A/B or 'you', because both people see both profiles.\n"
+        "You are a witty friend who knows cinema, writing a short personal "
+        "readout of two people's movie taste, A and B. Use ONLY the data "
+        "below; never invent films, ratings, directors or facts.\n"
+        f"Return minified JSON only: {schema}\n\n"
+        "STYLE: specific, warm, a bit playful. Name real films, directors or "
+        "genres from the data; a line that fits any pair of people is a "
+        "failure. No filler. Avoid 'diverse', 'eclectic', 'cinephile', "
+        "'journey', 'a mix of', 'shared passion'. Don't open with 'You both'.\n\n"
+        "FIELDS\n"
+        "- narrative: 2-3 sentences (max 100 words) to both of them (you two / "
+        "one of you). Build it around story angle 1, plus at most one more. "
+        "Name one or two films. End with a light tease, not a summary. No "
+        "numbers, no labels A/B.\n"
+        "- individual: per person, 1-2 sentences (max 50 words) with a "
+        "distinct signature: favourite films or directors by name and rating "
+        "style (tough, generous...). The two must not read alike. Third "
+        "person; never names, the labels A/B or 'you', because both people "
+        "see both profiles.\n"
         f"{recs_rule}\n"
+        f"Story angles (labels are for your reading only):\n{angles_block}\n\n"
         f"Metrics: {_json(_compact_public(public, labels))}\n\n"
         f"Individual taste data:\n{_profiles_block(internal, labels)}\n\n"
         f"Shared favourite genres: {', '.join(internal.get('shared_genres', [])) or 'none'}\n"
         f"Shared favourite directors: {', '.join(internal.get('shared_directors', [])) or 'none'}\n\n"
-        f"Candidates (neither has watched them):\n{candidates_block}"
+        f"Candidates (neither has watched them):\n{candidates_block}\n\n"
+        "Tone reference only (other people and films; do not reuse its "
+        f"wording or content):\n{STYLE_REFERENCE}"
     )
 
 
@@ -178,11 +310,12 @@ class ComparisonNarrativeClient:
         user_ids: Sequence[str],
     ) -> Optional[NarrativeResult]:
         prompt = _build_prompt(public, internal, candidates, user_ids)
+        max_output_tokens = _max_output_tokens(len(candidates))
 
         reserved = api_quota.cost_units(
             QUOTA_CLIENT_NAME,
             input_tokens=api_quota.estimate_tokens(prompt),
-            output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            output_tokens=max_output_tokens,
         )
         try:
             api_quota.consume(QUOTA_CLIENT_NAME, reserved)
@@ -195,7 +328,7 @@ class ComparisonNarrativeClient:
                 model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+                    max_output_tokens=max_output_tokens,
                     response_mime_type="application/json",
                     thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
                 ),
@@ -226,5 +359,14 @@ class ComparisonNarrativeClient:
             input_tokens=usage.prompt_token_count or 0,
             output_tokens=(usage.candidates_token_count or 0)
             + (usage.thoughts_token_count or 0),
+        )
+        logger.info(
+            "Comparison narrative usage: in=%s out=%s thoughts=%s "
+            "units=%s reserved=%s",
+            usage.prompt_token_count,
+            usage.candidates_token_count,
+            usage.thoughts_token_count,
+            actual,
+            reserved,
         )
         api_quota.adjust(QUOTA_CLIENT_NAME, actual - reserved)
