@@ -8,12 +8,13 @@ from apps.comparisons.exceptions import (
     InsufficientDataError,
     NotComparisonMemberError,
 )
-from apps.comparisons.models import Comparison
 from apps.comparisons.serializers import (
     ComparisonSummarySerializer,
     serialize_result,
 )
 from apps.comparisons.services.comparison import (
+    attach_participants,
+    attach_tmdb_metadata,
     get_comparison_result,
     list_comparisons,
 )
@@ -70,7 +71,8 @@ class ComparisonDetailView(APIView):
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
 
-        return Response(serialize_result(result))
+        payload = attach_tmdb_metadata(serialize_result(result))
+        return Response(attach_participants(payload, result.comparison, request.user))
 
 
 class RoomCreateView(APIView):
@@ -183,4 +185,5 @@ class RoomResultView(APIView):
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
 
-        return Response(serialize_result(result))
+        payload = attach_tmdb_metadata(serialize_result(result))
+        return Response(attach_participants(payload, result.comparison, request.user))

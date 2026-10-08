@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from apps.comparisons.models import Comparison
 
@@ -10,3 +10,4 @@ class ComparisonResult:
     narrative: str
     recommendations: list[dict]
     narrative_available: bool
+    individual: dict[str, str] = field(default_factory=dict)

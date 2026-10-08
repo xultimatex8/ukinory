@@ -22,4 +22,5 @@ def serialize_result(result) -> dict:
         "narrative": result.narrative,
         "narrative_available": result.narrative_available,
         "recommendations": result.recommendations,
+        "individual_narratives": result.individual
     }

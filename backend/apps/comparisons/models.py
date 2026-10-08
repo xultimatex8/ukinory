@@ -44,5 +44,6 @@ class ComparisonNarrative(BaseModel):
 
     inputs_hash = models.CharField(max_length=64)
     narrative_summary = models.TextField(blank=True, default="")
+    individual_summaries = models.JSONField(default=dict, blank=True)
     recommendations = models.JSONField(default=list, blank=True)
     model_version = models.CharField(max_length=100, blank=True, default="")

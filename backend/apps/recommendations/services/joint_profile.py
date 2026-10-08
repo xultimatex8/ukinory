@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -13,6 +14,9 @@ from apps.recommendations.dtos.candidate import JointCandidate
 
 DEFAULT_POOL_SIZE = 100
 LEAST_MISERY_WEIGHT = 0.5
+
+CALIBRATION_SAMPLE_SIZE = 1000
+CALIBRATION_MIN_SAMPLE = 50
 
 
 def user_taste_profiles(users: Sequence) -> list[Optional[np.ndarray]]:
@@ -97,3 +101,57 @@ def find_joint_candidates(
     candidates.sort(key=lambda c: -c.score)
 
     return candidates[:limit]
+
+
+def _catalog_sample() -> Optional[np.ndarray]:
+    pks = list(
+        Movie.objects.filter(embedding__isnull=False).values_list("pk", flat=True)
+    )
+    if len(pks) < CALIBRATION_MIN_SAMPLE:
+        return None
+
+    sample_pks = random.sample(pks, min(CALIBRATION_SAMPLE_SIZE, len(pks)))
+    vectors = Movie.objects.filter(pk__in=sample_pks).values_list(
+        "embedding", flat=True
+    )
+    matrix = np.array([np.asarray(v, dtype=np.float32) for v in vectors])
+
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return matrix / norms
+
+
+def calibrate_fits(
+    pool: list[JointCandidate],
+    profiles: Sequence[Optional[np.ndarray]],
+) -> list[JointCandidate]:
+    if not pool:
+        return pool
+
+    sample = _catalog_sample()
+    if sample is None:
+        return pool
+
+    anchors: list[tuple[float, float]] = []
+    for i, p in enumerate(profiles):
+        unit = _unit(p) if p is not None else None
+        if unit is None:
+            return pool
+        low = float(np.median(sample @ unit))
+        high = max(c.per_user[i] for c in pool)
+        anchors.append((low, high))
+
+    def fit(sim: float, anchor: tuple[float, float]) -> float:
+        low, high = anchor
+        if high - low < 1e-9:
+            return 0.0
+        return float(np.clip((sim - low) / (high - low), 0.0, 1.0))
+
+    return [
+        JointCandidate(
+            movie=c.movie,
+            score=c.score,
+            per_user=[fit(s, a) for s, a in zip(c.per_user, anchors)],
+        )
+        for c in pool
+    ]

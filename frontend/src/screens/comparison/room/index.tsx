@@ -486,7 +486,7 @@ export default function ComparisonRoomScreen() {
 
   return (
     <main className="min-h-screen bg-background text-text">
-      <div className="mx-auto flex w-full max-w-3xl flex-col px-4 py-6 sm:px-6 sm:py-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-6 sm:px-6 sm:py-10">
         <div className="mb-10 flex items-center justify-center">
           <AppLogo />
         </div>

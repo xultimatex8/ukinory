@@ -15,27 +15,62 @@ from apps.comparisons.dtos.narrative_result import NarrativeResult
 
 logger = logging.getLogger(__name__)
 
-QUOTA_CLIENT_NAME = "gemini_generate"
+QUOTA_CLIENT_NAME = "gemini_narrative"
 DEFAULT_MODEL = "gemini-3.1-flash-lite"
-DEFAULT_MAX_OUTPUT_TOKENS = 400
-MAX_DESCRIPTION_CHARS = 400
+
+DEFAULT_MAX_OUTPUT_TOKENS = 600
+MAX_DESCRIPTION_CHARS = 160
+
+
+def _json(data) -> str:
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def _shorten(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0]
+
+
+def _letters(user_ids: Sequence[str]) -> list[str]:
+    return [chr(65 + i) for i in range(len(user_ids))]
 
 
 def _labels(user_ids: Sequence[str]) -> dict[str, str]:
-    return {uid: f"User {chr(65 + i)}" for i, uid in enumerate(user_ids)}
+    return dict(zip(user_ids, _letters(user_ids)))
 
 
-def _anonymise(public: dict, labels: dict[str, str]) -> dict:
-    out = dict(public)
-    out["library_sizes"] = {
-        labels[k]: v for k, v in public["library_sizes"].items()
+def _compact_public(public: dict, labels: dict[str, str]) -> dict:
+    def entry(e: dict) -> dict:
+        return {
+            "title": e["title"],
+            "year": e.get("release_year"),
+            "ratings": {labels[k]: v for k, v in e["ratings"].items()},
+        }
+
+    return {
+        "compatibility_score": public.get("compatibility_score"),
+        "taste_similarity": public.get("taste_similarity"),
+        "common_films": public.get("common_count"),
+        "mean_rating_gap": public.get("mean_rating_gap"),
+        "rating_correlation": public.get("rating_correlation"),
+        "library_sizes": {
+            labels[k]: v for k, v in public["library_sizes"].items()
+        },
+        "agreements": [entry(e) for e in public["agreements"]],
+        "divergences": [entry(e) for e in public["divergences"]],
     }
-    for key in ("agreements", "divergences"):
-        out[key] = [
-            {**e, "ratings": {labels[k]: v for k, v in e["ratings"].items()}}
-            for e in public[key]
-        ]
-    return out
+
+
+def _profiles_block(internal: dict, labels: dict[str, str]) -> str:
+    profiles = internal.get("profiles") or {}
+    lines = [
+        f"{labels[uid]}: {_json(profile)}"
+        for uid, profile in profiles.items()
+        if uid in labels
+    ]
+    return "\n".join(lines) or "(none)"
 
 
 def _build_prompt(
@@ -45,51 +80,83 @@ def _build_prompt(
     user_ids: Sequence[str],
 ) -> str:
     labels = _labels(user_ids)
+    letters = _letters(user_ids)
+
     lines = []
     for i, c in enumerate(candidates, 1):
         m = c.movie
         genres = ", ".join(g.name for g in m.genres.all())
-        fit = ", ".join(
+        fit = " ".join(
             f"{labels[uid]}={s:.2f}" for uid, s in zip(user_ids, c.per_user)
         )
-        desc = (m.wikidata_description or "")[:MAX_DESCRIPTION_CHARS]
+        desc = _shorten(m.wikidata_description, MAX_DESCRIPTION_CHARS)
         lines.append(
-            f"{i}. {m.title} ({m.release_year}) | genres: {genres} | "
-            f"taste fit: {fit}\n   {desc}"
+            f"{i}. {m.title} ({m.release_year}) | {genres} | fit {fit} | {desc}"
         )
     candidates_block = "\n".join(lines) or "(none)"
 
+    individual_schema = ", ".join(f'"{letter}": str' for letter in letters)
+    schema = (
+        '{"narrative": str, "individual": {' + individual_schema + "}, "
+        '"recommendations": [str, ...]}'
+    )
+    if candidates:
+        recs_rule = (
+            f"- recommendations: exactly {len(candidates)} strings, in the "
+            "order of the candidates; each is ONE sentence (max 15 words) "
+            "on why that movie suits both.\n"
+        )
+    else:
+        recs_rule = "- recommendations: an empty list.\n"
+
     return (
-        "You are a movie taste-compatibility assistant for two people. "
-        "Using ONLY the data below, do two things:\n"
-        "1. Write a short narrative (3-5 sentences) about how their tastes "
-        "overlap and diverge. Address both of them together in the second "
-        "person plural. Do not just list numbers.\n"
-        "2. For each candidate movie, write ONE sentence explaining why it "
-        "suits both of them, grounded in the shared data.\n"
-        "Do not invent films, ratings or facts not present in the data. "
-        "Refer to people as 'User A' / 'User B' only if needed.\n"
-        'Respond ONLY with JSON: {"narrative": str, "recommendations": '
-        '[{"index": int, "reason": str}]}\n\n'
-        f"Compatibility metrics:\n{json.dumps(_anonymise(public, labels), ensure_ascii=False)}\n\n"
+        "You compare the movie taste of two people, A and B. Use ONLY the "
+        "data below; never invent films, ratings or facts. Be concise.\n"
+        f"Return minified JSON only: {schema}\n"
+        "- narrative: 2-3 sentences (max 60 words) on how your tastes "
+        "overlap and diverge, addressed to both of them (you both / one of "
+        "you). Do not list numbers or use the labels A/B.\n"
+        "- individual: for each person, 1-2 sentences (max 30 words) on "
+        "their own taste: favourite genres and directors, how generously "
+        "they rate, what sets them apart. Third person; never use names, "
+        "the labels A/B or 'you', because both people see both profiles.\n"
+        f"{recs_rule}\n"
+        f"Metrics: {_json(_compact_public(public, labels))}\n\n"
+        f"Individual taste data:\n{_profiles_block(internal, labels)}\n\n"
         f"Shared favourite genres: {', '.join(internal.get('shared_genres', [])) or 'none'}\n"
         f"Shared favourite directors: {', '.join(internal.get('shared_directors', [])) or 'none'}\n\n"
-        f"Candidate movies (neither has watched them):\n{candidates_block}"
+        f"Candidates (neither has watched them):\n{candidates_block}"
     )
 
 
-def _parse(text: str, n_candidates: int) -> Optional[NarrativeResult]:
+def _parse(
+    text: str, n_candidates: int, user_ids: Sequence[str]
+) -> Optional[NarrativeResult]:
     try:
         data = json.loads(text)
         summary = str(data["narrative"]).strip()
+
+        raw_individual = data["individual"]
+        individual: dict[str, str] = {}
+        for uid, letter in zip(user_ids, _letters(user_ids)):
+            value = str(raw_individual[letter]).strip()
+            if value:
+                individual[uid] = value
+
         reasons: dict[int, str] = {}
-        for item in data.get("recommendations", []):
-            idx = int(item["index"])
+        for pos, item in enumerate(data.get("recommendations", []), 1):
+            if isinstance(item, dict):
+                idx, reason = int(item.get("index", pos)), item["reason"]
+            else:
+                idx, reason = pos, item
             if 1 <= idx <= n_candidates:
-                reasons[idx] = str(item["reason"]).strip()
-    except (ValueError, KeyError, TypeError):
+                reasons[idx] = str(reason).strip()
+    except (ValueError, KeyError, TypeError, AttributeError):
         return None
-    return NarrativeResult(summary=summary, reasons=reasons) if summary else None
+
+    if not summary or len(individual) != len(user_ids):
+        return None
+    return NarrativeResult(summary=summary, reasons=reasons, individual=individual)
 
 
 @dataclass(slots=True)
@@ -134,9 +201,16 @@ class ComparisonNarrativeClient:
                 ),
             )
             self._reconcile_cost(response, reserved)
-            parsed = _parse(response.text or "", len(candidates))
+            parsed = _parse(response.text or "", len(candidates), user_ids)
             if parsed is None:
-                logger.warning("Unparseable comparison narrative response")
+                logger.warning(
+                    "Unparseable comparison narrative response (finish_reason=%s)",
+                    getattr(
+                        (getattr(response, "candidates", None) or [None])[0],
+                        "finish_reason",
+                        None,
+                    ),
+                )
             return parsed
         except Exception as exc:
             logger.warning("Could not generate comparison narrative: %s", exc)

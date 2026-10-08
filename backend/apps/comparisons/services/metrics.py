@@ -10,7 +10,17 @@ import numpy as np
 from apps.comparisons.services.snapshot import RatedFilm, UserLibrary
 
 
+# Bump whenever the shape of `public` / `internal` changes, so cached
+# `metrics_json` gets recomputed without invalidating `inputs_hash`
+# (and therefore without regenerating the Gemini narrative).
+# v2: agreements / divergences entries include `movie_id`.
+# v3: `internal` includes per-user taste profiles (for individual feedback).
+METRICS_VERSION = 3
+
 TOP_N = 5
+PROFILE_TOP_GENRES = 4
+PROFILE_TOP_DIRECTORS = 3
+PROFILE_TOP_FILMS = 3
 HIGH_RATING = 4.0
 DIVERGENCE_THRESHOLD = 1.5
 MAX_RATING_GAP = 4.5
@@ -68,6 +78,26 @@ def _top_shared(lib_a: UserLibrary, lib_b: UserLibrary, attr: str) -> list[str]:
     return sorted(shared, key=lambda n: (-min(ca[n], cb[n]), n))[:TOP_N]
 
 
+def _ranked(counter: Counter, n: int) -> list[str]:
+    ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [name for name, _ in ranked[:n]]
+
+
+def _user_profile(lib: UserLibrary, shared_ratings: list[float]) -> dict:
+    """Compact, anonymous-friendly summary of one person's taste."""
+    rated = [f for f in lib.films.values() if f.rating is not None]
+    top_films = sorted(rated, key=lambda f: (-f.rating, not f.liked, f.title))
+    return {
+        "top_genres": _ranked(_favourites_counter(lib, "genres"), PROFILE_TOP_GENRES),
+        "top_directors": _ranked(
+            _favourites_counter(lib, "directors"), PROFILE_TOP_DIRECTORS
+        ),
+        "mean_rating": _round(_mean([f.rating for f in rated]), 2),
+        "mean_rating_on_shared_films": _round(_mean(shared_ratings), 2),
+        "favourite_films": [f.title for f in top_films[:PROFILE_TOP_FILMS]],
+    }
+
+
 def _round(value: Optional[float], digits: int = 3) -> Optional[float]:
     return None if value is None else round(float(value), digits)
 
@@ -98,7 +128,10 @@ def compute_metrics(
     )
 
     def entry(fa: RatedFilm, fb: RatedFilm) -> dict:
+        movie_id = fa.movie_id if fa.movie_id is not None else fb.movie_id
         return {
+            # Stringified: the pk may be a UUID, which JSONField can't encode.
+            "movie_id": str(movie_id) if movie_id is not None else None,
             "title": fa.title,
             "release_year": fa.release_year,
             "ratings": {uid_a: fa.rating, uid_b: fb.rating},
@@ -153,6 +186,10 @@ def compute_metrics(
     internal = {
         "shared_genres": _top_shared(lib_a, lib_b, "genres"),
         "shared_directors": _top_shared(lib_a, lib_b, "directors"),
+        "profiles": {
+            uid_a: _user_profile(lib_a, [fa.rating for fa, _ in pairs]),
+            uid_b: _user_profile(lib_b, [fb.rating for _, fb in pairs]),
+        },
     }
 
     return ComparisonMetrics(public=public, internal=internal)

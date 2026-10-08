@@ -36,9 +36,12 @@ export interface CreateRoomResponse {
 }
 
 export interface ComparisonEntry {
+  movie_id: number | string | null;
   title: string;
   release_year: number | null;
   ratings: Record<string, number | null>;
+  poster_url?: string;
+  tmdb_id?: number | string | null;
 }
 
 export interface ComparisonMetrics {
@@ -55,13 +58,15 @@ export interface ComparisonMetrics {
 }
 
 export interface JointRecommendation {
-  movie_id: number;
+  movie_id: number | string;
   title: string;
   release_year: number | null;
   genres: string[];
   score: number;
   per_user: Record<string, number>;
   justification: string;
+  poster_url?: string;
+  tmdb_id?: number | string | null;
 }
 
 export interface ComparisonResult {
@@ -69,6 +74,9 @@ export interface ComparisonResult {
   generated_at: string | null;
   metrics: ComparisonMetrics;
   narrative: string;
+  individual_narratives?: Record<string, string>;
+  current_user_id: string;
+  participants?: Record<string, string>;
   narrative_available: boolean;
   recommendations: JointRecommendation[];
 }

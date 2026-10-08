@@ -81,6 +81,10 @@ API_PRICING_USD_PER_M_TOKENS = {
         "input": float(0.25),
         "output": float(1.50),
     },
+    "gemini_narrative": {
+        "input": float(0.25),
+        "output": float(1.50),
+    }
 }
 
 API_QUOTAS = {
@@ -95,6 +99,10 @@ API_QUOTAS = {
     "gemini_generate": {
         "day": _budget_units(0.214),
         "week": _budget_units(1.5),
+    },
+    "gemini_narrative": {
+        "day": _budget_units(0.428),
+        "week": _budget_units(3.0),
     },
 }
 
