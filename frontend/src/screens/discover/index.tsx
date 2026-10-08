@@ -5,7 +5,7 @@ import {
   Check,
   FileArchive,
   FileText,
-  Heart,
+  Compass,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -255,7 +255,7 @@ export default function DiscoverScreen() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex h-12 w-12 items-center justify-center">
-                  <Heart
+                  <Compass
                     size={36}
                     strokeWidth={1.5}
                     className={`text-primary ${

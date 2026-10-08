@@ -1,7 +1,7 @@
 import {
   ArrowRight,
   GitCompareArrows,
-  Heart,
+  Compass,
   UserRound,
   Users,
 } from "lucide-react";
@@ -15,7 +15,7 @@ const features = [
     title: "Discover Individual",
     description: "Find movies based on your personal taste.",
     action: "Start discovering",
-    icon: Heart,
+    icon: Compass,
     to: "/discover"
   },
   {
