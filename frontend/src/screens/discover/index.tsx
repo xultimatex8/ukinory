@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   FileArchive,
@@ -185,7 +186,15 @@ export default function DiscoverScreen() {
   return (
     <main className="min-h-screen bg-background text-text">
       <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 pt-8">
-        <section>
+        <section className="relative">
+          <Link
+            to="/"
+            className="absolute left-0 top-0 inline-flex items-center gap-2 text-sm text-text-muted transition hover:text-text"
+          >
+            <ArrowLeft size={16} />
+            Back to home
+          </Link>
+
           <AppHeader
             title="Discover movies for you"
             description="Find movies based on your taste and improve your recommendations with your Letterboxd history."
