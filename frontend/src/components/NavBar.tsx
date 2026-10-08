@@ -1,4 +1,10 @@
-import { CircleHelp, Compass, House, UserRound } from "lucide-react";
+import {
+  CircleHelp,
+  Compass,
+  GitCompareArrows,
+  House,
+  UserRound,
+} from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import AppLogo from "./AppLogo";
 
@@ -12,6 +18,11 @@ const navigation = [
     label: "Discover",
     to: "/discover",
     icon: Compass,
+  },
+  {
+    label: "Comparison",
+    to: "/comparison",
+    icon: GitCompareArrows,
   },
   {
     label: "Profile",
