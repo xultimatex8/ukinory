@@ -526,7 +526,7 @@ export default function ComparisonRoomScreen() {
     <main className="min-h-screen bg-background text-text">
       <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-6 sm:px-6 sm:py-10">
         {room && room.status !== "FINISHED" && (
-          <div className="flex justify-end">
+          <div className="mb-2 flex justify-end">
             <button
               type="button"
               onClick={() => {

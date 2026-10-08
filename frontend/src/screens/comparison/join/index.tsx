@@ -3,7 +3,6 @@ import { Loader2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import ErrorScreen from "../../../components/ErrorScreen";
-import { ApiError } from "../../../services/api";
 import { createGuest } from "../../../services/auth";
 import { getErrorMessage } from "../../../utils/errors";
 import { acceptInvite } from "../../../services/invites";
@@ -19,15 +18,6 @@ async function ensureSession(): Promise<void> {
   const { access, refresh } = await createGuest();
   localStorage.setItem("access_token", access);
   localStorage.setItem("refresh_token", refresh);
-}
-
-function messageFor(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 404) return "This invite doesn't exist.";
-    if (err.status === 410) return "This invite has expired. Ask your friend for a new one.";
-    return err.detail;
-  }
-  return getErrorMessage(err);
 }
 
 export default function JoinComparisonScreen() {
@@ -46,7 +36,7 @@ export default function JoinComparisonScreen() {
         const accepted = await acceptInvite(code);
         navigate(`/comparison/room/${accepted.target.id}`, { replace: true });
       } catch (err) {
-        setError(messageFor(err));
+        setError(getErrorMessage(err));
       }
     };
 

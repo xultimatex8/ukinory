@@ -24,10 +24,27 @@ import JoinComparisonScreen from "./screens/comparison/join";
 
 function PublicLayout() {
   return (
-    <>
-      <Outlet />
+    <div className="flex min-h-screen flex-col">
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
       <Footer />
-    </>
+    </div>
+  );
+}
+
+function PublicNavbarLayout() {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <Navbar />
+
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
+      <Footer />
+    </div>
   );
 }
 
@@ -38,11 +55,15 @@ function LegalLayout() {
   const isAuthenticated = accessToken && refreshToken;
 
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       {isAuthenticated && <Navbar />}
-      <Outlet />
+
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
       <Footer />
-    </>
+    </div>
   );
 }
 
@@ -55,11 +76,15 @@ function AppLayout() {
   }
 
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       <Navbar />
-      <Outlet />
+
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
       <Footer />
-    </>
+    </div>
   );
 }
 
@@ -73,7 +98,9 @@ function App() {
             <Route path="/login" element={<LoginScreen />} />
             <Route path="/register" element={<RegisterScreen />} />
           </Route>
+        </Route>
 
+        <Route element={<PublicNavbarLayout />}>
           <Route path="/comparison/join/:code" element={<JoinComparisonScreen />} />
         </Route>
 

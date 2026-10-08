@@ -27,7 +27,7 @@ from apps.library.models import Rating
 logger = logging.getLogger(__name__)
 
 MAX_PARTICIPANTS = 2
-STALE_ROOM_TIMEOUT = timedelta(minutes=30)
+STALE_ROOM_TIMEOUT = timedelta(minutes=2)
 RUNNING_TIMEOUT = timedelta(minutes=2)
 
 
@@ -205,12 +205,23 @@ def leave_room(*, room: ComparisonSession, user) -> None:
     if not room.users.filter(pk=user.pk).exists():
         raise NotRoomMemberError
 
-    room.users.remove(user)
-
     if room.status == SessionStatus.WAITING:
+        room.users.remove(user)
         if not room.users.exists():
             room.delete()
         return
 
-    room.status = SessionStatus.FINISHED
+    comparison = Comparison.objects.filter(session=room).first()
+    room.users.remove(user)
+
+    if (
+        comparison is not None
+        and comparison.generation_status
+        in {GenerationStatus.PENDING, GenerationStatus.NEEDS_DATA}
+    ):
+        comparison.delete()
+        room.status = SessionStatus.WAITING
+    else:
+        room.status = SessionStatus.FINISHED
+
     room.save(update_fields=["status"])
