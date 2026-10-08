@@ -25,7 +25,7 @@ from apps.comparisons.exceptions import (
 from apps.comparisons.models import Comparison, ComparisonSession
 from apps.comparisons.services.room import (
     RUNNING_TIMEOUT,
-    WAITING_ROOM_TIMEOUT,
+    STALE_ROOM_TIMEOUT,
     _comparison_of,
     _is_running,
     build_room_state,
@@ -728,7 +728,7 @@ class RoomServiceTests(TestCase):
         stale = self._room(
             last_seen_at=(
                 timezone.now()
-                - WAITING_ROOM_TIMEOUT
+                - STALE_ROOM_TIMEOUT
                 - timedelta(seconds=1)
             ),
         )
@@ -749,7 +749,7 @@ class RoomServiceTests(TestCase):
     ):
         old_created = (
             timezone.now()
-            - WAITING_ROOM_TIMEOUT
+            - STALE_ROOM_TIMEOUT
             - timedelta(seconds=1)
         )
 
@@ -771,14 +771,30 @@ class RoomServiceTests(TestCase):
             ComparisonSession.objects.filter(pk=room.pk).exists()
         )
 
-    def test_close_stale_rooms_does_not_delete_active_rooms(self):
+    def test_close_stale_rooms_finishes_old_active_rooms(self):
         room = self._room(
             status=SessionStatus.ACTIVE,
             last_seen_at=(
                 timezone.now()
-                - WAITING_ROOM_TIMEOUT
+                - STALE_ROOM_TIMEOUT
                 - timedelta(days=1)
             ),
+        )
+
+        count = close_stale_rooms()
+
+        self.assertEqual(count, 1)
+
+        room.refresh_from_db()
+
+        self.assertEqual(
+            room.status,
+            SessionStatus.FINISHED,
+        )
+
+    def test_close_stale_rooms_does_not_close_active_rooms(self):
+        room = self._room(
+            status=SessionStatus.ACTIVE,
         )
 
         count = close_stale_rooms()

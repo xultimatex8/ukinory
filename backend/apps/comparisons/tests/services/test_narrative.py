@@ -1,216 +1,455 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest import mock
 
 from django.test import TestCase, override_settings
 
-from apps.common.exceptions import QuotaExceeded
+from apps.common.api_quota import QuotaExceeded
 from apps.comparisons.services.narrative import (
+    BASE_OUTPUT_TOKENS,
+    DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MODEL,
-    QUOTA_CLIENT_NAME,
+    MAX_DESCRIPTION_CHARS,
+    PROMPT_ENTRIES,
     ComparisonNarrativeClient,
     _build_prompt,
     _compact_public,
-    _labels,
-    _parse,
+    _max_output_tokens,
+    _shorten,
+    _story_angles,
 )
 
 
-class LabelsTests(TestCase):
-    def test_labels_two_users(self):
+class HelperTests(TestCase):
+    def test_max_output_tokens(self):
         self.assertEqual(
-            _labels(["10", "20"]),
-            {
-                "10": "A",
-                "20": "B",
-            },
+            _max_output_tokens(0),
+            BASE_OUTPUT_TOKENS,
+        )
+        self.assertEqual(
+            _max_output_tokens(10),
+            DEFAULT_MAX_OUTPUT_TOKENS,
         )
 
-    def test_labels_multiple_users(self):
+    def test_shorten_keeps_short_text(self):
         self.assertEqual(
-            _labels(["1", "2", "3"]),
-            {
-                "1": "A",
-                "2": "B",
-                "3": "C",
-            },
+            _shorten("Short description", 100),
+            "Short description",
         )
+
+    def test_shorten_truncates_at_word_boundary(self):
+        text = "This is a long movie description with many different words."
+
+        result = _shorten(text, 30)
+
+        self.assertLessEqual(len(result), 30)
+        self.assertFalse(result.endswith(" "))
+        self.assertNotEqual(result, text)
+
+    def test_shorten_handles_empty_text(self):
+        self.assertEqual(_shorten("", 100), "")
+        self.assertEqual(_shorten(None, 100), "")
 
 
 class CompactPublicTests(TestCase):
-    def test_compacts_library_sizes(self):
+    def test_compact_public_uses_labels_and_limits_entries(self):
         public = {
+            "compatibility_score": 85,
+            "taste_similarity": 0.8,
+            "common_count": 5,
+            "mean_rating_gap": 0.5,
+            "rating_correlation": 0.8,
             "library_sizes": {
-                "10": 100,
-                "20": 80,
-            },
-            "agreements": [],
-            "divergences": [],
-        }
-
-        result = _compact_public(
-            public,
-            _labels(["10", "20"]),
-        )
-
-        self.assertEqual(
-            result["library_sizes"],
-            {
-                "A": 100,
-                "B": 80,
-            },
-        )
-
-    def test_compacts_ratings(self):
-        public = {
-            "library_sizes": {
-                "10": 100,
-                "20": 80,
+                "1": 10,
+                "2": 12,
             },
             "agreements": [
                 {
                     "title": "Dune",
                     "release_year": 2021,
                     "ratings": {
-                        "10": 5.0,
-                        "20": 4.5,
+                        "1": 5,
+                        "2": 4,
                     },
-                }
-            ],
-            "divergences": [
+                },
                 {
                     "title": "Alien",
                     "release_year": 1979,
                     "ratings": {
-                        "10": 2.0,
-                        "20": 5.0,
+                        "1": 5,
+                        "2": 5,
                     },
-                }
+                },
+                {
+                    "title": "Jaws",
+                    "release_year": 1975,
+                    "ratings": {
+                        "1": 4,
+                        "2": 5,
+                    },
+                },
+                {
+                    "title": "Extra",
+                    "release_year": 2000,
+                    "ratings": {
+                        "1": 3,
+                        "2": 3,
+                    },
+                },
             ],
+            "divergences": [],
         }
 
         result = _compact_public(
             public,
-            _labels(["10", "20"]),
+            {
+                "1": "A",
+                "2": "B",
+            },
         )
 
+        self.assertEqual(result["compatibility_score"], 85)
+        self.assertEqual(result["taste_similarity"], 0.8)
+        self.assertEqual(result["common_films"], 5)
+        self.assertEqual(result["mean_rating_gap"], 0.5)
+        self.assertEqual(result["rating_correlation"], 0.8)
+        self.assertEqual(
+            result["library_sizes"],
+            {
+                "A": 10,
+                "B": 12,
+            },
+        )
+        self.assertEqual(len(result["agreements"]), PROMPT_ENTRIES)
+        self.assertEqual(result["agreements"][0]["title"], "Dune")
         self.assertEqual(
             result["agreements"][0]["ratings"],
             {
-                "A": 5.0,
-                "B": 4.5,
+                "A": 5,
+                "B": 4,
             },
         )
 
-        self.assertEqual(
-            result["divergences"][0]["ratings"],
-            {
-                "A": 2.0,
-                "B": 5.0,
-            },
-        )
 
-    def test_compacts_movie_metadata(self):
+class StoryAnglesTests(TestCase):
+    def test_similar_taste_but_different_ratings(self):
         public = {
-            "compatibility_score": 85,
             "taste_similarity": 0.8,
-            "common_count": 30,
-            "mean_rating_gap": 0.5,
-            "rating_correlation": 0.7,
+            "rating_correlation": 0.1,
+            "common_count": 20,
             "library_sizes": {
-                "10": 100,
-                "20": 80,
+                "1": 20,
+                "2": 20,
             },
-            "agreements": [
+            "divergences": [],
+            "agreements": [],
+        }
+
+        result = _story_angles(
+            public,
+            {"profiles": {}},
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "Similar taste on paper, but they score the same films very differently.",
+            result,
+        )
+
+    def test_low_similarity(self):
+        public = {
+            "taste_similarity": 0.2,
+            "rating_correlation": 0.5,
+            "common_count": 20,
+            "library_sizes": {
+                "1": 20,
+                "2": 20,
+            },
+            "divergences": [],
+            "agreements": [],
+        }
+
+        result = _story_angles(
+            public,
+            {"profiles": {}},
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "Their tastes pull in clearly different directions.",
+            result,
+        )
+
+    def test_divergence_is_used(self):
+        public = {
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 20,
+            "library_sizes": {
+                "1": 20,
+                "2": 20,
+            },
+            "divergences": [
                 {
-                    "title": "Dune",
-                    "release_year": 2021,
+                    "title": "Blade Runner",
                     "ratings": {
-                        "10": 5.0,
-                        "20": 4.5,
+                        "1": 5,
+                        "2": 2,
                     },
                 }
             ],
-            "divergences": [],
+            "agreements": [],
         }
 
-        result = _compact_public(
+        result = _story_angles(
             public,
-            _labels(["10", "20"]),
+            {"profiles": {}},
+            {
+                "1": "A",
+                "2": "B",
+            },
         )
 
-        self.assertEqual(
-            result["compatibility_score"],
-            85,
+        self.assertIn(
+            "Sharpest clash: Blade Runner (A=5 vs B=2).",
+            result,
         )
 
-        self.assertEqual(
-            result["taste_similarity"],
-            0.8,
-        )
-
-        self.assertEqual(
-            result["common_films"],
-            30,
-        )
-
-        self.assertEqual(
-            result["mean_rating_gap"],
-            0.5,
-        )
-
-        self.assertEqual(
-            result["rating_correlation"],
-            0.7,
-        )
-
-        self.assertEqual(
-            result["agreements"][0]["title"],
-            "Dune",
-        )
-
-        self.assertEqual(
-            result["agreements"][0]["year"],
-            2021,
-        )
-
-    def test_does_not_mutate_public(self):
+    def test_rating_style_gap_is_used(self):
         public = {
-            "compatibility_score": 85,
-            "taste_similarity": 0.8,
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 20,
             "library_sizes": {
-                "10": 100,
-                "20": 80,
+                "1": 20,
+                "2": 20,
             },
-            "common_count": 30,
-            "mean_rating_gap": 0.5,
-            "rating_correlation": 0.7,
-            "agreements": [],
             "divergences": [],
+            "agreements": [],
         }
 
-        original = {
-            "compatibility_score": 85,
-            "taste_similarity": 0.8,
-            "library_sizes": {
-                "10": 100,
-                "20": 80,
-            },
-            "common_count": 30,
-            "mean_rating_gap": 0.5,
-            "rating_correlation": 0.7,
-            "agreements": [],
-            "divergences": [],
+        internal = {
+            "profiles": {
+                "1": {
+                    "mean_rating": 4.5,
+                },
+                "2": {
+                    "mean_rating": 3.2,
+                },
+            }
         }
 
-        _compact_public(
+        result = _story_angles(
             public,
-            _labels(["10", "20"]),
+            internal,
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "Rating style gap: A is far more generous than B.",
+            result,
+        )
+
+    def test_agreement_is_used(self):
+        public = {
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 20,
+            "library_sizes": {
+                "1": 20,
+                "2": 20,
+            },
+            "divergences": [],
+            "agreements": [
+                {
+                    "title": "Alien",
+                    "ratings": {
+                        "1": 5,
+                        "2": 5,
+                    },
+                }
+            ],
+        }
+
+        result = _story_angles(
+            public,
+            {"profiles": {}},
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "Common ground: both rated Alien very high (A=5 vs B=5).",
+            result,
+        )
+
+    def test_shared_director_takes_precedence_over_genre(self):
+        public = {
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 20,
+            "library_sizes": {
+                "1": 20,
+                "2": 20,
+            },
+            "divergences": [],
+            "agreements": [],
+        }
+
+        internal = {
+            "profiles": {},
+            "shared_directors": ["Christopher Nolan"],
+            "shared_genres": ["Sci-Fi"],
+        }
+
+        result = _story_angles(
+            public,
+            internal,
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "Shared favourite director: Christopher Nolan.",
+            result,
+        )
+        self.assertNotIn(
+            "Shared favourite genre: Sci-Fi.",
+            result,
+        )
+
+    def test_shared_genre_is_used_without_shared_director(self):
+        public = {
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 20,
+            "library_sizes": {
+                "1": 20,
+                "2": 20,
+            },
+            "divergences": [],
+            "agreements": [],
+        }
+
+        internal = {
+            "profiles": {},
+            "shared_directors": [],
+            "shared_genres": ["Sci-Fi"],
+        }
+
+        result = _story_angles(
+            public,
+            internal,
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "Shared favourite genre: Sci-Fi.",
+            result,
+        )
+
+    def test_few_common_films_is_used(self):
+        public = {
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 5,
+            "library_sizes": {
+                "1": 20,
+                "2": 20,
+            },
+            "divergences": [],
+            "agreements": [],
+        }
+
+        result = _story_angles(
+            public,
+            {"profiles": {}},
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "They have rated very few of the same films.",
+            result,
+        )
+
+    def test_uneven_library_sizes_are_used(self):
+        public = {
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 20,
+            "library_sizes": {
+                "1": 10,
+                "2": 40,
+            },
+            "divergences": [],
+            "agreements": [],
+        }
+
+        result = _story_angles(
+            public,
+            {"profiles": {}},
+            {
+                "1": "A",
+                "2": "B",
+            },
+        )
+
+        self.assertIn(
+            "One of them has rated far more films than the other.",
+            result,
+        )
+
+    def test_returns_fallback_when_no_angle_exists(self):
+        public = {
+            "taste_similarity": 0.5,
+            "rating_correlation": 0.5,
+            "common_count": 20,
+            "library_sizes": {
+                "1": 20,
+                "2": 20,
+            },
+            "divergences": [],
+            "agreements": [],
+        }
+
+        result = _story_angles(
+            public,
+            {
+                "profiles": {},
+                "shared_directors": [],
+                "shared_genres": [],
+            },
+            {
+                "1": "A",
+                "2": "B",
+            },
         )
 
         self.assertEqual(
-            public,
-            original,
+            result,
+            [
+                "No standout pattern: focus on their favourite films and genres."
+            ],
         )
 
 
@@ -220,448 +459,238 @@ class BuildPromptTests(TestCase):
             "compatibility_score": 85,
             "taste_similarity": 0.8,
             "library_sizes": {
-                "10": 100,
-                "20": 90,
+                "1": 10,
+                "2": 12,
             },
-            "common_count": 30,
-            "overlap_ratio": 0.333,
-            "jaccard": 0.2,
+            "common_count": 5,
+            "overlap_ratio": 0.5,
+            "jaccard": 0.3,
             "mean_rating_gap": 0.5,
-            "rating_correlation": 0.7,
+            "rating_correlation": 0.8,
             "agreements": [],
             "divergences": [],
         }
 
-    def _movie(self):
-        movie = mock.Mock()
-        movie.title = "Dune"
-        movie.release_year = 2021
-        movie.wikidata_description = "A science-fiction epic."
+    def _internal(self):
+        return {
+            "profiles": {
+                "1": {
+                    "mean_rating": 4.2,
+                    "favourite_genres": ["Sci-Fi"],
+                },
+                "2": {
+                    "mean_rating": 3.8,
+                    "favourite_genres": ["Drama"],
+                },
+            },
+            "shared_genres": ["Sci-Fi"],
+            "shared_directors": ["Denis Villeneuve"],
+        }
 
-        genre_a = mock.Mock()
-        genre_a.name = "Science Fiction"
+    def _candidate(
+        self,
+        title="Dune",
+        description="A science-fiction epic.",
+        genres=None,
+        directors=None,
+    ):
+        movie = mock.Mock(
+            title=title,
+            release_year=2021,
+            wikidata_description=description,
+        )
 
-        genre_b = mock.Mock()
-        genre_b.name = "Drama"
+        movie.directors = directors or []
 
+        genre_names = genres or ["Sci-Fi", "Adventure"]
         movie.genres.all.return_value = [
-            genre_a,
-            genre_b,
+            SimpleNamespace(name=name)
+            for name in genre_names
         ]
 
-        return movie
-
-    def _candidate(self):
-        candidate = mock.Mock()
-        candidate.movie = self._movie()
-        candidate.per_user = [0.91, 0.84]
-        return candidate
-
-    def test_prompt_contains_metrics(self):
-        prompt = _build_prompt(
-            self._public(),
-            {
-                "shared_genres": ["Science Fiction"],
-                "shared_directors": ["Denis Villeneuve"],
-            },
-            [],
-            ["10", "20"],
-        )
-
-        self.assertIn(
-            "Metrics:",
-            prompt,
-        )
-
-        self.assertIn(
-            "compatibility_score",
-            prompt,
-        )
-
-        self.assertIn(
-            "A",
-            prompt,
-        )
-
-        self.assertIn(
-            "B",
-            prompt,
+        return mock.Mock(
+            movie=movie,
+            per_user=[0.91, 0.84],
         )
 
     def test_prompt_contains_candidate_information(self):
+        candidate = self._candidate(
+            title="Dune",
+            description="A science-fiction epic.",
+            genres=["Sci-Fi", "Adventure"],
+            directors=["Denis Villeneuve"],
+        )
+
         prompt = _build_prompt(
             self._public(),
-            {
-                "shared_genres": ["Science Fiction"],
-                "shared_directors": ["Denis Villeneuve"],
-            },
-            [self._candidate()],
-            ["10", "20"],
+            self._internal(),
+            [candidate],
+            ["1", "2"],
         )
 
-        self.assertIn(
-            "Dune",
-            prompt,
-        )
-
-        self.assertIn(
-            "2021",
-            prompt,
-        )
-
-        self.assertIn(
-            "Science Fiction",
-            prompt,
-        )
-
-        self.assertIn(
-            "fit A=0.91 B=0.84",
-            prompt,
-        )
-
-        self.assertIn(
-            "A science-fiction epic.",
-            prompt,
-        )
-
-    def test_prompt_contains_individual_profiles(self):
-        prompt = _build_prompt(
-            self._public(),
-            {
-                "profiles": {
-                    "10": {
-                        "favourite_genres": ["Science Fiction"],
-                        "favourite_directors": ["Denis Villeneuve"],
-                    },
-                    "20": {
-                        "favourite_genres": ["Drama"],
-                        "favourite_directors": ["Christopher Nolan"],
-                    },
-                },
-                "shared_genres": ["Science Fiction"],
-                "shared_directors": [],
-            },
-            [],
-            ["10", "20"],
-        )
-
-        self.assertIn(
-            "Individual taste data:",
-            prompt,
-        )
-
-        self.assertIn(
-            "A:",
-            prompt,
-        )
-
-        self.assertIn(
-            "B:",
-            prompt,
-        )
-
-        self.assertIn(
-            "Denis Villeneuve",
-            prompt,
-        )
-
-        self.assertIn(
-            "Christopher Nolan",
-            prompt,
-        )
+        self.assertIn("Dune (2021)", prompt)
+        self.assertIn("Sci-Fi, Adventure", prompt)
+        self.assertIn("dir. Denis Villeneuve", prompt)
+        self.assertIn("fit A=0.91 B=0.84", prompt)
+        self.assertIn("A science-fiction epic.", prompt)
 
     def test_prompt_truncates_description(self):
+        description = (
+            "This is a very long description of a science fiction movie "
+            "that should definitely be truncated before being included "
+            "inside the prompt."
+        )
+
+        candidate = self._candidate(
+            description=description,
+        )
+
+        prompt = _build_prompt(
+            self._public(),
+            self._internal(),
+            [candidate],
+            ["1", "2"],
+        )
+
+        self.assertIn(
+            description[:MAX_DESCRIPTION_CHARS].rsplit(" ", 1)[0],
+            prompt,
+        )
+        self.assertNotIn(description, prompt)
+
+    def test_prompt_contains_story_angles(self):
         candidate = self._candidate()
 
-        long_description = " ".join(
-            ["A very long movie description"] * 100
-        )
-
-        candidate.movie.wikidata_description = long_description
-
         prompt = _build_prompt(
             self._public(),
-            {},
+            self._internal(),
             [candidate],
-            ["10", "20"],
+            ["1", "2"],
         )
 
-        self.assertNotIn(
-            long_description,
+        self.assertIn("Story angles", prompt)
+        self.assertIn(
+            "Shared favourite director: Denis Villeneuve.",
             prompt,
         )
 
-    def test_prompt_handles_no_candidates(self):
+    def test_prompt_contains_profiles(self):
+        candidate = self._candidate()
+
         prompt = _build_prompt(
             self._public(),
-            {},
-            [],
-            ["10", "20"],
+            self._internal(),
+            [candidate],
+            ["1", "2"],
         )
 
-        self.assertIn(
-            "(none)",
-            prompt,
-        )
+        self.assertIn("Individual taste data:", prompt)
+        self.assertIn('"mean_rating":4.2', prompt)
+        self.assertIn('"mean_rating":3.8', prompt)
 
-    def test_prompt_handles_missing_internal_values(self):
+    def test_prompt_contains_schema_and_rules(self):
+        candidate = self._candidate()
+
         prompt = _build_prompt(
             self._public(),
-            {},
+            self._internal(),
+            [candidate],
+            ["1", "2"],
+        )
+
+        self.assertIn(
+            '{"narrative": str, "individual": {"A": str, "B": str}',
+            prompt,
+        )
+        self.assertIn(
+            "recommendations: exactly 1 strings",
+            prompt,
+        )
+        self.assertIn(
+            "Do not mention or repeat the recommended film's title.",
+            prompt,
+        )
+
+    def test_prompt_without_candidates_uses_none(self):
+        prompt = _build_prompt(
+            self._public(),
+            self._internal(),
             [],
-            ["10", "20"],
+            ["1", "2"],
         )
 
         self.assertIn(
-            "Shared favourite genres: none",
+            "Candidates (neither has watched them):\n(none)",
             prompt,
         )
-
         self.assertIn(
-            "Shared favourite directors: none",
+            "recommendations: an empty list.",
             prompt,
-        )
-
-
-class ParseTests(TestCase):
-    def test_parse_valid_response(self):
-        text = """
-        {
-            "narrative": "You both enjoy science fiction.",
-            "individual": {
-                "A": "This person prefers science fiction.",
-                "B": "This person also enjoys science fiction."
-            },
-            "recommendations": [
-                "It matches both profiles."
-            ]
-        }
-        """
-
-        result = _parse(
-            text,
-            1,
-            ["10", "20"],
-        )
-
-        self.assertIsNotNone(result)
-
-        self.assertEqual(
-            result.summary,
-            "You both enjoy science fiction.",
-        )
-
-        self.assertEqual(
-            result.reasons,
-            {
-                1: "It matches both profiles.",
-            },
-        )
-
-        self.assertEqual(
-            result.individual,
-            {
-                "10": "This person prefers science fiction.",
-                "20": "This person also enjoys science fiction.",
-            },
-        )
-
-    def test_parse_strips_narrative_and_reason(self):
-        result = _parse(
-            '{"narrative": "  Summary  ", '
-            '"individual": {'
-            '"A": "  User A taste  ", '
-            '"B": "  User B taste  "'
-            '}, '
-            '"recommendations": ["  Reason  "]}',
-            1,
-            ["10", "20"],
-        )
-
-        self.assertEqual(
-            result.summary,
-            "Summary",
-        )
-
-        self.assertEqual(
-            result.reasons,
-            {
-                1: "Reason",
-            },
-        )
-
-        self.assertEqual(
-            result.individual,
-            {
-                "10": "User A taste",
-                "20": "User B taste",
-            },
-        )
-
-    def test_parse_ignores_out_of_range_indices(self):
-        result = _parse(
-            '{"narrative": "Summary", '
-            '"individual": {'
-            '"A": "User A taste", '
-            '"B": "User B taste"'
-            '}, '
-            '"recommendations": ['
-            '{"index": 0, "reason": "zero"},'
-            '{"index": 1, "reason": "valid"},'
-            '{"index": 3, "reason": "three"}'
-            ']}',
-            2,
-            ["10", "20"],
-        )
-
-        self.assertEqual(
-            result.reasons,
-            {
-                1: "valid",
-            },
-        )
-
-    def test_parse_allows_missing_recommendations(self):
-        result = _parse(
-            '{"narrative": "Summary", '
-            '"individual": {'
-            '"A": "User A taste", '
-            '"B": "User B taste"'
-            '}}',
-            2,
-            ["10", "20"],
-        )
-
-        self.assertIsNotNone(result)
-
-        self.assertEqual(
-            result.summary,
-            "Summary",
-        )
-
-        self.assertEqual(
-            result.reasons,
-            {},
-        )
-
-    def test_parse_invalid_json_returns_none(self):
-        self.assertIsNone(
-            _parse(
-                "not json",
-                2,
-                ["10", "20"],
-            )
-        )
-
-    def test_parse_missing_narrative_returns_none(self):
-        self.assertIsNone(
-            _parse(
-                '{"individual": {'
-                '"A": "User A taste", '
-                '"B": "User B taste"'
-                '}, "recommendations": []}',
-                2,
-                ["10", "20"],
-            )
-        )
-
-    def test_parse_empty_narrative_returns_none(self):
-        self.assertIsNone(
-            _parse(
-                '{"narrative": "   ", '
-                '"individual": {'
-                '"A": "User A taste", '
-                '"B": "User B taste"'
-                '}}',
-                2,
-                ["10", "20"],
-            )
-        )
-
-    def test_parse_missing_individual_returns_none(self):
-        self.assertIsNone(
-            _parse(
-                '{"narrative": "Summary", '
-                '"recommendations": []}',
-                2,
-                ["10", "20"],
-            )
-        )
-
-    def test_parse_invalid_recommendation_returns_none(self):
-        self.assertIsNone(
-            _parse(
-                '{"narrative": "Summary", '
-                '"individual": {'
-                '"A": "User A taste", '
-                '"B": "User B taste"'
-                '}, '
-                '"recommendations": [{"index": 1}]}',
-                1,
-                ["10", "20"],
-            )
-        )
-
-    def test_parse_converts_values_to_strings(self):
-        result = _parse(
-            '{"narrative": 123, '
-            '"individual": {'
-            '"A": 456, '
-            '"B": 789'
-            '}, '
-            '"recommendations": [999]}',
-            1,
-            ["10", "20"],
-        )
-
-        self.assertEqual(
-            result.summary,
-            "123",
-        )
-
-        self.assertEqual(
-            result.reasons,
-            {
-                1: "999",
-            },
-        )
-
-        self.assertEqual(
-            result.individual,
-            {
-                "10": "456",
-                "20": "789",
-            },
         )
 
 
 class ComparisonNarrativeClientTests(TestCase):
+    def _public(self):
+        return {
+            "compatibility_score": 85,
+            "taste_similarity": 0.8,
+            "library_sizes": {
+                "1": 10,
+                "2": 12,
+            },
+            "common_count": 5,
+            "overlap_ratio": 0.5,
+            "jaccard": 0.3,
+            "mean_rating_gap": 0.5,
+            "rating_correlation": 0.8,
+            "agreements": [],
+            "divergences": [],
+        }
+
+    def _generate(self, client, candidates=()):
+        return client.generate(
+            public=self._public(),
+            internal={
+                "shared_genres": [],
+                "shared_directors": [],
+            },
+            candidates=candidates,
+            user_ids=["1", "2"],
+        )
+
+    def _candidate(self):
+        movie = mock.Mock(
+            title="Dune",
+            release_year=2021,
+            wikidata_description="A science-fiction epic.",
+        )
+
+        movie.directors = []
+
+        movie.genres.all.return_value = [
+            SimpleNamespace(name="Sci-Fi"),
+        ]
+
+        return mock.Mock(
+            movie=movie,
+            per_user=[0.91, 0.84],
+        )
+
     @override_settings(GEMINI_API_KEY="settings-key")
-    @mock.patch(
-        "apps.comparisons.services.narrative.genai.Client"
-    )
-    def test_uses_settings_api_key_when_not_provided(
-        self,
-        mock_client,
-    ):
+    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    def test_uses_settings_api_key(self, mock_client):
         client = ComparisonNarrativeClient()
 
         mock_client.assert_called_once_with(
             api_key="settings-key",
         )
-
         self.assertEqual(
             client.model,
             DEFAULT_MODEL,
         )
 
-    @mock.patch(
-        "apps.comparisons.services.narrative.genai.Client"
-    )
-    def test_uses_explicit_api_key(
-        self,
-        mock_client,
-    ):
+    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    def test_uses_explicit_api_key(self, mock_client):
         ComparisonNarrativeClient(
             api_key="explicit-key",
         )
@@ -670,30 +699,22 @@ class ComparisonNarrativeClientTests(TestCase):
             api_key="explicit-key",
         )
 
-    @mock.patch(
-        "apps.comparisons.services.narrative.genai.Client"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.consume"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.cost_units"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.estimate_tokens"
-    )
+    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
     def test_generate_returns_none_when_quota_is_exceeded(
         self,
-        mock_estimate_tokens,
-        mock_cost_units,
-        mock_consume,
-        mock_client,
+        estimate,
+        cost,
+        consume,
+        client_mock,
     ):
-        mock_estimate_tokens.return_value = 10
-        mock_cost_units.return_value = 5
+        estimate.return_value = 10
+        cost.return_value = 5
 
-        mock_consume.side_effect = QuotaExceeded(
-            QUOTA_CLIENT_NAME,
+        consume.side_effect = QuotaExceeded(
+            "gemini_narrative",
             "day",
             10,
         )
@@ -702,203 +723,124 @@ class ComparisonNarrativeClientTests(TestCase):
             api_key="test-key",
         )
 
-        result = client.generate(
-            public={
-                "compatibility_score": 85,
-                "taste_similarity": 0.8,
-                "library_sizes": {
-                    "1": 10,
-                    "2": 12,
-                },
-                "common_count": 5,
-                "overlap_ratio": 0.5,
-                "jaccard": 0.3,
-                "mean_rating_gap": 0.5,
-                "rating_correlation": 0.8,
-                "agreements": [],
-                "divergences": [],
-            },
-            internal={
-                "shared_genres": [],
-                "shared_directors": [],
-            },
-            candidates=[],
-            user_ids=["1", "2"],
-        )
-
         self.assertIsNone(
-            result,
+            self._generate(client),
         )
 
-        mock_consume.assert_called_once_with(
-            QUOTA_CLIENT_NAME,
+        consume.assert_called_once_with(
+            "gemini_narrative",
             5,
         )
 
-        mock_client.return_value.models.generate_content.assert_not_called()
+        client_mock.return_value.models.generate_content.assert_not_called()
 
-    @mock.patch(
-        "apps.comparisons.services.narrative.genai.Client"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.adjust"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.cost_units"
-    )
+    @mock.patch("apps.comparisons.services.narrative.api_quota.adjust")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
     def test_reconcile_cost_adjusts_actual_difference(
         self,
-        mock_cost_units,
-        mock_adjust,
-        mock_client,
+        cost,
+        adjust,
     ):
-        mock_cost_units.return_value = 12
+        cost.return_value = 12
 
-        usage = mock.Mock()
-        usage.prompt_token_count = 50
-        usage.candidates_token_count = 20
-        usage.thoughts_token_count = 5
-
-        response = mock.Mock()
-        response.usage_metadata = usage
+        response = mock.Mock(
+            usage_metadata=mock.Mock(
+                prompt_token_count=50,
+                candidates_token_count=20,
+                thoughts_token_count=5,
+            ),
+        )
 
         ComparisonNarrativeClient._reconcile_cost(
             response,
             reserved=10,
         )
 
-        mock_cost_units.assert_called_once_with(
-            QUOTA_CLIENT_NAME,
+        cost.assert_called_once_with(
+            "gemini_narrative",
             input_tokens=50,
             output_tokens=25,
         )
 
-        mock_adjust.assert_called_once_with(
-            QUOTA_CLIENT_NAME,
+        adjust.assert_called_once_with(
+            "gemini_narrative",
             2,
         )
 
     def test_reconcile_cost_does_nothing_without_usage(self):
-        response = mock.Mock()
-        response.usage_metadata = None
+        response = mock.Mock(
+            usage_metadata=None,
+        )
 
         with mock.patch(
-            "apps.comparisons.services.narrative.api_quota.adjust"
-        ) as mock_adjust:
+            "apps.comparisons.services.narrative.api_quota.adjust",
+        ) as adjust:
             ComparisonNarrativeClient._reconcile_cost(
                 response,
-                reserved=10,
+                10,
             )
 
-        mock_adjust.assert_not_called()
+        adjust.assert_not_called()
 
     def test_reconcile_cost_does_nothing_without_prompt_count(self):
-        usage = mock.Mock()
-        usage.prompt_token_count = None
-
-        response = mock.Mock()
-        response.usage_metadata = usage
+        response = mock.Mock(
+            usage_metadata=mock.Mock(
+                prompt_token_count=None,
+            ),
+        )
 
         with mock.patch(
-            "apps.comparisons.services.narrative.api_quota.adjust"
-        ) as mock_adjust:
+            "apps.comparisons.services.narrative.api_quota.adjust",
+        ) as adjust:
             ComparisonNarrativeClient._reconcile_cost(
                 response,
-                reserved=10,
+                10,
             )
 
-        mock_adjust.assert_not_called()
+        adjust.assert_not_called()
 
-    @mock.patch(
-        "apps.comparisons.services.narrative.genai.Client"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.adjust"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.cost_units"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.consume"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.estimate_tokens"
-    )
+    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.adjust")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
     def test_generate_calls_gemini_and_parses_response(
         self,
-        mock_estimate_tokens,
-        mock_consume,
-        mock_cost_units,
-        mock_adjust,
-        mock_client,
+        estimate,
+        consume,
+        cost,
+        adjust,
+        client_mock,
     ):
-        mock_estimate_tokens.return_value = 50
+        estimate.return_value = 50
+        cost.side_effect = [10, 12]
 
-        mock_cost_units.side_effect = [
-            10,
-            12,
-        ]
-
-        usage = mock.Mock()
-        usage.prompt_token_count = 50
-        usage.candidates_token_count = 20
-        usage.thoughts_token_count = 0
-
-        response = mock.Mock()
-        response.text = (
-            '{"narrative": "You have similar tastes.", '
-            '"individual": {'
-            '"A": "This person enjoys science fiction.", '
-            '"B": "This person also enjoys science fiction."'
-            '}, '
-            '"recommendations": ['
-            '"Good fit."'
-            ']}'
+        response = mock.Mock(
+            text=(
+                '{"narrative":"You have similar tastes.",'
+                '"individual":{'
+                '"A":"This person enjoys science fiction.",'
+                '"B":"This person also enjoys science fiction."},'
+                '"recommendations":["Good fit."]}'
+            ),
+            usage_metadata=mock.Mock(
+                prompt_token_count=50,
+                candidates_token_count=20,
+                thoughts_token_count=0,
+            ),
         )
-        response.usage_metadata = usage
 
-        mock_client.return_value.models.generate_content.return_value = (
+        client_mock.return_value.models.generate_content.return_value = (
             response
         )
-
-        candidate = mock.Mock()
-        candidate.movie = mock.Mock()
-        candidate.movie.title = "Dune"
-        candidate.movie.release_year = 2021
-        candidate.movie.wikidata_description = "A science-fiction epic."
-        candidate.movie.genres.all.return_value = []
-        candidate.per_user = [0.91, 0.84]
 
         client = ComparisonNarrativeClient(
             api_key="test-key",
         )
 
-        result = client.generate(
-            public={
-                "compatibility_score": 85,
-                "taste_similarity": 0.8,
-                "library_sizes": {
-                    "1": 10,
-                    "2": 12,
-                },
-                "common_count": 5,
-                "overlap_ratio": 0.5,
-                "jaccard": 0.3,
-                "mean_rating_gap": 0.5,
-                "rating_correlation": 0.8,
-                "agreements": [],
-                "divergences": [],
-            },
-            internal={
-                "shared_genres": [],
-                "shared_directors": [],
-            },
-            candidates=[candidate],
-            user_ids=["1", "2"],
-        )
-
-        self.assertIsNotNone(
-            result,
+        result = self._generate(
+            client,
+            [self._candidate()],
         )
 
         self.assertEqual(
@@ -921,141 +863,71 @@ class ComparisonNarrativeClientTests(TestCase):
             },
         )
 
-        mock_consume.assert_called_once_with(
-            QUOTA_CLIENT_NAME,
+        consume.assert_called_once_with(
+            "gemini_narrative",
             10,
         )
 
-        mock_adjust.assert_called_once_with(
-            QUOTA_CLIENT_NAME,
+        adjust.assert_called_once_with(
+            "gemini_narrative",
             2,
         )
 
-        mock_client.return_value.models.generate_content.assert_called_once()
+        client_mock.return_value.models.generate_content.assert_called_once()
 
-    @mock.patch(
-        "apps.comparisons.services.narrative.genai.Client"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.adjust"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.cost_units"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.consume"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.estimate_tokens"
-    )
+    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.adjust")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
     def test_generate_returns_none_for_unparseable_response(
         self,
-        mock_estimate_tokens,
-        mock_consume,
-        mock_cost_units,
-        mock_adjust,
-        mock_client,
+        estimate,
+        consume,
+        cost,
+        adjust,
+        client_mock,
     ):
-        mock_estimate_tokens.return_value = 10
-        mock_cost_units.side_effect = [
-            5,
-            5,
-        ]
+        estimate.return_value = 10
+        cost.side_effect = [5, 5]
 
-        response = mock.Mock()
-        response.text = "not json"
-        response.usage_metadata = None
-
-        mock_client.return_value.models.generate_content.return_value = (
-            response
-        )
-
-        client = ComparisonNarrativeClient(
-            api_key="test-key",
-        )
-
-        result = client.generate(
-            public={
-                "compatibility_score": 85,
-                "taste_similarity": 0.8,
-                "library_sizes": {
-                    "1": 10,
-                    "2": 12,
-                },
-                "common_count": 5,
-                "overlap_ratio": 0.5,
-                "jaccard": 0.3,
-                "mean_rating_gap": 0.5,
-                "rating_correlation": 0.8,
-                "agreements": [],
-                "divergences": [],
-            },
-            internal={
-                "shared_genres": [],
-                "shared_directors": [],
-            },
-            candidates=[],
-            user_ids=["1", "2"],
+        client_mock.return_value.models.generate_content.return_value = (
+            mock.Mock(
+                text="not json",
+                usage_metadata=None,
+            )
         )
 
         self.assertIsNone(
-            result,
+            self._generate(
+                ComparisonNarrativeClient(
+                    api_key="test-key",
+                ),
+            ),
         )
 
-    @mock.patch(
-        "apps.comparisons.services.narrative.genai.Client"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.consume"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.cost_units"
-    )
-    @mock.patch(
-        "apps.comparisons.services.narrative.api_quota.estimate_tokens"
-    )
+    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
+    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
     def test_generate_returns_none_on_gemini_exception(
         self,
-        mock_estimate_tokens,
-        mock_cost_units,
-        mock_consume,
-        mock_client,
+        estimate,
+        cost,
+        consume,
+        client_mock,
     ):
-        mock_estimate_tokens.return_value = 10
-        mock_cost_units.return_value = 5
+        estimate.return_value = 10
+        cost.return_value = 5
 
-        mock_client.return_value.models.generate_content.side_effect = (
+        client_mock.return_value.models.generate_content.side_effect = (
             RuntimeError("Gemini failed")
         )
 
-        client = ComparisonNarrativeClient(
-            api_key="test-key",
-        )
-
-        result = client.generate(
-            public={
-                "compatibility_score": 85,
-                "taste_similarity": 0.8,
-                "library_sizes": {
-                    "1": 10,
-                    "2": 12,
-                },
-                "common_count": 5,
-                "overlap_ratio": 0.5,
-                "jaccard": 0.3,
-                "mean_rating_gap": 0.5,
-                "rating_correlation": 0.8,
-                "agreements": [],
-                "divergences": [],
-            },
-            internal={
-                "shared_genres": [],
-                "shared_directors": [],
-            },
-            candidates=[],
-            user_ids=["1", "2"],
-        )
-
         self.assertIsNone(
-            result,
+            self._generate(
+                ComparisonNarrativeClient(
+                    api_key="test-key",
+                ),
+            ),
         )

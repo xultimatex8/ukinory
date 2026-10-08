@@ -5,6 +5,7 @@ from unittest import mock
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.comparisons.exceptions import (
     ComparisonNotFoundError,
@@ -12,9 +13,11 @@ from apps.comparisons.exceptions import (
     NotComparisonMemberError,
 )
 from apps.comparisons.services.comparison import (
+    FIT_VERSION,
     _get_comparison,
     get_comparison_result,
 )
+from apps.comparisons.services.metrics import METRICS_VERSION
 from apps.comparisons.services.snapshot import UserLibrary
 from apps.recommendations.services.joint_profile import DEFAULT_POOL_SIZE
 
@@ -22,11 +25,21 @@ from apps.recommendations.services.joint_profile import DEFAULT_POOL_SIZE
 class ComparisonResultServiceTests(TestCase):
     def _comparison(self, users):
         comparison = mock.Mock()
+
         comparison.pk = "comparison-1"
         comparison.session.users.all.return_value = users
+
         comparison.metrics_json = {}
         comparison.inputs_hash = ""
+
+        # ComparisonResult works with real datetime values.
+        generated_at = timezone.now()
+        comparison.created_at = generated_at
+        comparison.updated_at = generated_at
+        comparison.generated_at = generated_at
+
         comparison.narratives.filter.return_value.first.return_value = None
+
         return comparison
 
     def test_get_comparison_raises_when_missing(self):
@@ -115,15 +128,17 @@ class ComparisonResultServiceTests(TestCase):
     def test_get_comparison_result_requires_exactly_two_users(self):
         user = mock.Mock(pk="user-1")
         other = mock.Mock(pk="user-2")
+        third = mock.Mock(pk="user-3")
+
         comparison = self._comparison(
-            [user, other, mock.Mock(pk="user-3")]
+            [user, other, third]
         )
 
         with mock.patch(
             "apps.comparisons.services.comparison._get_comparison",
             return_value=(
                 comparison,
-                comparison.session.users.all.return_value,
+                [user, other, third],
             ),
         ):
             with self.assertRaises(InsufficientDataError):
@@ -135,6 +150,7 @@ class ComparisonResultServiceTests(TestCase):
     def test_get_comparison_result_requires_ratings_for_both_users(self):
         user_a = mock.Mock(pk="user-1")
         user_b = mock.Mock(pk="user-2")
+
         comparison = self._comparison([user_a, user_b])
 
         libraries = [
@@ -175,6 +191,7 @@ class ComparisonResultServiceTests(TestCase):
         comparison = self._comparison([user_a, user_b])
         comparison.inputs_hash = "old-hash"
         comparison.metrics_json = {
+            "version": METRICS_VERSION,
             "public": {"old": True},
             "internal": {"old": True},
         }
@@ -242,7 +259,7 @@ class ComparisonResultServiceTests(TestCase):
         self.assertEqual(
             comparison.metrics_json,
             {
-                "version": 3,
+                "version": METRICS_VERSION,
                 "public": {"new": True},
                 "internal": {"internal": True},
             },
@@ -276,7 +293,7 @@ class ComparisonResultServiceTests(TestCase):
         comparison = self._comparison([user_a, user_b])
         comparison.inputs_hash = "hash"
         comparison.metrics_json = {
-            "version": 3,
+            "version": METRICS_VERSION,
             "public": {"score": 80},
             "internal": {"internal": True},
         }
@@ -286,7 +303,7 @@ class ComparisonResultServiceTests(TestCase):
         cached.recommendations = [
             {
                 "movie_id": 1,
-                "fit_version": 2,
+                "fit_version": FIT_VERSION,
             },
         ]
         cached.individual_summaries = {
@@ -344,7 +361,7 @@ class ComparisonResultServiceTests(TestCase):
             [
                 {
                     "movie_id": 1,
-                    "fit_version": 2,
+                    "fit_version": FIT_VERSION,
                 },
             ],
         )
@@ -363,7 +380,7 @@ class ComparisonResultServiceTests(TestCase):
         comparison = self._comparison([user_a, user_b])
         comparison.inputs_hash = "hash"
         comparison.metrics_json = {
-            "version": 3,
+            "version": METRICS_VERSION,
             "public": {
                 "compatibility_score": 80,
             },
@@ -434,7 +451,9 @@ class ComparisonResultServiceTests(TestCase):
         ), mock.patch(
             "apps.comparisons.services.comparison.ComparisonNarrative"
         ) as mock_narrative:
-            mock_narrative.objects.filter.return_value.first.return_value = None
+            mock_narrative.objects.filter.return_value.first.return_value = (
+                None
+            )
             mock_narrative.objects.update_or_create.return_value = mock.Mock()
 
             result = get_comparison_result(
@@ -456,7 +475,7 @@ class ComparisonResultServiceTests(TestCase):
                     "release_year": 2021,
                     "genres": [],
                     "score": 0.912,
-                    "fit_version": 2,
+                    "fit_version": FIT_VERSION,
                     "per_user": {
                         "user-1": 0.81,
                         "user-2": 0.93,
@@ -482,7 +501,7 @@ class ComparisonResultServiceTests(TestCase):
         comparison = self._comparison([user_a, user_b])
         comparison.inputs_hash = "hash"
         comparison.metrics_json = {
-            "version": 3,
+            "version": METRICS_VERSION,
             "public": {"score": 80},
             "internal": {},
         }
@@ -542,7 +561,9 @@ class ComparisonResultServiceTests(TestCase):
         ), mock.patch(
             "apps.comparisons.services.comparison.ComparisonNarrative"
         ) as mock_narrative:
-            mock_narrative.objects.filter.return_value.first.return_value = None
+            mock_narrative.objects.filter.return_value.first.return_value = (
+                None
+            )
 
             result = get_comparison_result(
                 user=user_a,
@@ -574,7 +595,7 @@ class ComparisonResultServiceTests(TestCase):
         comparison = self._comparison([user_a, user_b])
         comparison.inputs_hash = "old"
         comparison.metrics_json = {
-            "version": 3,
+            "version": METRICS_VERSION,
             "public": {"old": True},
             "internal": {},
         }
@@ -642,7 +663,9 @@ class ComparisonResultServiceTests(TestCase):
         ), mock.patch(
             "apps.comparisons.services.comparison.ComparisonNarrative"
         ) as mock_narrative:
-            mock_narrative.objects.filter.return_value.first.return_value = None
+            mock_narrative.objects.filter.return_value.first.return_value = (
+                None
+            )
 
             result = get_comparison_result(
                 user=user_a,
