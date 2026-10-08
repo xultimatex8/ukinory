@@ -200,7 +200,7 @@ def close_stale_rooms() -> int:
 @transaction.atomic
 def leave_room(*, room: ComparisonSession, user) -> None:
     if room.status == SessionStatus.FINISHED:
-        raise RoomClosedError
+        return
 
     if not room.users.filter(pk=user.pk).exists():
         raise NotRoomMemberError
