@@ -73,6 +73,8 @@ function App() {
             <Route path="/login" element={<LoginScreen />} />
             <Route path="/register" element={<RegisterScreen />} />
           </Route>
+
+          <Route path="/comparison/join/:code" element={<JoinComparisonScreen />} />
         </Route>
 
         <Route element={<LegalLayout />}>
@@ -95,7 +97,6 @@ function App() {
             <Route path="/comparison/room/:id" element={<ComparisonRoomScreen />} />
           </Route>
 
-          <Route path="/comparison/join/:code" element={<JoinComparisonScreen />} />
           <Route path="/500" element={<ServerErrorScreen />} />
           <Route path="*" element={<NotFoundScreen />} />
         </Route>

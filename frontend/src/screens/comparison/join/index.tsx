@@ -10,7 +10,7 @@ import { acceptInvite } from "../../../services/invites";
 
 async function ensureSession(): Promise<void> {
   if (
-    localStorage.getItem("access_token") ||
+    localStorage.getItem("access_token") &&
     localStorage.getItem("refresh_token")
   ) {
     return;
