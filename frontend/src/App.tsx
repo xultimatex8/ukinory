@@ -21,6 +21,7 @@ import InstructionsScreen from "./screens/instructions";
 import ComparisonScreen from "./screens/comparison";
 import ComparisonRoomScreen from "./screens/comparison/room";
 import JoinComparisonScreen from "./screens/comparison/join";
+import BackendWakeBanner from "./components/BackendWakeBanner";
 
 function PublicLayout() {
   return (
@@ -129,6 +130,7 @@ function App() {
         </Route>
       </Routes>
 
+      <BackendWakeBanner />
       <Analytics />
     </BrowserRouter>
   );
