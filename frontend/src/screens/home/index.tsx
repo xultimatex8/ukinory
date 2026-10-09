@@ -1,7 +1,7 @@
 import {
   ArrowRight,
   GitCompareArrows,
-  Heart,
+  Compass,
   UserRound,
   Users,
 } from "lucide-react";
@@ -15,7 +15,7 @@ const features = [
     title: "Discover Individual",
     description: "Find movies based on your personal taste.",
     action: "Start discovering",
-    icon: Heart,
+    icon: Compass,
     to: "/discover"
   },
   {
@@ -30,7 +30,7 @@ const features = [
     description: "Compare your movie taste with someone else.",
     action: "Compare tastes",
     icon: GitCompareArrows,
-    to: ""
+    to: "comparison"
   },
   {
     title: "Profile",

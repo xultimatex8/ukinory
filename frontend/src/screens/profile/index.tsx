@@ -146,7 +146,15 @@ export default function ProfileScreen() {
   return (
     <main className="min-h-screen bg-background text-text">
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-6 pt-8">
-        <section className="flex flex-1 flex-col">
+        <section className="relative flex flex-1 flex-col">
+          <Link
+            to="/"
+            className="absolute left-0 top-0 inline-flex items-center gap-2 text-sm text-text-muted transition hover:text-text"
+          >
+            <ArrowLeft size={16} />
+            Back to home
+          </Link>
+
           <AppHeader
             title="Your profile"
             description="View your account information."
@@ -293,13 +301,7 @@ export default function ProfileScreen() {
 
           <div className="mt-6 flex flex-col gap-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <Link
-                to="/"
-                className="inline-flex items-center gap-2 text-sm text-text-muted transition hover:text-text"
-              >
-                <ArrowLeft size={16} />
-                Back to home
-              </Link>
+              <div />
 
               <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
                 {user && !user.is_guest && (

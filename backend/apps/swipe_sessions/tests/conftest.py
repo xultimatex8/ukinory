@@ -4,7 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
-from apps.common.enums import SwipeAction, SwipeSessionStatus, SwipeSessionType
+from apps.common.enums import SwipeAction, SessionStatus, SwipeSessionType
 from apps.movies.models import Movie
 from apps.swipe_sessions.models import Swipe, SwipeSession, SwipeSessionCandidate
 
@@ -31,7 +31,7 @@ def another_movie(db):
 def swipe_session(db):
     return SwipeSession.objects.create(
         type=SwipeSessionType.INDIVIDUAL,
-        status=SwipeSessionStatus.WAITING,
+        status=SessionStatus.WAITING,
     )
 
 
@@ -39,7 +39,7 @@ def swipe_session(db):
 def another_swipe_session(db):
     return SwipeSession.objects.create(
         type=SwipeSessionType.INDIVIDUAL,
-        status=SwipeSessionStatus.WAITING,
+        status=SessionStatus.WAITING,
     )
 
 

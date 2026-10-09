@@ -5,6 +5,7 @@ class WatchlistSource(models.TextChoices):
     IMPORTED = "IMPORTED", "Imported"
     SWIPE_ADDED = "SWIPE_ADDED", "Swipe added"
     SWIPE_MATCH = "SWIPE_MATCH", "Swipe match"
+    COMPARISON_ADDED = "COMPARISON_ADDED", "Comparison added"
 
 
 class SwipeAction(models.TextChoices):
@@ -17,7 +18,7 @@ class SwipeSessionType(models.TextChoices):
     PAIRED = "PAIRED", "Paired"
 
 
-class SwipeSessionStatus(models.TextChoices):
+class SessionStatus(models.TextChoices):
     WAITING = "WAITING", "Waiting"
     ACTIVE = "ACTIVE", "Active"
     FINISHED = "FINISHED", "Finished"
@@ -33,3 +34,27 @@ class ImportJobStatus(models.TextChoices):
     RUNNING = "running", "Running"
     SUCCEEDED = "succeeded", "Succeeded"
     FAILED = "failed", "Failed"
+
+
+class InviteType(models.TextChoices):
+    COMPARISON = "comparison"
+    PAIRED_SWIPE = "paired_swipe"
+
+
+class InviteStatus(models.TextChoices):
+    PENDING = "Pending"
+    ACCEPTED = "Accepted"
+    EXPIRED = "Expired"
+
+
+class SessionType(models.TextChoices):
+    SWIPE_SESSION = "SWIPE_SESSION", "Swipe Session"
+    COMPARISON_SESSION = "COMPARISON_SESSION", "Comparison Session"
+
+
+class GenerationStatus(models.TextChoices):
+    PENDING = "pending"
+    RUNNING = "running"
+    READY = "ready"
+    NEEDS_DATA = "needs_data"
+    FAILED = "failed"

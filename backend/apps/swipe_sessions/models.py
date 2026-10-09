@@ -3,17 +3,13 @@ from __future__ import annotations
 from django.conf import settings
 from django.db import models
 
-from apps.common.models import BaseModel
+from apps.common.models import BaseModel, Session
 from apps.movies.models import Movie
-from apps.common.enums import SwipeAction, SwipeSessionStatus, SwipeSessionType
+from apps.common.enums import SwipeAction, SwipeSessionType
 
 
-class SwipeSession(BaseModel):
+class SwipeSession(Session):
     type = models.CharField(max_length=16, choices=SwipeSessionType.choices)
-    status = models.CharField(max_length=16, choices=SwipeSessionStatus.choices, default=SwipeSessionStatus.WAITING)
-    last_seen_at = models.DateTimeField(null=True, blank=True)
-
-    users = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="swipe_sessions")
 
 
 class SwipeSessionCandidate(BaseModel):

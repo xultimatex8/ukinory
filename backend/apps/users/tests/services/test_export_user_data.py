@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -273,8 +273,8 @@ def test_export_user_data_serializes_swipe_session_and_swipe():
         created_at=datetime(2026, 9, 23, 11, 30, tzinfo=timezone.utc),
     )
 
-    swipe_sessions = MagicMock()
-    swipe_sessions.all.return_value = [session]
+    sessions = MagicMock()
+    sessions.values_list.return_value = [10]
 
     swipes = MagicMock()
     swipes.select_related.return_value = [swipe]
@@ -294,14 +294,17 @@ def test_export_user_data_serializes_swipe_session_and_swipe():
         is_guest=False,
         created_at=datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc),
         last_active_at=None,
-        swipe_sessions=swipe_sessions,
+        sessions=sessions,
         swipes=swipes,
         ratings=ratings,
         watchlist_entries=watchlist_entries,
         legal_acceptances=legal_acceptances,
     )
 
-    result = export_user_data(user)
+    with patch("apps.users.services.export_user_data.SwipeSession") as swipe_session_model:
+        swipe_session_model.objects.filter.return_value = [session]
+
+        result = export_user_data(user)
 
     assert result["swipe_sessions"] == [
         {
@@ -343,8 +346,8 @@ def test_export_user_data_assigns_sequential_session_references():
         ),
     ]
 
-    swipe_sessions = MagicMock()
-    swipe_sessions.all.return_value = sessions
+    session_ids = MagicMock()
+    session_ids.values_list.return_value = [20, 35]
 
     swipes = MagicMock()
     swipes.select_related.return_value.all.return_value = []
@@ -364,14 +367,17 @@ def test_export_user_data_assigns_sequential_session_references():
         is_guest=False,
         created_at=datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc),
         last_active_at=None,
-        swipe_sessions=swipe_sessions,
+        sessions=session_ids,
         swipes=swipes,
         ratings=ratings,
         watchlist_entries=watchlist_entries,
         legal_acceptances=legal_acceptances,
     )
 
-    result = export_user_data(user)
+    with patch("apps.users.services.export_user_data.SwipeSession") as swipe_session_model:
+        swipe_session_model.objects.filter.return_value = sessions
+
+        result = export_user_data(user)
 
     assert result["swipe_sessions"][0]["session_reference"] == 1
     assert result["swipe_sessions"][1]["session_reference"] == 2

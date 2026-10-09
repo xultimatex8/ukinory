@@ -1,5 +1,7 @@
 from django.utils import timezone
 
+from apps.swipe_sessions.models import SwipeSession
+
 
 def _iso(value):
     return value.isoformat() if value else None
@@ -61,7 +63,10 @@ def _serialize_legal_acceptance(acceptance):
 
 
 def export_user_data(user):
-    swipe_sessions = list(user.swipe_sessions.all())
+    session_ids = user.sessions.values_list("pk", flat=True)
+    swipe_sessions = list(
+        SwipeSession.objects.filter(pk__in=session_ids)
+    )
     session_reference_by_pk = {s.pk: i + 1 for i, s in enumerate(swipe_sessions)}
 
     swipes = user.swipes.select_related("candidate", "candidate__movie", "candidate__session")

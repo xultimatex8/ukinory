@@ -1,0 +1,263 @@
+import pytest
+
+from django.urls import reverse
+from rest_framework.test import APIClient
+from unittest.mock import MagicMock, patch
+
+from apps.common.enums import GenerationStatus
+from apps.comparisons.exceptions import InsufficientDataError
+
+
+@pytest.fixture
+def api_client():
+    return APIClient()
+
+
+@pytest.mark.django_db
+class TestRoomResultView:
+    def test_requires_authentication(
+        self,
+        api_client,
+    ):
+        response = api_client.get(
+            reverse(
+                "room-result",
+                kwargs={
+                    "room_id": "00000000-0000-0000-0000-000000000001",
+                },
+            ),
+        )
+
+        assert response.status_code == 401
+
+    @patch(
+        "apps.comparisons.views.get_user_room"
+    )
+    def test_returns_409_when_room_has_no_comparison(
+        self,
+        mock_get_user_room,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+
+        room = MagicMock()
+        room.comparison = None
+        mock_get_user_room.return_value = room
+
+        response = api_client.get(
+            reverse(
+                "room-result",
+                kwargs={
+                    "room_id": "00000000-0000-0000-0000-000000000001",
+                },
+            ),
+        )
+
+        assert response.status_code == 409
+        assert response.data == {
+            "detail": "The comparison is not ready yet.",
+            "generation_status": None,
+        }
+
+    @patch(
+        "apps.comparisons.views.get_user_room"
+    )
+    def test_returns_409_when_comparison_is_not_ready(
+        self,
+        mock_get_user_room,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+
+        comparison = MagicMock()
+        comparison.generation_status = GenerationStatus.PENDING
+
+        room = MagicMock()
+        room.comparison = comparison
+
+        mock_get_user_room.return_value = room
+
+        response = api_client.get(
+            reverse(
+                "room-result",
+                kwargs={
+                    "room_id": "00000000-0000-0000-0000-000000000001",
+                },
+            ),
+        )
+
+        assert response.status_code == 409
+        assert response.data == {
+            "detail": "The comparison is not ready yet.",
+            "generation_status": GenerationStatus.PENDING,
+        }
+
+    @patch(
+        "apps.comparisons.views.attach_watchlist_state"
+    )
+    @patch(
+        "apps.comparisons.views.attach_participants"
+    )
+    @patch(
+        "apps.comparisons.views.attach_tmdb_metadata"
+    )
+    @patch(
+        "apps.comparisons.views.serialize_result"
+    )
+    @patch(
+        "apps.comparisons.views.get_comparison_result"
+    )
+    @patch(
+        "apps.comparisons.views.get_user_room"
+    )
+    def test_returns_serialized_result_when_comparison_is_ready(
+        self,
+        mock_get_user_room,
+        mock_get_comparison_result,
+        mock_serialize_result,
+        mock_attach_tmdb_metadata,
+        mock_attach_participants,
+        mock_attach_watchlist_state,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+
+        comparison = MagicMock()
+        comparison.pk = "comparison-id"
+        comparison.generation_status = GenerationStatus.READY
+
+        room = MagicMock()
+        room.comparison = comparison
+
+        result = MagicMock()
+
+        mock_get_user_room.return_value = room
+        mock_get_comparison_result.return_value = result
+
+        serialized = {
+            "comparison": "comparison-id",
+            "metrics": {"taste_overlap": 0.5},
+            "narrative": "You have similar tastes.",
+            "recommendations": [{"movie_id": 1}],
+        }
+        with_participants = {**serialized, "participants": {}}
+        with_watchlist = {
+            **with_participants,
+            "recommendations": [{"movie_id": 1, "in_watchlist": True}],
+        }
+
+        mock_serialize_result.return_value = serialized
+        mock_attach_tmdb_metadata.return_value = serialized
+        mock_attach_participants.return_value = with_participants
+        mock_attach_watchlist_state.return_value = with_watchlist
+
+        response = api_client.get(
+            reverse(
+                "room-result",
+                kwargs={
+                    "room_id": "00000000-0000-0000-0000-000000000001",
+                },
+            ),
+        )
+
+        assert response.status_code == 200
+        assert response.data == with_watchlist
+
+        mock_get_comparison_result.assert_called_once_with(
+            user=user,
+            comparison_id=comparison.pk,
+        )
+        mock_serialize_result.assert_called_once_with(result)
+        mock_attach_tmdb_metadata.assert_called_once_with(serialized)
+        mock_attach_participants.assert_called_once_with(
+            serialized,
+            result.comparison,
+            user,
+        )
+        mock_attach_watchlist_state.assert_called_once_with(
+            with_participants,
+            user,
+        )
+
+    @patch(
+        "apps.comparisons.views.get_comparison_result"
+    )
+    @patch(
+        "apps.comparisons.views.get_user_room"
+    )
+    def test_returns_422_when_there_is_insufficient_data(
+        self,
+        mock_get_user_room,
+        mock_get_comparison_result,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+
+        comparison = MagicMock()
+        comparison.pk = "comparison-id"
+        comparison.generation_status = GenerationStatus.READY
+
+        room = MagicMock()
+        room.comparison = comparison
+
+        mock_get_user_room.return_value = room
+        mock_get_comparison_result.side_effect = InsufficientDataError(
+            "Both participants need imported ratings."
+        )
+
+        response = api_client.get(
+            reverse(
+                "room-result",
+                kwargs={
+                    "room_id": "00000000-0000-0000-0000-000000000001",
+                },
+            ),
+        )
+
+        assert response.status_code == 422
+        assert response.data == {
+            "detail": "Both participants need imported ratings.",
+        }
+
+    @patch(
+        "apps.comparisons.views.get_comparison_result"
+    )
+    @patch(
+        "apps.comparisons.views.get_user_room"
+    )
+    def test_returns_default_message_for_empty_insufficient_data_error(
+        self,
+        mock_get_user_room,
+        mock_get_comparison_result,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+
+        comparison = MagicMock()
+        comparison.pk = "comparison-id"
+        comparison.generation_status = GenerationStatus.READY
+
+        room = MagicMock()
+        room.comparison = comparison
+
+        mock_get_user_room.return_value = room
+        mock_get_comparison_result.side_effect = InsufficientDataError()
+
+        response = api_client.get(
+            reverse(
+                "room-result",
+                kwargs={
+                    "room_id": "00000000-0000-0000-0000-000000000001",
+                },
+            ),
+        )
+
+        assert response.status_code == 422
+        assert response.data == {
+            "detail": "Not enough data to compare.",
+        }
