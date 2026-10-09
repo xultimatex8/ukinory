@@ -9,7 +9,7 @@ def delete_account(user, password=None):
         if not user.check_password(password):
             raise DeleteAccountError("Incorrect password")
 
-    session_ids = list(user.swipe_sessions.values_list("pk", flat=True))
+    session_ids = list(user.sessions.values_list("pk", flat=True))
 
     user.delete()
 

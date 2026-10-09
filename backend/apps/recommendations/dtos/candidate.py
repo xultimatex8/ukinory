@@ -18,3 +18,10 @@ class ScoredCandidate:
     cf_score: Optional[float]
     cf_was_propagated: bool
     final_score: float
+
+
+@dataclass(slots=True)
+class JointCandidate:
+    movie: Movie
+    score: float
+    per_user: list[float]

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.utils import timezone
 
-from apps.common.enums import SwipeSessionStatus
+from apps.common.enums import SessionStatus
 from apps.swipe_sessions.exceptions import (
     NotSessionMemberError,
     SwipeSessionFinishedError,
@@ -82,7 +82,7 @@ class TestCreateSwipeSession:
             session_type="solo",
         )
 
-        assert session.status == SwipeSessionStatus.WAITING
+        assert session.status == SessionStatus.WAITING
 
 
 class TestStartSwipeSession:
@@ -92,7 +92,7 @@ class TestStartSwipeSession:
         user,
         swipe_session,
     ):
-        assert swipe_session.status == SwipeSessionStatus.WAITING
+        assert swipe_session.status == SessionStatus.WAITING
 
         with patch(
             "apps.swipe_sessions.services.session.fill_candidate_pool"
@@ -105,7 +105,7 @@ class TestStartSwipeSession:
         result.refresh_from_db()
 
         assert result == swipe_session
-        assert result.status == SwipeSessionStatus.ACTIVE
+        assert result.status == SessionStatus.ACTIVE
         assert result.last_seen_at is not None
 
         fill_pool.assert_called_once_with(
@@ -117,8 +117,8 @@ class TestStartSwipeSession:
     @pytest.mark.parametrize(
         "status",
         [
-            SwipeSessionStatus.ACTIVE,
-            SwipeSessionStatus.FINISHED,
+            SessionStatus.ACTIVE,
+            SessionStatus.FINISHED,
         ],
     )
     def test_rejects_session_that_has_already_started_or_finished(
@@ -172,7 +172,7 @@ class TestEndSwipeSession:
     ):
         swipe_session.users.add(user)
 
-        swipe_session.status = SwipeSessionStatus.ACTIVE
+        swipe_session.status = SessionStatus.ACTIVE
         swipe_session.save(update_fields=["status"])
 
         summary = MagicMock()
@@ -189,7 +189,7 @@ class TestEndSwipeSession:
         swipe_session.refresh_from_db()
 
         assert result == summary
-        assert swipe_session.status == SwipeSessionStatus.FINISHED
+        assert swipe_session.status == SessionStatus.FINISHED
 
         export_watchlist.assert_called_once_with(
             user=user,
@@ -200,8 +200,8 @@ class TestEndSwipeSession:
     @pytest.mark.parametrize(
         "status",
         [
-            SwipeSessionStatus.WAITING,
-            SwipeSessionStatus.FINISHED,
+            SessionStatus.WAITING,
+            SessionStatus.FINISHED,
         ],
     )
     def test_rejects_session_that_is_not_active(
@@ -233,7 +233,7 @@ class TestEnsureSessionActive:
         self,
         swipe_session,
     ):
-        swipe_session.status = SwipeSessionStatus.ACTIVE
+        swipe_session.status = SessionStatus.ACTIVE
         swipe_session.last_seen_at = timezone.now() - timedelta(minutes=1)
         swipe_session.save(update_fields=["status", "last_seen_at"])
 
@@ -241,14 +241,14 @@ class TestEnsureSessionActive:
 
         swipe_session.refresh_from_db()
 
-        assert swipe_session.status == SwipeSessionStatus.ACTIVE
+        assert swipe_session.status == SessionStatus.ACTIVE
 
     @pytest.mark.django_db
     def test_allows_waiting_session_with_recent_created_at(
         self,
         swipe_session,
     ):
-        swipe_session.status = SwipeSessionStatus.WAITING
+        swipe_session.status = SessionStatus.WAITING
         swipe_session.last_seen_at = None
         swipe_session.created_at = timezone.now() - timedelta(minutes=1)
         swipe_session.save(
@@ -259,14 +259,14 @@ class TestEnsureSessionActive:
 
         swipe_session.refresh_from_db()
 
-        assert swipe_session.status == SwipeSessionStatus.WAITING
+        assert swipe_session.status == SessionStatus.WAITING
 
     @pytest.mark.django_db
     def test_raises_for_finished_session(
         self,
         swipe_session,
     ):
-        swipe_session.status = SwipeSessionStatus.FINISHED
+        swipe_session.status = SessionStatus.FINISHED
         swipe_session.save(update_fields=["status"])
 
         with pytest.raises(SwipeSessionFinishedError):
@@ -274,7 +274,7 @@ class TestEnsureSessionActive:
 
         swipe_session.refresh_from_db()
 
-        assert swipe_session.status == SwipeSessionStatus.FINISHED
+        assert swipe_session.status == SessionStatus.FINISHED
 
     @pytest.mark.django_db
     def test_finishes_stale_active_session(
@@ -284,7 +284,7 @@ class TestEnsureSessionActive:
     ):
         swipe_session.users.add(user)
 
-        swipe_session.status = SwipeSessionStatus.ACTIVE
+        swipe_session.status = SessionStatus.ACTIVE
         swipe_session.last_seen_at = timezone.now() - timedelta(minutes=3)
         swipe_session.save(update_fields=["status", "last_seen_at"])
 
@@ -299,7 +299,7 @@ class TestEnsureSessionActive:
 
         swipe_session.refresh_from_db()
 
-        assert swipe_session.status == SwipeSessionStatus.FINISHED
+        assert swipe_session.status == SessionStatus.FINISHED
 
         export_watchlist.assert_called_once_with(
             user=user,
@@ -314,7 +314,7 @@ class TestEnsureSessionActive:
     ):
         swipe_session.users.add(user)
 
-        swipe_session.status = SwipeSessionStatus.WAITING
+        swipe_session.status = SessionStatus.WAITING
         swipe_session.last_seen_at = None
         swipe_session.created_at = timezone.now() - timedelta(minutes=3)
         swipe_session.save(
@@ -332,7 +332,7 @@ class TestEnsureSessionActive:
 
         swipe_session.refresh_from_db()
 
-        assert swipe_session.status == SwipeSessionStatus.FINISHED
+        assert swipe_session.status == SessionStatus.FINISHED
 
         export_watchlist.assert_called_once_with(
             user=user,

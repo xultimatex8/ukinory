@@ -18,13 +18,33 @@ import EditProfileScreen from "./screens/profile/edit";
 import Footer from "./components/Footer";
 import LegalScreen from "./screens/legal";
 import InstructionsScreen from "./screens/instructions";
+import ComparisonScreen from "./screens/comparison";
+import ComparisonRoomScreen from "./screens/comparison/room";
+import JoinComparisonScreen from "./screens/comparison/join";
 
 function PublicLayout() {
   return (
-    <>
-      <Outlet />
+    <div className="flex min-h-screen flex-col">
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
       <Footer />
-    </>
+    </div>
+  );
+}
+
+function PublicNavbarLayout() {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <Navbar />
+
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
+      <Footer />
+    </div>
   );
 }
 
@@ -35,11 +55,15 @@ function LegalLayout() {
   const isAuthenticated = accessToken && refreshToken;
 
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       {isAuthenticated && <Navbar />}
-      <Outlet />
+
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
       <Footer />
-    </>
+    </div>
   );
 }
 
@@ -52,11 +76,15 @@ function AppLayout() {
   }
 
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       <Navbar />
-      <Outlet />
+
+      <main className="flex flex-1 flex-col">
+        <Outlet />
+      </main>
+
       <Footer />
-    </>
+    </div>
   );
 }
 
@@ -70,6 +98,10 @@ function App() {
             <Route path="/login" element={<LoginScreen />} />
             <Route path="/register" element={<RegisterScreen />} />
           </Route>
+        </Route>
+
+        <Route element={<PublicNavbarLayout />}>
+          <Route path="/comparison/join/:code" element={<JoinComparisonScreen />} />
         </Route>
 
         <Route element={<LegalLayout />}>
@@ -88,6 +120,8 @@ function App() {
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/profile/edit" element={<EditProfileScreen />} />
             <Route path="/instructions" element={<InstructionsScreen />} />
+            <Route path="/comparison" element={<ComparisonScreen />} />
+            <Route path="/comparison/room/:id" element={<ComparisonRoomScreen />} />
           </Route>
 
           <Route path="/500" element={<ServerErrorScreen />} />

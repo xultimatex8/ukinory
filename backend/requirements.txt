@@ -23,3 +23,6 @@ pandas
 numpy
 django-rq
 rq
+channels>=4
+channels-redis>=4
+daphne>=4

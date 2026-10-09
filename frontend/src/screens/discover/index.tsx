@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   FileArchive,
   FileText,
-  Heart,
+  Compass,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -185,7 +186,15 @@ export default function DiscoverScreen() {
   return (
     <main className="min-h-screen bg-background text-text">
       <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 pt-8">
-        <section>
+        <section className="relative">
+          <Link
+            to="/"
+            className="absolute left-0 top-0 inline-flex items-center gap-2 text-sm text-text-muted transition hover:text-text"
+          >
+            <ArrowLeft size={16} />
+            Back to home
+          </Link>
+
           <AppHeader
             title="Discover movies for you"
             description="Find movies based on your taste and improve your recommendations with your Letterboxd history."
@@ -246,7 +255,7 @@ export default function DiscoverScreen() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex h-12 w-12 items-center justify-center">
-                  <Heart
+                  <Compass
                     size={36}
                     strokeWidth={1.5}
                     className={`text-primary ${

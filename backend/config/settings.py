@@ -41,6 +41,7 @@ if RENDER_EXTERNAL_HOSTNAME:
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -58,10 +59,13 @@ INSTALLED_APPS = [
     'apps.recommendations',
     'apps.swipe_sessions',
     'apps.legal',
+    'apps.invites',
+    'apps.comparisons',
     'django_crontab',
     'django.contrib.postgres',
     'django_extensions',
     'django_rq',
+    'channels',
 ]
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -77,6 +81,10 @@ API_PRICING_USD_PER_M_TOKENS = {
         "input": float(0.25),
         "output": float(1.50),
     },
+    "gemini_narrative": {
+        "input": float(0.25),
+        "output": float(1.50),
+    }
 }
 
 API_QUOTAS = {
@@ -91,6 +99,10 @@ API_QUOTAS = {
     "gemini_generate": {
         "day": _budget_units(0.214),
         "week": _budget_units(1.5),
+    },
+    "gemini_narrative": {
+        "day": _budget_units(1.0),
+        "week": _budget_units(7.0),
     },
 }
 
@@ -125,6 +137,10 @@ CRONJOBS = [
     ("/5 * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
 
     ("/5 * * * *", "django.core.management.call_command", ["cleanup_stale_import_jobs"]),
+
+    ("*/5 * * * *", "django.core.management.call_command", ["expire_stale_invites"]),
+
+    ("*/5 * * * *", "django.core.management.call_command", ["close_stale_rooms"]),
 
     ("0 * * * *", "django.core.management.call_command", ["delete_stale_guests"]),
 ]
@@ -229,11 +245,19 @@ RQ_QUEUES = {
     },
 }
 
-# Disparo del worker vía GitHub Actions (ver apps/imports/services/github_dispatch.py)
 GITHUB_DISPATCH_TOKEN = os.getenv("GITHUB_DISPATCH_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO")  # p.ej. "tuusuario/turepo"
+GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_WORKFLOW_FILE = os.getenv("GITHUB_WORKFLOW_FILE", "process-imports.yml")
 GITHUB_DISPATCH_REF = os.getenv("GITHUB_DISPATCH_REF", "main")
+
+
+ASGI_APPLICATION = "config.asgi.application"
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [REDIS_URL]},
+    }
+}
 
 
 # Password validation

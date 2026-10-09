@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.common.enums import SwipeSessionStatus
+from apps.common.enums import SessionStatus
 from apps.swipe_sessions.models import SwipeSession
 from apps.swipe_sessions.services.session import STALE_SESSION_TIMEOUT, ensure_session_finished
 
@@ -16,7 +16,7 @@ class Command(BaseCommand):
         cutoff = timezone.now() - STALE_AFTER
 
         stale_sessions = SwipeSession.objects.filter(
-            status__in=[SwipeSessionStatus.WAITING, SwipeSessionStatus.ACTIVE],
+            status__in=[SessionStatus.WAITING, SessionStatus.ACTIVE],
         ).filter(
             Q(last_seen_at__lt=cutoff) | Q(last_seen_at__isnull=True, created_at__lt=cutoff)
         )
