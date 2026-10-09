@@ -95,6 +95,9 @@ class TestRoomResultView:
         }
 
     @patch(
+        "apps.comparisons.views.attach_watchlist_state"
+    )
+    @patch(
         "apps.comparisons.views.attach_participants"
     )
     @patch(
@@ -116,6 +119,7 @@ class TestRoomResultView:
         mock_serialize_result,
         mock_attach_tmdb_metadata,
         mock_attach_participants,
+        mock_attach_watchlist_state,
         api_client,
         user,
     ):
@@ -137,12 +141,18 @@ class TestRoomResultView:
             "comparison": "comparison-id",
             "metrics": {"taste_overlap": 0.5},
             "narrative": "You have similar tastes.",
-            "recommendations": [],
+            "recommendations": [{"movie_id": 1}],
+        }
+        with_participants = {**serialized, "participants": {}}
+        with_watchlist = {
+            **with_participants,
+            "recommendations": [{"movie_id": 1, "in_watchlist": True}],
         }
 
         mock_serialize_result.return_value = serialized
         mock_attach_tmdb_metadata.return_value = serialized
-        mock_attach_participants.return_value = serialized
+        mock_attach_participants.return_value = with_participants
+        mock_attach_watchlist_state.return_value = with_watchlist
 
         response = api_client.get(
             reverse(
@@ -154,7 +164,7 @@ class TestRoomResultView:
         )
 
         assert response.status_code == 200
-        assert response.data == serialized
+        assert response.data == with_watchlist
 
         mock_get_comparison_result.assert_called_once_with(
             user=user,
@@ -165,6 +175,10 @@ class TestRoomResultView:
         mock_attach_participants.assert_called_once_with(
             serialized,
             result.comparison,
+            user,
+        )
+        mock_attach_watchlist_state.assert_called_once_with(
+            with_participants,
             user,
         )
 
