@@ -67,6 +67,7 @@ export interface JointRecommendation {
   justification: string;
   poster_url?: string;
   tmdb_id?: number | string | null;
+  in_watchlist?: boolean;
 }
 
 export interface ComparisonResult {
@@ -120,6 +121,34 @@ export async function getComparisonResult(
     method: "GET",
   });
   return response.json();
+}
+
+export async function addRecommendationToWatchlist(
+  roomId: string,
+  movieId: string | number,
+): Promise<void> {
+  await apiFetch(`${COMPARISONS_PATH}/${roomId}/watchlist/${movieId}/`, {
+    method: "POST",
+  });
+}
+
+export async function removeRecommendationFromWatchlist(
+  roomId: string,
+  movieId: string | number,
+): Promise<void> {
+  await apiFetch(`${COMPARISONS_PATH}/${roomId}/watchlist/${movieId}/`, {
+    method: "DELETE",
+  });
+}
+
+export async function exportRecommendationsWatchlist(
+  roomId: string,
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${COMPARISONS_PATH}/${roomId}/watchlist/export/`,
+    { method: "GET" },
+  );
+  return response.blob();
 }
 
 export function buildRoomSocketUrl(roomId: string, token: string): string {

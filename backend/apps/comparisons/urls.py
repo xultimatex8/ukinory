@@ -9,6 +9,8 @@ from apps.comparisons.views import (
     RoomInviteView,
     RoomLeaveView,
     RoomResultView,
+    RoomWatchlistExportView,
+    RoomWatchlistItemView,
 )
 
 
@@ -20,5 +22,7 @@ urlpatterns = [
     path("comparison-rooms/<uuid:room_id>/leave/", RoomLeaveView.as_view(), name="room-leave"),
     path("<uuid:room_id>/generate/", RoomGenerateView.as_view(), name="room-generate"),
     path("<uuid:room_id>/result/", RoomResultView.as_view(), name="room-result"),
+    path("<uuid:room_id>/watchlist/export/", RoomWatchlistExportView.as_view(), name="room-watchlist-export"),
+    path("<uuid:room_id>/watchlist/<str:movie_id>/", RoomWatchlistItemView.as_view(), name="room-watchlist-item"),
     path("<str:comparison_id>/", ComparisonDetailView.as_view(), name="comparison-detail"),
 ]

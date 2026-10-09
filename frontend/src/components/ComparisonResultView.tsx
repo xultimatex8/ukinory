@@ -1,16 +1,29 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { ExternalLink, Film, Heart, Scale, Sparkles, Star } from "lucide-react";
+import {
+  Check,
+  Download,
+  ExternalLink,
+  Film,
+  Heart,
+  Loader2,
+  Plus,
+  Scale,
+  Sparkles,
+  Star,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import type {
   ComparisonEntry,
   ComparisonResult,
 } from "../services/comparisons";
+import { useRecommendationWatchlist } from "../hooks/useRecommendationWatchlist";
 
 interface ComparisonResultViewProps {
   result: ComparisonResult;
   currentUserId: number | string | null;
+  roomId: string;
 }
 
 type CardLayout = "vertical" | "horizontal";
@@ -243,6 +256,46 @@ function PairStat({
   );
 }
 
+function WatchlistButton({
+  title,
+  saved,
+  pending,
+  onClick,
+}: {
+  title: string;
+  saved: boolean;
+  pending: boolean;
+  onClick: () => void;
+}) {
+  const Icon = pending ? Loader2 : saved ? Check : Plus;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={pending}
+      aria-pressed={saved}
+      aria-label={
+        saved
+          ? `Remove ${title} from your watchlist`
+          : `Add ${title} to your watchlist`
+      }
+      className={`cursor-pointer flex w-full items-center justify-center gap-1.5 border-t border-border px-3 py-2 text-xs font-medium transition-colors disabled:opacity-60 ${
+        saved
+          ? "bg-primary/10 text-primary hover:bg-primary/20"
+          : "text-text-secondary hover:bg-background hover:text-primary"
+      }`}
+    >
+      <Icon
+        size={14}
+        aria-hidden="true"
+        className={pending ? "animate-spin" : ""}
+      />
+      {saved ? "In your watchlist" : "Add to watchlist"}
+    </button>
+  );
+}
+
 function MovieCard({
   title,
   year,
@@ -251,6 +304,7 @@ function MovieCard({
   justification,
   layout,
   tmdbId,
+  action,
   children,
 }: {
   title: string;
@@ -260,6 +314,7 @@ function MovieCard({
   genres?: string[];
   justification?: string;
   layout: CardLayout;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   const isHorizontal = layout === "horizontal";
@@ -291,6 +346,8 @@ function MovieCard({
       </div>
 
       {children}
+
+      {action}
 
       {href && (
         <a
@@ -371,8 +428,11 @@ function ComparisonMovieGrid({
 export default function ComparisonResultView({
   result,
   currentUserId,
+  roomId,
 }: ComparisonResultViewProps) {
   const { metrics, recommendations } = result;
+
+  const watchlist = useRecommendationWatchlist(roomId, recommendations);
 
   const keys = Object.keys(metrics.library_sizes);
 
@@ -451,7 +511,7 @@ export default function ComparisonResultView({
                     </span>
                   )}
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                <p className="pr-2 mt-2 text-sm leading-relaxed text-text-secondary">
                   {youNarrative}
                 </p>
               </div>
@@ -576,13 +636,53 @@ export default function ComparisonResultView({
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-text">
-          Recommended for both of you
-        </h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-text">
+              Recommended for both of you
+            </h2>
 
-        <p className="mt-1 text-sm text-text-muted">
-          Movies neither of you has seen, picked to match both of your tastes.
-        </p>
+            <p className="mt-1 text-sm text-text-muted">
+              Movies neither of you has seen, picked to match both of your
+              tastes.
+            </p>
+          </div>
+
+          {recommendations.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void watchlist.exportCsv()}
+              disabled={watchlist.savedCount === 0 || watchlist.isExporting}
+              title={
+                watchlist.savedCount === 0
+                  ? "Add some recommendations to your watchlist first"
+                  : undefined
+              }
+              className="inline-flex items-center gap-2 border border-border bg-surface px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-auto disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text-secondary"
+            >
+              {watchlist.isExporting ? (
+                <Loader2
+                  size={14}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Download size={14} aria-hidden="true" />
+              )}
+              Export watchlist
+              {watchlist.savedCount > 0 && ` (${watchlist.savedCount})`}
+            </button>
+          )}
+        </div>
+
+        {watchlist.error && (
+          <p
+            role="alert"
+            className="mt-3 border border-red-400/40 bg-red-400/10 px-3 py-2 text-xs text-red-400"
+          >
+            {watchlist.error}
+          </p>
+        )}
 
         {recommendations.length === 0 ? (
           <EmptyState
@@ -607,6 +707,14 @@ export default function ComparisonResultView({
                     genres={rec.genres}
                     justification={rec.justification}
                     layout={layout}
+                    action={
+                      <WatchlistButton
+                        title={rec.title}
+                        saved={watchlist.isSaved(rec.movie_id)}
+                        pending={watchlist.isPending(rec.movie_id)}
+                        onClick={() => void watchlist.toggle(rec.movie_id)}
+                      />
+                    }
                   >
                     <PairStat
                       caption="Taste fit"

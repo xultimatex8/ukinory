@@ -1,3 +1,4 @@
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -26,6 +27,12 @@ from apps.comparisons.services.room import (
     regenerate_invite,
     request_generation,
     touch_room,
+)
+from apps.comparisons.services.watchlist import (
+    add_recommendation_to_watchlist,
+    attach_watchlist_state,
+    export_recommendations_csv,
+    remove_recommendation_from_watchlist,
 )
 from apps.invites.exceptions import TooManyPendingInvitesError
 from apps.invites.serializers import InviteSerializer
@@ -203,4 +210,43 @@ class RoomResultView(APIView):
             )
 
         payload = attach_tmdb_metadata(serialize_result(result))
-        return Response(attach_participants(payload, result.comparison, request.user))
+        payload = attach_participants(payload, result.comparison, request.user)
+        return Response(attach_watchlist_state(payload, request.user))
+
+
+class RoomWatchlistItemView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, room_id, movie_id):
+        room = get_user_room(room_id=room_id, user=request.user)
+        add_recommendation_to_watchlist(
+            room=room, user=request.user, movie_id=movie_id
+        )
+        return Response({"in_watchlist": True}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, room_id, movie_id):
+        room = get_user_room(room_id=room_id, user=request.user)
+        remove_recommendation_from_watchlist(
+            room=room, user=request.user, movie_id=movie_id
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RoomWatchlistExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, room_id):
+        room = get_user_room(room_id=room_id, user=request.user)
+        content, count = export_recommendations_csv(room=room, user=request.user)
+
+        if count == 0:
+            return Response(
+                {"detail": "No recommended films in your watchlist yet."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        response = HttpResponse(content, content_type="text/csv")
+        response["Content-Disposition"] = (
+            'attachment; filename="ukinory_comparison_watchlist.csv"'
+        )
+        return response

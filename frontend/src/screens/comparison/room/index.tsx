@@ -677,6 +677,7 @@ export default function ComparisonRoomScreen() {
             <ComparisonResultView
               result={result}
               currentUserId={me?.id ?? null}
+              roomId={id!}
             />
           </div>
         )}
