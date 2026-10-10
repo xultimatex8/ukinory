@@ -5,8 +5,8 @@ from django.core.management.base import BaseCommand
 from django.db.models import Count, Q
 from django.utils import timezone
 
-from apps.swipe_sessions.models import SwipeSession
 from apps.swipe_sessions.services.cleanup import delete_orphaned_sessions
+from apps.common.models import Session
 
 GUEST_STALE_AFTER = timedelta(hours=12)
 
@@ -29,7 +29,7 @@ class Command(BaseCommand):
                 swipes_count=Count("swipes", distinct=True),
                 ratings_count=Count("ratings", distinct=True),
                 watchlist_count=Count("watchlist_entries", distinct=True),
-                sessions_count=Count("swipe_sessions", distinct=True),
+                sessions_count=Count("sessions", distinct=True),
             )
         )
 
@@ -49,7 +49,7 @@ class Command(BaseCommand):
         pks = [user.pk for user in stale_guest_list]
 
         affected_session_ids = list(
-            SwipeSession.objects.filter(users__in=pks).values_list("pk", flat=True).distinct()
+            Session.objects.filter(users__in=pks).values_list("pk", flat=True).distinct()
         )
 
         total_deleted, deleted_per_model = User.objects.filter(pk__in=pks).delete()
@@ -63,6 +63,6 @@ class Command(BaseCommand):
                 self.stdout.write(f"  - {model_label}: {count}")
 
         _, orphaned_per_model = delete_orphaned_sessions(session_ids=affected_session_ids)
-        orphaned_sessions = orphaned_per_model.get("swipe_sessions.SwipeSession", 0)
+        orphaned_sessions = orphaned_per_model.get("common.Session", 0)
         if orphaned_sessions:
-            self.stdout.write(f"Deleted {orphaned_sessions} orphaned swipe sessions.")
+            self.stdout.write(f"Deleted {orphaned_sessions} orphaned sessions.")
