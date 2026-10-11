@@ -17,3 +17,20 @@ export function apiUrl(input: RequestInfo | URL): RequestInfo | URL {
 
   return input;
 }
+
+export function wsUrl(path: string): string {
+  let base: string;
+
+  if (import.meta.env.PROD) {
+    if (!API_URL) {
+      throw new Error("VITE_API_URL is not configured.");
+    }
+    base = API_URL;
+  } else {
+    base = window.location.origin;
+  }
+
+  const url = new URL(path, base);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}

@@ -1,5 +1,5 @@
 import { apiFetch } from "./api";
-import { apiUrl } from "../api";
+import { wsUrl } from "../api";
 
 const COMPARISONS_PATH = "/api/comparisons";
 const ROOMS_PATH = COMPARISONS_PATH + "/comparison-rooms";
@@ -152,11 +152,7 @@ export async function exportRecommendationsWatchlist(
 }
 
 export function buildRoomSocketUrl(roomId: string, token: string): string {
-  const url = new URL(
-    String(apiUrl(`/ws/comparison-rooms/${roomId}/`)),
-    window.location.href,
-  );
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  const url = new URL(wsUrl(`/ws/comparison-rooms/${roomId}/`));
   url.searchParams.set("token", token);
   return url.toString();
 }

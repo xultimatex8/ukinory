@@ -134,9 +134,9 @@ CRONJOBS = [
 
     ("30 * * * *", "django.core.management.call_command", ["sync_embedding_batches"]),
 
-    ("/5 * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
+    ("*/5 * * * *", "django.core.management.call_command", ["close_stale_sessions"]),
 
-    ("/5 * * * *", "django.core.management.call_command", ["cleanup_stale_import_jobs"]),
+    ("*/5 * * * *", "django.core.management.call_command", ["cleanup_stale_import_jobs"]),
 
     ("*/5 * * * *", "django.core.management.call_command", ["expire_stale_invites"]),
 
