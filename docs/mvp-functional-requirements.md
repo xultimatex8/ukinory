@@ -1,5 +1,10 @@
 # Functional Requirements — Ukinory (MVP)
 
+Requirement ids: **FR-B** = backend, **FR-F** = frontend. Each backend requirement is
+traced to the entities it touches in the [data model](data-model.md#traceability-matrix).
+The [Letterboxd import flow](letterboxd-export-import-flow.md) shows how FR-B14 to FR-B19
+work end to end.
+
 ## Backend
 
 ### Authentication (registered or guest)
@@ -42,7 +47,7 @@
 - **FR-B27**: Expose the resulting profile (narrative summary only) through the API — the underlying metrics from FR-B24 are used to generate it but are not returned as standalone statistics.
 
 ### Compatibility comparison
-- **FR-B28**: Compute overlap and divergence metrics across two or more users linked via an accepted invite.
+- **FR-B28**: Compute overlap and divergence metrics across the users linked via an accepted invite. (The implementation supports exactly two participants.)
 - **FR-B29**: Generate LLM-based joint recommendations justified by the combined profiles.
 - **FR-B30**: Expose the comparison result (metrics + narrative + joint recommendations) through the API.
 
@@ -67,6 +72,14 @@
 ### Localization & error handling
 - **FR-B43**: Accept a language preference (Spanish or English) on requests that generate LLM content (profile narrative, comparison narrative, swipe justifications) and produce that content in the requested language.
 - **FR-B44**: Return a consistent, structured error response format for errors.
+
+### Comparison rooms and import processing
+- **FR-B45**: Create a comparison room together with its invite, limited to two participants. Support leaving a room, and clean up stale rooms that stop sending heartbeats.
+- **FR-B46**: Track the lifecycle of a comparison's generation (`PENDING` → `RUNNING` → `READY` / `NEEDS_DATA` / `FAILED`) so either participant can trigger it without running it twice, and skip regeneration when neither library has changed.
+- **FR-B47**: Allow a participant to save a comparison's recommendations to their watchlist, and export them as a Letterboxd-importable CSV scoped to that comparison.
+- **FR-B48**: Notify the participants of a comparison room in real time when something changes (partner joined, generation started, generation finished).
+- **FR-B49**: Track each Letterboxd import as a job with a status (`PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`), its result and its failure reason.
+- **FR-B50**: Embed only the films that drive a user's recommendations during the import itself, and defer the rest to an asynchronous batch process, so import time doesn't grow with library size.
 
 ## Frontend
 - **FR-F01**: Registration and login screens — registration includes a required checkbox to accept the Terms and Conditions and Privacy Policy (FR-B08).
