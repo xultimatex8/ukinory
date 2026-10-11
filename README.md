@@ -8,12 +8,12 @@
 
 <table>
   <tr>
-    <td><img src="docs/images/swipe_session.gif" alt="Swipe Session" width="500"></td>
-    <td><img src="docs/images/taste_comparison.gif" alt="Taste Comparison" width="500"></td>
+    <td><img src="docs/images/swipe_session.gif" alt="Swipe Session" width="375"></td>
+    <td><img src="docs/images/taste_comparison.gif" alt="Taste Comparison" width="375"></td>
   </tr>
   <tr>
-    <td><img src="docs/images/import_export.gif" alt="Import Letterboxd Export" width="500"></td>
-    <td><img src="docs/images/auth_screen.gif" alt="Authentication Screen" width="500"></td>
+    <td><img src="docs/images/import_export.gif" alt="Import Letterboxd Export" width="375"></td>
+    <td><img src="docs/images/auth_screen.gif" alt="Authentication Screen" width="375"></td>
   </tr>
 </table>
 
