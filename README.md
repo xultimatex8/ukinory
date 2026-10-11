@@ -1,184 +1,140 @@
 # Ukinory
 
-A web application for **movie taste analysis and collaborative movie discovery**, built around user-provided Letterboxd data, TMDb metadata, machine learning, and LLM-generated recommendations.
+**Movie taste analysis and collaborative movie discovery, built on your Letterboxd data.**
 
-It lets users import their Letterboxd history, generate a personalized taste profile, compare their tastes with other users, and discover movies through individual or real-time paired swipe sessions.
+**[Live demo](https://ukinory.vercel.app)** · [Documentation](#documentation) · [Run it locally](docs/development.md)
 
-## Main Features (MVP)
+[![CI](https://github.com/xultimatex8/ukinory/actions/workflows/ci.yml/badge.svg)](https://github.com/xultimatex8/ukinory/actions/workflows/ci.yml)
 
-* **Guest and registered accounts** — Use Ukinory without signing up, or create an account later to permanently keep your data.
-* **Letterboxd data import** — Upload your Letterboxd export and automatically match the movies with TMDb to retrieve their metadata.
-* **Personal taste profile** — Analyze a user's data to generate an AI-written profile describing their movie tastes.
-* **Taste comparison** — Connect two or more users and compare their movie preferences.
-* **Individual movie discovery** — Browse personalized movie recommendations through a Tinder-style swipe interface.
-* **Paired movie discovery** — Two users can swipe through the same recommendations in real time. When both users add a movie to their watchlist, Ukinory detects a match and "adds" it to both watchlists.
-* **Machine learning recommendations** — Predict how a user might rate unwatched movies and use ratings and swipe history to improve future recommendations.
-* **Watchlist export** — Export movies added through Ukinory as a Letterboxd-compatible CSV for manual import.
-* **Invite links** — Generate shareable, expiring links to connect with another user for a taste comparison or paired swipe session.
-* **Spanish and English** — Switch the application language.
+<table>
+  <tr>
+    <td><img src="docs/images/swipe_session.gif" alt="Swipe Session" width="500"></td>
+    <td><img src="docs/images/taste_comparison.gif" alt="Taste Comparison" width="500"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/import_export.gif" alt="Import Letterboxd Export" width="500"></td>
+    <td><img src="docs/images/auth_screen.gif" alt="Authentication Screen" width="500"></td>
+  </tr>
+</table>
 
-## Tech Stack
+Import your Letterboxd history and Ukinory builds an AI-written taste profile, recommends
+movies you haven't seen, and lets you compare tastes with a friend or swipe through
+recommendations together in real time.
+
+## Features
+
+- **Guest or registered use.** Start immediately as a guest and claim an account later without losing any data.
+- **Letterboxd import.** Upload your official Letterboxd export; each film is matched to TMDb and enriched with Wikidata metadata.
+- **Taste profile.** An LLM-written narrative about what you like, generated from your ratings and movie embeddings.
+- **Taste comparison.** Invite another person with a shareable, expiring link and get compatibility metrics, a narrative about the pair and joint recommendations.
+- **Swipe discovery.** Tinder-style movie cards with personalized recommendations combining content-based filtering, collaborative filtering and swipe behavior.
+- **Letterboxd-compatible export.** Download the movies you added as a CSV to import back into Letterboxd.
+- **Data rights.** Export all your data as JSON or delete your account at any time.
+
+### Planned Features
+
+- **Paired swipe.** Two people swipe the same recommendations live; when both add a movie to their watchlist, it's a match.
+- **Rating prediction.** Machine learning models predict how you'd rate unwatched movies and improve with your swipes.
+
+## How it works
+
+```mermaid
+flowchart LR
+    U([User]) --> FE[React + TypeScript]
+    FE -- "REST + JWT" --> API[Django API]
+    FE <-- "WebSockets" --> API
+    API --> DB[(PostgreSQL + pgvector)]
+    API --> R[(Redis)]
+    API --> TMDb[TMDb API]
+    API --> WD[Wikidata]
+    API --> G[Gemini API]
+```
+
+1. **Import.** The Letterboxd export is parsed and each film is matched to a TMDb id by title and year.
+2. **Enrich.** Metadata is fetched from Wikidata in batches and cached per movie.
+3. **Embed.** Gemini generates a semantic embedding per movie, stored in pgvector. Only the films that drive your recommendations are embedded during the import; the rest are processed asynchronously.
+4. **Recommend.** Candidates are ranked with vector search, combined with collaborative filtering and a per-user rating-prediction model.
+5. **Explain.** An LLM writes the taste profile and a short justification for each recommendation.
+
+The full walkthrough is in [the import flow](docs/letterboxd-export-import-flow.md).
+
+## Technical highlights
+
+- **Fast imports at any library size.** Embeddings are computed synchronously only for the top films by rating and likes, and the long tail goes through Gemini's batch API in the background. Import latency stays roughly constant instead of growing with library size.
+- **Idempotent embeddings.** Each movie's embedding text is hashed, so re-imports and pipeline changes only recompute what actually changed.
+- **Resilient external APIs.** TMDb and Wikidata calls are batched, paced and retried. A film with no match is recorded and the import continues; a systemic outage stops matching instead of hammering a failing API.
+- **Shared pacing and spend guardrails.** A Redis Lua script paces TMDb, Wikidata and Gemini embedding calls across all processes, and per-client daily and weekly budgets cap Gemini spend. Narrative generation reserves its cost up front and reconciles it against actual token usage.
+- **Guest-to-account without migration.** Guests and registered users share the same `User` row, so claiming an account is a single update.
+- **Cached comparisons with a privacy boundary.** Comparison results are cached by a hash of both libraries. Only a `public` subset of the metrics is returned by the API; the `internal` part only feeds the LLM prompt.
+- **Real-time rooms.** Comparison rooms and paired swipe sessions use WebSockets.
+
+## Tech stack
 
 | Layer | Technology |
 |---|---|
 | Backend | Django |
-| ORM | Django ORM |
-| AI / ML | Python |
-| Database | PostgreSQL (+pgvector) |
+| AI / ML | Python, Gemini API (embeddings and text) |
+| Database | PostgreSQL + pgvector |
+| Cache / real-time / queue | Redis, WebSockets, RQ |
 | Frontend | React (Vite) + TypeScript |
 | Styling | Tailwind CSS |
-| Containerization | Docker |
+| Data sources | TMDb, Wikidata |
+| Infrastructure | Docker Compose, GitHub Actions (CI/CD), Render, Vercel |
 
-More detail and rationale behind these decisions in [`docs/tech-stack.md`](docs/tech-stack.md).
+Rationale for each choice: [docs/tech-stack.md](docs/tech-stack.md).
 
-## Documentation
+## Testing and CI
 
-- [Tech Stack and rationale](docs/tech-stack.md)
-- [MVP functional requirements](docs/mvp-functional-requirements.md)
-- [Data model](docs/data-model.md)
-- [Letterboxd export import flow](docs/letterboxd-export-import-flow.md)
+Everything runs on [GitHub Actions](https://github.com/xultimatex8/ukinory/actions).
 
-## Running the Project
+- **CI** (`ci.yml`, on every pull request and push to `main`) runs three parallel jobs:
+  - *Backend*: Django system checks and the `pytest` suite, against real PostgreSQL + pgvector and Redis service containers.
+  - *Frontend*: lint and production build.
+  - *Docker Compose*: validates the Compose file, builds the images, starts the stack and waits for the backend health check.
+- **Secrets scan** (`secrets-scan.yml`): Gitleaks on every push and pull request, plus a weekly full run.
+- **CD** (`cd.yml`): publishing a GitHub release deploys the backend to Render and the frontend to Vercel.
+- **Scheduled jobs**: catalog seeding, embedding batch sync and the cleanup of stale guests, rooms, sessions, invites and import jobs run as scheduled workflows that call Django management commands against production. The import queue is processed the same way, by an RQ worker in burst mode that runs hourly and can also be dispatched by the backend on demand, so no always-on worker is needed.
 
-### Prerequisites
+See [docs/development.md](docs/development.md#tests) for how to run the tests locally.
 
-- [Git](https://git-scm.com/downloads)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+## Quick start
 
-> Python, Node.js, and PostgreSQL do not need to be installed locally. They run inside Docker containers.
-
-### 1. Clone the repository
+You only need [Git](https://git-scm.com/downloads) and [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
 ```bash
-git clone <REPOSITORY_URL>
+git clone https://github.com/xultimatex8/ukinory.git
 cd ukinory
-```
-
-### 2. Set up environment variables
-
-Create the `.env` file at the project root from the provided example:
-
-#### Windows PowerShell
-
-```powershell
-Copy-Item .env.example .env
-```
-
-#### Linux / macOS / WSL
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and fill in the required values:
-
-```env
-POSTGRES_DB=
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-POSTGRES_HOST=
-POSTGRES_PORT=
-
-DATABASE_URL=
-
-DJANGO_SECRET_KEY=
-
-ENVIRONMENT=
-
-GEMINI_API_KEY=
-
-TMDB_API_KEY=
-
-WIKIDATA_USER_AGENT=
-
-REDIS_URL=
-
-FRONTEND_URL=
-```
-
-### 3. Run the project
-
-Build and start all services:
-
-```bash
+cp .env.example .env        # then fill in the values (Windows: Copy-Item .env.example .env)
 docker compose up -d --build
 ```
-
-The application consists of three Docker containers:
-
-1. **Frontend** — React + Vite
-2. **Backend** — Django
-3. **Database** — PostgreSQL + pgvector
-
-The application will be available at:
 
 - Frontend: http://localhost:5173
 - Backend: http://localhost:8000
 
-### 4. Apply database migrations
+You'll need a [TMDb API key](https://www.themoviedb.org/settings/api) and a [Gemini API key](https://aistudio.google.com/apikey).
+Environment variables, migrations, day-to-day workflow and Jupyter are covered in the
+[development guide](docs/development.md).
 
-If migrations have not been applied automatically, run:
+## Documentation
 
-```bash
-docker compose exec backend python manage.py migrate
-```
+| Document | What's in it |
+|---|---|
+| [Tech stack](docs/tech-stack.md) | Technologies and why they were chosen |
+| [Functional requirements](docs/mvp-functional-requirements.md) | What the MVP does, requirement by requirement |
+| [Data model](docs/data-model.md) | Entities, relationships, design notes and requirement traceability |
+| [Letterboxd import flow](docs/letterboxd-export-import-flow.md) | End-to-end walkthrough of the import and embedding pipeline |
+| [Development guide](docs/development.md) | Local setup, environment variables, Jupyter, tests |
 
-### Day-to-day development
+## Known constraints
 
-The recommended development workflow is to leave Docker Compose running:
+- **Letterboxd has no usable API for this project**, and scraping is against their terms. Ukinory relies on the export that users download from their own account, so syncing back to Letterboxd is always a manual CSV round trip.
+- **Ukinory doesn't recreate Letterboxd's paid statistics.** The taste metrics are only used as input for the generated narrative and are never shown as stats or charts.
+- **Guest sessions can't be recovered.** If a guest loses their browser storage before claiming an account, the data is unreachable; inactive guest data is deleted automatically.
 
-```bash
-docker compose up -d
-```
+## Credits
 
-Source code is mounted into the containers, so changes made to the project are automatically detected:
+This product uses the TMDb API but is not endorsed or certified by TMDb. Ukinory is not
+affiliated with Letterboxd.
 
-- **React/Vite** uses Hot Module Replacement (HMR), so frontend changes are reflected automatically in the browser.
-- **Django** uses its development server's autoreloader, so backend changes automatically restart the server.
-- **PostgreSQL** runs continuously in its own container, with its data persisted using a Docker volume.
-
-When you finish working, stop the containers with:
-
-```bash
-docker compose down
-```
-
-This stops and removes the containers while **preserving the PostgreSQL data** stored in the Docker volume.
-
-If you need to rebuild the containers, for example after changing dependencies or Dockerfiles, use:
-
-```bash
-docker compose up -d --build
-```
-
-To stop the containers and **delete all PostgreSQL data**, use:
-
-```bash
-docker compose down -v
-```
-
-### Running Jupyter Notebook
-
-Jupyter Notebook is available inside the backend container for data analysis and experimentation. It is optional and does not need to be running for the application itself.
-
-Make sure the Docker Compose services are running:
-
-```bash
-docker compose up -d
-```
-
-Then start Jupyter with:
-
-```bash
-docker compose exec backend jupyter notebook --ip=0.0.0.0 --port=8888 --allow-root --no-browser
-```
-
-The terminal will display a URL similar to:
-
-```text
-http://127.0.0.1:8888/tree?token=<generated-token>
-```
-
-Open the displayed URL in your browser to access Jupyter Notebook. The authentication token is generated automatically when Jupyter starts, so use the URL printed in the terminal rather than copying the example above.
-
-When you are finished, stop Jupyter with `Ctrl+C` in the terminal where it is running.
+Built by [Alejandro González Macías](https://github.com/xultimatex8) ·
+[LinkedIn](https://linkedin.com/in/alejandro-gonzalez-macias-agm)
