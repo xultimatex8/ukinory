@@ -7,8 +7,6 @@ import LoginScreen from "./screens/login";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicOnlyRoute from "./components/PublicOnlyRoute";
 import HomeScreen from "./screens/home";
-import DiscoverScreen from "./screens/discover";
-import DiscoverSessionScreen from "./screens/discover/session";
 import NotFoundScreen from "./screens/not-found";
 import ServerErrorScreen from "./screens/server-error";
 import ProfileScreen from "./screens/profile";
@@ -20,8 +18,12 @@ import LegalScreen from "./screens/legal";
 import InstructionsScreen from "./screens/instructions";
 import ComparisonScreen from "./screens/comparison";
 import ComparisonRoomScreen from "./screens/comparison/room";
-import JoinComparisonScreen from "./screens/comparison/join";
+import JoinComparisonScreen from "./screens/join";
 import BackendWakeBanner from "./components/BackendWakeBanner";
+import TogetherStartScreen from "./screens/discover/together";
+import PairedSessionScreen from "./screens/discover/together/session";
+import DiscoverScreen from "./screens/discover/individual";
+import DiscoverSessionScreen from "./screens/discover/individual/session";
 
 function PublicLayout() {
   return (
@@ -102,7 +104,7 @@ function App() {
         </Route>
 
         <Route element={<PublicNavbarLayout />}>
-          <Route path="/comparison/join/:code" element={<JoinComparisonScreen />} />
+          <Route path="/join/:code" element={<JoinComparisonScreen />} />
         </Route>
 
         <Route element={<LegalLayout />}>
@@ -123,6 +125,8 @@ function App() {
             <Route path="/instructions" element={<InstructionsScreen />} />
             <Route path="/comparison" element={<ComparisonScreen />} />
             <Route path="/comparison/room/:id" element={<ComparisonRoomScreen />} />
+            <Route path="/discover/together" element={<TogetherStartScreen />} />
+            <Route path="/discover/together/:id" element={<PairedSessionScreen />} />
           </Route>
 
           <Route path="/500" element={<ServerErrorScreen />} />

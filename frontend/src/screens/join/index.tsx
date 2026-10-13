@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import ErrorScreen from "../../../components/ErrorScreen";
-import { createGuest } from "../../../services/auth";
-import { getErrorMessage } from "../../../utils/errors";
-import { acceptInvite } from "../../../services/invites";
+import ErrorScreen from "../../components/ErrorScreen";
+import { createGuest } from "../../services/auth";
+import { getErrorMessage } from "../../utils/errors";
+import { acceptInvite } from "../../services/invites";
+
+const PAIRED_SWIPE_INVITE_TYPE = "PAIRED_SWIPE";
 
 async function ensureSession(): Promise<void> {
   if (
@@ -34,7 +36,12 @@ export default function JoinComparisonScreen() {
       try {
         await ensureSession();
         const accepted = await acceptInvite(code);
-        navigate(`/comparison/room/${accepted.target.id}`, { replace: true });
+        navigate(
+          accepted.target.type === PAIRED_SWIPE_INVITE_TYPE
+            ? `/discover/together/${accepted.target.id}`
+            : `/comparison/room/${accepted.target.id}`,
+          { replace: true },
+        );
       } catch (err) {
         setError(getErrorMessage(err));
       }

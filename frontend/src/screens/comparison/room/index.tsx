@@ -16,6 +16,7 @@ import ErrorScreen from "../../../components/ErrorScreen";
 import { getCurrentUser, type User } from "../../../services/user";
 import {
   leaveRoom,
+  regenerateInvite,
   type Invite,
 } from "../../../services/comparisons";
 import { useComparisonRoom } from "../../../hooks/useComparisonRoom";
@@ -563,8 +564,8 @@ export default function ComparisonRoomScreen() {
             </div>
 
             <InviteSharePanel
-              roomId={id!}
               initialInvite={initialInvite}
+              onRegenerate={() => regenerateInvite(id!)}
             />
 
             {room && !room.you_have_data && (
