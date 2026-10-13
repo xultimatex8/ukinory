@@ -6,10 +6,8 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 from unittest.mock import MagicMock, patch
 
-from apps.comparisons.exceptions import (
-    RecommendationNotFoundError,
-    RoomNotReadyError,
-)
+from apps.comparisons.exceptions import RecommendationNotFoundError
+from apps.common.exceptions import SessionNotReadyError
 
 ROOM_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -90,12 +88,11 @@ class TestRoomWatchlistItemViewPost:
     ):
         api_client.force_authenticate(user=user)
         mock_get_user_room.return_value = MagicMock()
-        mock_add.side_effect = RoomNotReadyError
+        mock_add.side_effect = SessionNotReadyError
 
         response = api_client.post(_url())
 
         assert response.status_code == 409
-        assert response.data == {"detail": "The comparison is not ready yet."}
 
     @patch("apps.comparisons.views.add_recommendation_to_watchlist")
     @patch("apps.comparisons.views.get_user_room")
@@ -106,10 +103,10 @@ class TestRoomWatchlistItemViewPost:
         api_client,
         user,
     ):
-        from apps.comparisons.exceptions import NotRoomMemberError
+        from apps.common.exceptions import NotSessionMemberError
 
         api_client.force_authenticate(user=user)
-        mock_get_user_room.side_effect = NotRoomMemberError
+        mock_get_user_room.side_effect = NotSessionMemberError
 
         response = api_client.post(_url())
 

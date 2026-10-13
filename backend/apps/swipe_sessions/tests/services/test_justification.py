@@ -6,12 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import override_settings
 
-from apps.swipe_sessions.exceptions import (
-    CandidateNotFoundError,
-    JustificationUnavailableError,
-    NotSessionMemberError,
-    SwipeSessionNotFoundError,
-)
+from apps.swipe_sessions.exceptions import (CandidateNotFoundError, JustificationUnavailableError)
 from apps.swipe_sessions.models import CandidateJustification, SwipeSessionCandidate
 from apps.swipe_sessions.services.justification import (
     DEFAULT_MODEL,
@@ -21,7 +16,7 @@ from apps.swipe_sessions.services.justification import (
     ensure_candidate_justification,
     get_candidate_justification,
 )
-from apps.common.exceptions import QuotaExceeded
+from apps.common.exceptions import NotSessionMemberError, QuotaExceeded, SessionNotFoundError
 
 
 class TestJustificationClient:
@@ -290,7 +285,7 @@ class TestEnsureCandidateJustification:
 class TestGetCandidateJustification:
     @pytest.mark.django_db
     def test_raises_when_session_does_not_exist(self, user):
-        with pytest.raises(SwipeSessionNotFoundError):
+        with pytest.raises(SessionNotFoundError):
             get_candidate_justification(
                 user=user,
                 session_id=999999,

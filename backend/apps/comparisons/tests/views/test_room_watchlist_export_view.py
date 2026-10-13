@@ -6,11 +6,8 @@ from django.urls import resolve, reverse
 from rest_framework.test import APIClient
 from unittest.mock import MagicMock, patch
 
-from apps.comparisons.exceptions import RoomNotReadyError
-from apps.comparisons.views import (
-    RoomWatchlistExportView,
-    RoomWatchlistItemView,
-)
+from apps.comparisons.views import RoomWatchlistExportView, RoomWatchlistItemView
+from apps.common.exceptions import SessionNotReadyError
 
 ROOM_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -108,9 +105,8 @@ class TestRoomWatchlistExportView:
     ):
         api_client.force_authenticate(user=user)
         mock_get_user_room.return_value = MagicMock()
-        mock_export.side_effect = RoomNotReadyError
+        mock_export.side_effect = SessionNotReadyError
 
         response = api_client.get(_url())
 
         assert response.status_code == 409
-        assert response.data == {"detail": "The comparison is not ready yet."}

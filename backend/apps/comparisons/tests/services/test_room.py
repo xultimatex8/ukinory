@@ -14,14 +14,8 @@ from apps.common.enums import (
     SessionStatus,
     SessionType,
 )
-from apps.comparisons.exceptions import (
-    InsufficientDataError,
-    NotRoomMemberError,
-    RoomClosedError,
-    RoomFullError,
-    RoomNotFoundError,
-    RoomNotReadyError,
-)
+from apps.comparisons.exceptions import InsufficientDataError
+from apps.common.exceptions import NotSessionMemberError, SessionClosedError, SessionFullError, SessionNotFoundError, SessionNotReadyError
 from apps.comparisons.models import Comparison, ComparisonSession
 from apps.comparisons.services.room import (
     RUNNING_TIMEOUT,
@@ -105,14 +99,14 @@ class RoomServiceTests(TestCase):
         self.assertEqual(result.pk, room.pk)
 
     def test_get_user_room_raises_for_missing_room(self):
-        with self.assertRaises(RoomNotFoundError):
+        with self.assertRaises(SessionNotFoundError):
             get_user_room(
                 room_id=999999,
                 user=self.user,
             )
 
     def test_get_user_room_raises_for_invalid_room_id(self):
-        with self.assertRaises(RoomNotFoundError):
+        with self.assertRaises(SessionNotFoundError):
             get_user_room(
                 room_id="not-an-id",
                 user=self.user,
@@ -121,7 +115,7 @@ class RoomServiceTests(TestCase):
     def test_get_user_room_raises_for_non_member(self):
         room = self._room()
 
-        with self.assertRaises(NotRoomMemberError):
+        with self.assertRaises(NotSessionMemberError):
             get_user_room(
                 room_id=room.pk,
                 user=self.partner,
@@ -336,7 +330,7 @@ class RoomServiceTests(TestCase):
             status=SessionStatus.ACTIVE,
         )
 
-        with self.assertRaises(RoomClosedError):
+        with self.assertRaises(SessionClosedError):
             regenerate_invite(
                 user=self.user,
                 room=room,
@@ -347,7 +341,7 @@ class RoomServiceTests(TestCase):
         invite.session = None
         invite.save(update_fields=["session"])
 
-        with self.assertRaises(RoomNotFoundError):
+        with self.assertRaises(SessionNotFoundError):
             join_room_from_invite(
                 invite,
                 self.partner,
@@ -362,7 +356,7 @@ class RoomServiceTests(TestCase):
             expires_at=timezone.now() + timedelta(minutes=5),
         )
 
-        with self.assertRaises(RoomNotFoundError):
+        with self.assertRaises(SessionNotFoundError):
             join_room_from_invite(
                 invite,
                 self.partner,
@@ -374,7 +368,7 @@ class RoomServiceTests(TestCase):
         )
         invite = self._invite(room=room)
 
-        with self.assertRaises(RoomClosedError):
+        with self.assertRaises(SessionClosedError):
             join_room_from_invite(
                 invite,
                 self.partner,
@@ -386,7 +380,7 @@ class RoomServiceTests(TestCase):
         )
         invite = self._invite(room=room)
 
-        with self.assertRaises(RoomFullError):
+        with self.assertRaises(SessionFullError):
             join_room_from_invite(
                 invite,
                 self.partner,
@@ -404,7 +398,7 @@ class RoomServiceTests(TestCase):
             password="pw",
         )
 
-        with self.assertRaises(RoomFullError):
+        with self.assertRaises(SessionFullError):
             join_room_from_invite(
                 invite,
                 other,
@@ -476,7 +470,7 @@ class RoomServiceTests(TestCase):
             status=SessionStatus.WAITING,
         )
 
-        with self.assertRaises(RoomNotReadyError):
+        with self.assertRaises(SessionNotReadyError):
             request_generation(room=room)
 
     def test_request_generation_rejects_room_without_comparison(self):
@@ -484,7 +478,7 @@ class RoomServiceTests(TestCase):
             status=SessionStatus.ACTIVE,
         )
 
-        with self.assertRaises(RoomNotReadyError):
+        with self.assertRaises(SessionNotReadyError):
             request_generation(room=room)
 
     @mock.patch(

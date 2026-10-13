@@ -7,11 +7,7 @@ import pytest
 from django.utils import timezone
 
 from apps.common.enums import SessionStatus
-from apps.swipe_sessions.exceptions import (
-    NotSessionMemberError,
-    SwipeSessionFinishedError,
-    SwipeSessionNotFoundError,
-)
+from apps.common.exceptions import NotSessionMemberError, SessionFinishedError, SessionNotFoundError
 from apps.swipe_sessions.services.session import (
     create_swipe_session,
     end_swipe_session,
@@ -39,7 +35,7 @@ class TestGetUserSwipeSession:
 
     @pytest.mark.django_db
     def test_raises_when_session_does_not_exist(self, user):
-        with pytest.raises(SwipeSessionNotFoundError):
+        with pytest.raises(SessionNotFoundError):
             get_user_swipe_session(
                 session_id=999999,
                 user=user,
@@ -269,7 +265,7 @@ class TestEnsureSessionActive:
         swipe_session.status = SessionStatus.FINISHED
         swipe_session.save(update_fields=["status"])
 
-        with pytest.raises(SwipeSessionFinishedError):
+        with pytest.raises(SessionFinishedError):
             ensure_session_active(swipe_session)
 
         swipe_session.refresh_from_db()
@@ -294,7 +290,7 @@ class TestEnsureSessionActive:
             "apps.swipe_sessions.services.session.export_watchlist_csv",
             return_value=summary,
         ) as export_watchlist:
-            with pytest.raises(SwipeSessionFinishedError):
+            with pytest.raises(SessionFinishedError):
                 ensure_session_active(swipe_session)
 
         swipe_session.refresh_from_db()
@@ -327,7 +323,7 @@ class TestEnsureSessionActive:
             "apps.swipe_sessions.services.session.export_watchlist_csv",
             return_value=summary,
         ) as export_watchlist:
-            with pytest.raises(SwipeSessionFinishedError):
+            with pytest.raises(SessionFinishedError):
                 ensure_session_active(swipe_session)
 
         swipe_session.refresh_from_db()

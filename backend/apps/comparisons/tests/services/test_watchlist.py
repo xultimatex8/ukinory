@@ -5,10 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.common.enums import SessionType, WatchlistSource
-from apps.comparisons.exceptions import (
-    RecommendationNotFoundError,
-    RoomNotReadyError,
-)
+from apps.comparisons.exceptions import RecommendationNotFoundError
 from apps.comparisons.models import (
     Comparison,
     ComparisonNarrative,
@@ -22,6 +19,7 @@ from apps.comparisons.services.watchlist import (
 )
 from apps.library.models import WatchlistEntry
 from apps.movies.models import Movie
+from apps.common.exceptions import SessionNotReadyError
 
 User = get_user_model()
 
@@ -86,7 +84,7 @@ class ReadinessTests(WatchlistServiceTestCase):
         room = self._create_room(with_comparison=False)
         room = ComparisonSession.objects.get(pk=room.pk)
 
-        with self.assertRaises(RoomNotReadyError):
+        with self.assertRaises(SessionNotReadyError):
             add_recommendation_to_watchlist(
                 room=room, user=self.user, movie_id=self.dune.pk
             )
@@ -96,7 +94,7 @@ class ReadinessTests(WatchlistServiceTestCase):
             inputs_hash="changed"
         )
 
-        with self.assertRaises(RoomNotReadyError):
+        with self.assertRaises(SessionNotReadyError):
             add_recommendation_to_watchlist(
                 room=self.fresh_room(), user=self.user, movie_id=self.dune.pk
             )
@@ -113,7 +111,7 @@ class ReadinessTests(WatchlistServiceTestCase):
         room = self._create_room(with_comparison=False)
         room = ComparisonSession.objects.get(pk=room.pk)
 
-        with self.assertRaises(RoomNotReadyError):
+        with self.assertRaises(SessionNotReadyError):
             export_recommendations_csv(room=room, user=self.user)
 
 

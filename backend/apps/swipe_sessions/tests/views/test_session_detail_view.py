@@ -37,7 +37,7 @@ class TestSwipeSessionDetailView:
 
         assert response.status_code == 404
         assert response.data == {
-            "detail": "Swipe session not found."
+            "detail": "Session not found."
         }
 
     def test_returns_403_for_non_member(

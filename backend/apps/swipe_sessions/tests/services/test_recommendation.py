@@ -5,10 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from apps.swipe_sessions.exceptions import (
-    NotSessionMemberError,
-    SwipeSessionNotFoundError,
-)
+from apps.common.exceptions import NotSessionMemberError, SessionNotFoundError
 from apps.swipe_sessions.models import CandidateJustification, Swipe, SwipeSessionCandidate
 from apps.swipe_sessions.services.recommendation import (
     get_next_recommendation,
@@ -364,7 +361,7 @@ class TestGetNextRecommendation:
 class TestGetNextRecommendationForSession:
     @pytest.mark.django_db
     def test_raises_when_session_does_not_exist(self, user):
-        with pytest.raises(SwipeSessionNotFoundError):
+        with pytest.raises(SessionNotFoundError):
             get_next_recommendation_for_session(
                 session_id=999999,
                 user=user,
