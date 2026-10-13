@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 from django.db import transaction
-from django.utils import timezone
 
-from apps.common.enums import SwipeAction, SwipeSessionType
-from apps.library.models import WatchlistEntry, WatchlistSource
-from apps.movies.models import Movie
+from apps.common.enums import SwipeAction, SwipeSessionType, WatchlistSource
+from apps.common.services.sessions import touch_session
+from apps.library.services.watchlist import add_movie
 from apps.swipe_sessions.dtos.swipe_outcome import SwipeOutcome
 from apps.swipe_sessions.exceptions import CandidateNotFoundError
 from apps.swipe_sessions.models import Swipe, SwipeSessionCandidate
 from apps.swipe_sessions.realtime import notify_session
 from apps.swipe_sessions.services.paired import match_payload
-from apps.common.services.sessions import touch_session
 
 
 def get_session_candidate(candidate_id, session) -> SwipeSessionCandidate:
@@ -22,19 +20,6 @@ def get_session_candidate(candidate_id, session) -> SwipeSessionCandidate:
         )
     except SwipeSessionCandidate.DoesNotExist as exc:
         raise CandidateNotFoundError from exc
-
-
-def _add_to_watchlist(user, movie: Movie, source: str) -> None:
-    WatchlistEntry.objects.update_or_create(
-        user=user,
-        title=movie.title,
-        release_year=movie.release_year,
-        defaults={
-            "movie": movie,
-            "source": source,
-            "added_date": timezone.now(),
-        },
-    )
 
 
 def _detect_match(user, candidate: SwipeSessionCandidate, action: str) -> dict | None:
@@ -49,9 +34,9 @@ def _detect_match(user, candidate: SwipeSessionCandidate, action: str) -> dict |
     if not partner_swipes:
         return None
 
-    _add_to_watchlist(user, candidate.movie, WatchlistSource.SWIPE_MATCH)
+    add_movie(user, candidate.movie, WatchlistSource.SWIPE_MATCH, True)
     for partner_swipe in partner_swipes:
-        _add_to_watchlist(partner_swipe.user, candidate.movie, WatchlistSource.SWIPE_MATCH)
+        add_movie(partner_swipe.user, candidate.movie, WatchlistSource.SWIPE_MATCH, True)
 
     return match_payload(candidate)
 
@@ -97,7 +82,7 @@ def record_swipe(user, candidate: SwipeSessionCandidate, action: str) -> SwipeOu
     touch_session(candidate.session_id)
 
     if action == SwipeAction.WATCHLIST:
-        _add_to_watchlist(user, candidate.movie, WatchlistSource.SWIPE_ADDED)
+        add_movie(user, candidate.movie, WatchlistSource.SWIPE_ADDED)
 
     if not paired:
         return SwipeOutcome(swipe=swipe)
