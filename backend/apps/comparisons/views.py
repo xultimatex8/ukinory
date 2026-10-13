@@ -22,7 +22,7 @@ from apps.comparisons.services.room import (
     leave_room,
     regenerate_invite,
     request_generation,
-    touch_room,
+    heartbeat_room,
 )
 from apps.comparisons.services.watchlist import (
     add_recommendation_to_watchlist,
@@ -71,7 +71,7 @@ class RoomDetailView(APIView):
 
     def get(self, request, room_id):
         room = get_user_room(room_id=room_id, user=request.user)
-        touch_room(room.pk)
+        heartbeat_room(room.pk)
         return Response(build_room_state(room, request.user))
 
 

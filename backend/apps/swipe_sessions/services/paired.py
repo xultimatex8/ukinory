@@ -16,7 +16,8 @@ from apps.library.models import Rating
 from apps.swipe_sessions.constants import PAIRED_MAX_PARTICIPANTS
 from apps.swipe_sessions.exceptions import PairedSessionRequiredError
 from apps.swipe_sessions.models import SwipeSession, SwipeSessionCandidate
-from apps.swipe_sessions.services.session import create_swipe_session, touch_session
+from apps.swipe_sessions.services.session import create_swipe_session
+from apps.common.services.sessions import touch_session
 from apps.common.exceptions import SessionClosedError
 
 

@@ -11,7 +11,7 @@ from apps.swipe_sessions.exceptions import CandidateNotFoundError
 from apps.swipe_sessions.models import Swipe, SwipeSessionCandidate
 from apps.swipe_sessions.realtime import notify_session
 from apps.swipe_sessions.services.paired import match_payload
-from apps.swipe_sessions.services.session import touch_session
+from apps.common.services.sessions import touch_session
 
 
 def get_session_candidate(candidate_id, session) -> SwipeSessionCandidate:

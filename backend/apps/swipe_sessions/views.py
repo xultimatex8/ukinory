@@ -33,8 +33,8 @@ from apps.swipe_sessions.services.session import (
     ensure_session_active,
     get_user_swipe_session,
     start_swipe_session,
-    touch_session,
 )
+from apps.common.services.sessions import touch_session
 from apps.swipe_sessions.services.swipe import get_session_candidate, record_swipe
 
 

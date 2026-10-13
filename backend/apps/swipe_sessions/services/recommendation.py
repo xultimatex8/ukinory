@@ -10,8 +10,8 @@ from apps.swipe_sessions.services.candidate_pool import (
     fill_paired_candidate_pool,
 )
 from apps.swipe_sessions.exceptions import PairedDataMissingError
-from apps.swipe_sessions.services.session import ensure_session_active
-from apps.common.exceptions import NotSessionMemberError, SessionNotFoundError, SessionNotReadyError
+from apps.swipe_sessions.services.session import ensure_session_active, get_user_swipe_session
+from apps.common.exceptions import SessionNotReadyError
 
 
 DEFAULT_POOL_REFILL_THRESHOLD = 5
@@ -63,18 +63,12 @@ def get_next_recommendation_for_session(
     session_id,
     user,
 ) -> tuple[SwipeSessionCandidate, RecommendationCandidate] | None:
-    try:
-        session = SwipeSession.objects.get(pk=session_id)
-    except SwipeSession.DoesNotExist as exc:
-        raise SessionNotFoundError from exc
-
-    if not session.users.filter(pk=user.pk).exists():
-        raise NotSessionMemberError
+    session = get_user_swipe_session(session_id=session_id, user=user)
 
     ensure_session_active(session)
 
     if session.type == SwipeSessionType.PAIRED and session.status != SessionStatus.ACTIVE:
-        raise SessionNotReadyError
+        raise SessionNotReadyError("The session has not started yet.")
 
     return get_next_recommendation(
         session=session,
