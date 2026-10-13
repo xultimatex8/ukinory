@@ -16,12 +16,7 @@ from apps.swipe_sessions.services.candidate_pool import (
     fill_paired_candidate_pool,
 )
 from apps.swipe_sessions.services.watchlist_export import export_watchlist_csv
-from apps.swipe_sessions.exceptions import (
-    NotSessionMemberError,
-    PartnerNotJoinedError,
-    SwipeSessionFinishedError,
-    SwipeSessionNotFoundError,
-)
+from apps.common.exceptions import NotSessionMemberError, PartnerNotJoinedError, SessionFinishedError, SessionNotFoundError
 
 LEAVE_TOKEN_SALT = "swipe_sessions.leave"
 LEAVE_TOKEN_MAX_AGE = 60 * 60 * 6
@@ -33,7 +28,7 @@ def get_user_swipe_session(*, session_id, user) -> SwipeSession:
     try:
         session = SwipeSession.objects.get(pk=session_id)
     except SwipeSession.DoesNotExist as exc:
-        raise SwipeSessionNotFoundError from exc
+        raise SessionNotFoundError from exc
 
     if not session.users.filter(pk=user.pk).exists():
         raise NotSessionMemberError
@@ -156,8 +151,8 @@ def _is_stale(session: SwipeSession) -> bool:
 
 def ensure_session_active(session) -> None:
     if session.status == SessionStatus.FINISHED:
-        raise SwipeSessionFinishedError
+        raise SessionFinishedError
 
     if _is_stale(session):
         ensure_session_finished(session.pk)
-        raise SwipeSessionFinishedError
+        raise SessionFinishedError

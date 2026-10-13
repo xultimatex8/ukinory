@@ -9,20 +9,14 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.common.enums import GenerationStatus, InviteStatus, InviteType, SessionStatus, SessionType
-from apps.comparisons.exceptions import (
-    InsufficientDataError,
-    NotRoomMemberError,
-    RoomClosedError,
-    RoomFullError,
-    RoomNotFoundError,
-    RoomNotReadyError,
-)
+from apps.comparisons.exceptions import (InsufficientDataError)
 from apps.common.models import Session
 from apps.comparisons.models import Comparison, ComparisonSession
 from apps.comparisons.realtime import notify_room
 from apps.invites.models import Invite
 from apps.invites.services.invite import create_invite
 from apps.library.models import Rating
+from apps.common.exceptions import NotSessionMemberError, SessionClosedError, SessionFullError, SessionNotFoundError, SessionNotReadyError
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +33,10 @@ def get_user_room(*, room_id, user) -> ComparisonSession:
             .get(pk=room_id)
         )
     except (ComparisonSession.DoesNotExist, ValueError, ValidationError) as exc:
-        raise RoomNotFoundError from exc
+        raise SessionNotFoundError from exc
 
     if user.pk not in {u.pk for u in room.users.all()}:
-        raise NotRoomMemberError
+        raise NotSessionMemberError
     return room
 
 
@@ -88,7 +82,7 @@ def create_room(user) -> tuple[ComparisonSession, Invite]:
 @transaction.atomic
 def regenerate_invite(*, user, room: ComparisonSession) -> Invite:
     if room.status != SessionStatus.WAITING:
-        raise RoomClosedError
+        raise SessionClosedError
 
     Invite.objects.filter(
         inviter=user, session_id=room.pk, status=InviteStatus.PENDING
@@ -100,18 +94,18 @@ def regenerate_invite(*, user, room: ComparisonSession) -> Invite:
 @transaction.atomic
 def join_room_from_invite(invite: Invite, user) -> ComparisonSession:
     if invite.session_id is None:
-        raise RoomNotFoundError
+        raise SessionNotFoundError
 
     try:
         Session.objects.select_for_update().get(pk=invite.session_id)
         room = ComparisonSession.objects.get(pk=invite.session_id)
     except (Session.DoesNotExist, ComparisonSession.DoesNotExist) as exc:
-        raise RoomNotFoundError from exc
+        raise SessionNotFoundError from exc
 
     if room.status == SessionStatus.FINISHED:
-        raise RoomClosedError
+        raise SessionClosedError
     if room.status != SessionStatus.WAITING or room.users.count() >= MAX_PARTICIPANTS:
-        raise RoomFullError
+        raise SessionFullError
 
     room.users.add(user)
     room.status = SessionStatus.ACTIVE
@@ -126,7 +120,7 @@ def join_room_from_invite(invite: Invite, user) -> ComparisonSession:
 def request_generation(*, room: ComparisonSession) -> str:
     comparison = _comparison_of(room)
     if room.status != SessionStatus.ACTIVE or comparison is None:
-        raise RoomNotReadyError("Both participants must be in the room first.")
+        raise SessionNotReadyError("Both participants must be in the session first.")
     return run_generation(comparison.pk)
 
 
@@ -203,7 +197,7 @@ def leave_room(*, room: ComparisonSession, user) -> None:
         return
 
     if not room.users.filter(pk=user.pk).exists():
-        raise NotRoomMemberError
+        raise NotSessionMemberError
 
     if room.status == SessionStatus.WAITING:
         room.users.remove(user)

@@ -14,9 +14,10 @@ from apps.invites.models import Invite
 from apps.invites.services.invite import create_invite
 from apps.library.models import Rating
 from apps.swipe_sessions.constants import PAIRED_MAX_PARTICIPANTS
-from apps.swipe_sessions.exceptions import PairedSessionClosedError, PairedSessionRequiredError
+from apps.swipe_sessions.exceptions import PairedSessionRequiredError
 from apps.swipe_sessions.models import SwipeSession, SwipeSessionCandidate
 from apps.swipe_sessions.services.session import create_swipe_session, touch_session
+from apps.common.exceptions import SessionClosedError
 
 
 def require_paired(session: SwipeSession) -> None:
@@ -40,7 +41,7 @@ def create_paired_session(user) -> tuple[SwipeSession, Invite]:
 def regenerate_paired_invite(*, user, session: SwipeSession) -> Invite:
     require_paired(session)
     if session.status != SessionStatus.WAITING:
-        raise PairedSessionClosedError
+        raise SessionClosedError
 
     Invite.objects.filter(
         inviter=user,

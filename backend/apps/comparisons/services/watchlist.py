@@ -8,25 +8,23 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.common.enums import WatchlistSource
-from apps.comparisons.exceptions import (
-    RecommendationNotFoundError,
-    RoomNotReadyError,
-)
+from apps.comparisons.exceptions import RecommendationNotFoundError
 from apps.comparisons.models import ComparisonNarrative, ComparisonSession
 from apps.library.models import WatchlistEntry
 from apps.movies.models import Movie
+from apps.common.exceptions import SessionNotReadyError
 
 
 def _recommended_movies(room: ComparisonSession) -> list[Movie]:
     comparison = getattr(room, "comparison", None)
     if comparison is None:
-        raise RoomNotReadyError
+        raise SessionNotReadyError
 
     narrative = ComparisonNarrative.objects.filter(
         comparison=comparison, inputs_hash=comparison.inputs_hash
     ).first()
     if narrative is None:
-        raise RoomNotReadyError
+        raise SessionNotReadyError
 
     ids = [str(r["movie_id"]) for r in narrative.recommendations]
     by_id = {str(m.pk): m for m in Movie.objects.filter(pk__in=ids)}

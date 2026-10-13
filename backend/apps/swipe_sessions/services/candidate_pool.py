@@ -13,8 +13,9 @@ from apps.recommendations.services.joint_profile import (
     user_taste_profiles,
 )
 from apps.swipe_sessions.constants import PAIRED_MAX_PARTICIPANTS, PAIRED_POOL_SIZE
-from apps.swipe_sessions.exceptions import PairedDataMissingError, PartnerNotJoinedError
+from apps.swipe_sessions.exceptions import PairedDataMissingError
 from apps.swipe_sessions.models import Swipe, SwipeSessionCandidate
+from apps.common.exceptions import PartnerNotJoinedError
 
 
 def _store_candidates(

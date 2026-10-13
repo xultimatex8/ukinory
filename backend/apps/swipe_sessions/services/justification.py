@@ -18,8 +18,9 @@ from apps.swipe_sessions.models import (
     SwipeSession,
     SwipeSessionCandidate,
 )
-from apps.swipe_sessions.exceptions import CandidateNotFoundError, JustificationUnavailableError, NotSessionMemberError, SwipeSessionNotFoundError
+from apps.swipe_sessions.exceptions import CandidateNotFoundError, JustificationUnavailableError
 from apps.swipe_sessions.services.session import ensure_session_active
+from apps.common.exceptions import NotSessionMemberError, SessionNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,7 @@ def get_candidate_justification(
     try:
         session = SwipeSession.objects.get(pk=session_id)
     except SwipeSession.DoesNotExist as exc:
-        raise SwipeSessionNotFoundError from exc
+        raise SessionNotFoundError from exc
 
     if not session.users.filter(pk=user.pk).exists():
         raise NotSessionMemberError
