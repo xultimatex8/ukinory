@@ -19,7 +19,6 @@ from apps.common.exceptions import NotSessionMemberError, SessionClosedError, Se
 from apps.comparisons.models import Comparison, ComparisonSession
 from apps.comparisons.services.room import (
     RUNNING_TIMEOUT,
-    STALE_ROOM_TIMEOUT,
     _comparison_of,
     _is_running,
     build_room_state,
@@ -31,6 +30,7 @@ from apps.comparisons.services.room import (
     request_generation,
     run_generation,
 )
+from apps.common.services.sessions import STALE_TIMEOUT
 from apps.invites.models import Invite
 from apps.invites.services.invite import create_invite
 from apps.library.models import Rating
@@ -140,9 +140,9 @@ class RoomServiceTests(TestCase):
             "apps.comparisons.services.room.timezone.now",
             return_value=timezone.now(),
         ):
-            from apps.comparisons.services.room import touch_room
+            from apps.common.services.sessions import touch_session
 
-            touch_room(room.pk)
+            touch_session(room.pk)
 
         room.refresh_from_db()
 
@@ -722,7 +722,7 @@ class RoomServiceTests(TestCase):
         stale = self._room(
             last_seen_at=(
                 timezone.now()
-                - STALE_ROOM_TIMEOUT
+                - STALE_TIMEOUT
                 - timedelta(seconds=1)
             ),
         )
@@ -743,7 +743,7 @@ class RoomServiceTests(TestCase):
     ):
         old_created = (
             timezone.now()
-            - STALE_ROOM_TIMEOUT
+            - STALE_TIMEOUT
             - timedelta(seconds=1)
         )
 
@@ -770,7 +770,7 @@ class RoomServiceTests(TestCase):
             status=SessionStatus.ACTIVE,
             last_seen_at=(
                 timezone.now()
-                - STALE_ROOM_TIMEOUT
+                - STALE_TIMEOUT
                 - timedelta(days=1)
             ),
         )
