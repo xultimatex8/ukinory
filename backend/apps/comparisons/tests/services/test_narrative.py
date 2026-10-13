@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -5,11 +6,11 @@ from unittest import mock
 
 from django.test import TestCase, override_settings
 
-from apps.common.api_quota import QuotaExceeded
+from apps.common.exceptions import AIUnavailableError
+from apps.common.services.gemini import Completion, DEFAULT_MODEL
 from apps.comparisons.services.narrative import (
     BASE_OUTPUT_TOKENS,
     DEFAULT_MAX_OUTPUT_TOKENS,
-    DEFAULT_MODEL,
     MAX_DESCRIPTION_CHARS,
     PROMPT_ENTRIES,
     ComparisonNarrativeClient,
@@ -23,10 +24,7 @@ from apps.comparisons.services.narrative import (
 
 class HelperTests(TestCase):
     def test_max_output_tokens(self):
-        self.assertEqual(
-            _max_output_tokens(0),
-            BASE_OUTPUT_TOKENS,
-        )
+        self.assertEqual(_max_output_tokens(0), BASE_OUTPUT_TOKENS)
         self.assertEqual(
             _max_output_tokens(10),
             DEFAULT_MAX_OUTPUT_TOKENS,
@@ -68,67 +66,40 @@ class CompactPublicTests(TestCase):
                 {
                     "title": "Dune",
                     "release_year": 2021,
-                    "ratings": {
-                        "1": 5,
-                        "2": 4,
-                    },
+                    "ratings": {"1": 5, "2": 4},
                 },
                 {
                     "title": "Alien",
                     "release_year": 1979,
-                    "ratings": {
-                        "1": 5,
-                        "2": 5,
-                    },
+                    "ratings": {"1": 5, "2": 5},
                 },
                 {
                     "title": "Jaws",
                     "release_year": 1975,
-                    "ratings": {
-                        "1": 4,
-                        "2": 5,
-                    },
+                    "ratings": {"1": 4, "2": 5},
                 },
                 {
                     "title": "Extra",
                     "release_year": 2000,
-                    "ratings": {
-                        "1": 3,
-                        "2": 3,
-                    },
+                    "ratings": {"1": 3, "2": 3},
                 },
             ],
             "divergences": [],
         }
 
-        result = _compact_public(
-            public,
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _compact_public(public, {"1": "A", "2": "B"})
 
         self.assertEqual(result["compatibility_score"], 85)
         self.assertEqual(result["taste_similarity"], 0.8)
         self.assertEqual(result["common_films"], 5)
         self.assertEqual(result["mean_rating_gap"], 0.5)
         self.assertEqual(result["rating_correlation"], 0.8)
-        self.assertEqual(
-            result["library_sizes"],
-            {
-                "A": 10,
-                "B": 12,
-            },
-        )
+        self.assertEqual(result["library_sizes"], {"A": 10, "B": 12})
         self.assertEqual(len(result["agreements"]), PROMPT_ENTRIES)
         self.assertEqual(result["agreements"][0]["title"], "Dune")
         self.assertEqual(
             result["agreements"][0]["ratings"],
-            {
-                "A": 5,
-                "B": 4,
-            },
+            {"A": 5, "B": 4},
         )
 
 
@@ -138,22 +109,12 @@ class StoryAnglesTests(TestCase):
             "taste_similarity": 0.8,
             "rating_correlation": 0.1,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [],
         }
 
-        result = _story_angles(
-            public,
-            {"profiles": {}},
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, {"profiles": {}}, {"1": "A", "2": "B"})
 
         self.assertIn(
             "Similar taste on paper, but they score the same films very differently.",
@@ -165,22 +126,12 @@ class StoryAnglesTests(TestCase):
             "taste_similarity": 0.2,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [],
         }
 
-        result = _story_angles(
-            public,
-            {"profiles": {}},
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, {"profiles": {}}, {"1": "A", "2": "B"})
 
         self.assertIn(
             "Their tastes pull in clearly different directions.",
@@ -192,30 +143,17 @@ class StoryAnglesTests(TestCase):
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [
                 {
                     "title": "Blade Runner",
-                    "ratings": {
-                        "1": 5,
-                        "2": 2,
-                    },
+                    "ratings": {"1": 5, "2": 2},
                 }
             ],
             "agreements": [],
         }
 
-        result = _story_angles(
-            public,
-            {"profiles": {}},
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, {"profiles": {}}, {"1": "A", "2": "B"})
 
         self.assertIn(
             "Sharpest clash: Blade Runner (A=5 vs B=2).",
@@ -227,33 +165,18 @@ class StoryAnglesTests(TestCase):
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [],
         }
-
         internal = {
             "profiles": {
-                "1": {
-                    "mean_rating": 4.5,
-                },
-                "2": {
-                    "mean_rating": 3.2,
-                },
+                "1": {"mean_rating": 4.5},
+                "2": {"mean_rating": 3.2},
             }
         }
 
-        result = _story_angles(
-            public,
-            internal,
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, internal, {"1": "A", "2": "B"})
 
         self.assertIn(
             "Rating style gap: A is far more generous than B.",
@@ -265,30 +188,17 @@ class StoryAnglesTests(TestCase):
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [
                 {
                     "title": "Alien",
-                    "ratings": {
-                        "1": 5,
-                        "2": 5,
-                    },
+                    "ratings": {"1": 5, "2": 5},
                 }
             ],
         }
 
-        result = _story_angles(
-            public,
-            {"profiles": {}},
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, {"profiles": {}}, {"1": "A", "2": "B"})
 
         self.assertIn(
             "Common ground: both rated Alien very high (A=5 vs B=5).",
@@ -300,119 +210,65 @@ class StoryAnglesTests(TestCase):
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [],
         }
-
         internal = {
             "profiles": {},
             "shared_directors": ["Christopher Nolan"],
             "shared_genres": ["Sci-Fi"],
         }
 
-        result = _story_angles(
-            public,
-            internal,
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, internal, {"1": "A", "2": "B"})
 
-        self.assertIn(
-            "Shared favourite director: Christopher Nolan.",
-            result,
-        )
-        self.assertNotIn(
-            "Shared favourite genre: Sci-Fi.",
-            result,
-        )
+        self.assertIn("Shared favourite director: Christopher Nolan.", result)
+        self.assertNotIn("Shared favourite genre: Sci-Fi.", result)
 
     def test_shared_genre_is_used_without_shared_director(self):
         public = {
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [],
         }
-
         internal = {
             "profiles": {},
             "shared_directors": [],
             "shared_genres": ["Sci-Fi"],
         }
 
-        result = _story_angles(
-            public,
-            internal,
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, internal, {"1": "A", "2": "B"})
 
-        self.assertIn(
-            "Shared favourite genre: Sci-Fi.",
-            result,
-        )
+        self.assertIn("Shared favourite genre: Sci-Fi.", result)
 
     def test_few_common_films_is_used(self):
         public = {
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 5,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [],
         }
 
-        result = _story_angles(
-            public,
-            {"profiles": {}},
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, {"profiles": {}}, {"1": "A", "2": "B"})
 
-        self.assertIn(
-            "They have rated very few of the same films.",
-            result,
-        )
+        self.assertIn("They have rated very few of the same films.", result)
 
     def test_uneven_library_sizes_are_used(self):
         public = {
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 10,
-                "2": 40,
-            },
+            "library_sizes": {"1": 10, "2": 40},
             "divergences": [],
             "agreements": [],
         }
 
-        result = _story_angles(
-            public,
-            {"profiles": {}},
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, {"profiles": {}}, {"1": "A", "2": "B"})
 
         self.assertIn(
             "One of them has rated far more films than the other.",
@@ -424,26 +280,17 @@ class StoryAnglesTests(TestCase):
             "taste_similarity": 0.5,
             "rating_correlation": 0.5,
             "common_count": 20,
-            "library_sizes": {
-                "1": 20,
-                "2": 20,
-            },
+            "library_sizes": {"1": 20, "2": 20},
             "divergences": [],
             "agreements": [],
         }
+        internal = {
+            "profiles": {},
+            "shared_directors": [],
+            "shared_genres": [],
+        }
 
-        result = _story_angles(
-            public,
-            {
-                "profiles": {},
-                "shared_directors": [],
-                "shared_genres": [],
-            },
-            {
-                "1": "A",
-                "2": "B",
-            },
-        )
+        result = _story_angles(public, internal, {"1": "A", "2": "B"})
 
         self.assertEqual(
             result,
@@ -458,10 +305,7 @@ class BuildPromptTests(TestCase):
         return {
             "compatibility_score": 85,
             "taste_similarity": 0.8,
-            "library_sizes": {
-                "1": 10,
-                "2": 12,
-            },
+            "library_sizes": {"1": 10, "2": 12},
             "common_count": 5,
             "overlap_ratio": 0.5,
             "jaccard": 0.3,
@@ -499,19 +343,13 @@ class BuildPromptTests(TestCase):
             release_year=2021,
             wikidata_description=description,
         )
-
         movie.directors = directors or []
-
-        genre_names = genres or ["Sci-Fi", "Adventure"]
         movie.genres.all.return_value = [
             SimpleNamespace(name=name)
-            for name in genre_names
+            for name in (genres or ["Sci-Fi", "Adventure"])
         ]
 
-        return mock.Mock(
-            movie=movie,
-            per_user=[0.91, 0.84],
-        )
+        return mock.Mock(movie=movie, per_user=[0.91, 0.84])
 
     def test_prompt_contains_candidate_information(self):
         candidate = self._candidate(
@@ -540,10 +378,7 @@ class BuildPromptTests(TestCase):
             "that should definitely be truncated before being included "
             "inside the prompt."
         )
-
-        candidate = self._candidate(
-            description=description,
-        )
+        candidate = self._candidate(description=description)
 
         prompt = _build_prompt(
             self._public(),
@@ -559,12 +394,10 @@ class BuildPromptTests(TestCase):
         self.assertNotIn(description, prompt)
 
     def test_prompt_contains_story_angles(self):
-        candidate = self._candidate()
-
         prompt = _build_prompt(
             self._public(),
             self._internal(),
-            [candidate],
+            [self._candidate()],
             ["1", "2"],
         )
 
@@ -575,12 +408,10 @@ class BuildPromptTests(TestCase):
         )
 
     def test_prompt_contains_profiles(self):
-        candidate = self._candidate()
-
         prompt = _build_prompt(
             self._public(),
             self._internal(),
-            [candidate],
+            [self._candidate()],
             ["1", "2"],
         )
 
@@ -589,12 +420,10 @@ class BuildPromptTests(TestCase):
         self.assertIn('"mean_rating":3.8', prompt)
 
     def test_prompt_contains_schema_and_rules(self):
-        candidate = self._candidate()
-
         prompt = _build_prompt(
             self._public(),
             self._internal(),
-            [candidate],
+            [self._candidate()],
             ["1", "2"],
         )
 
@@ -602,10 +431,7 @@ class BuildPromptTests(TestCase):
             '{"narrative": str, "individual": {"A": str, "B": str}',
             prompt,
         )
-        self.assertIn(
-            "recommendations: exactly 1 strings",
-            prompt,
-        )
+        self.assertIn("recommendations: exactly 1 strings", prompt)
         self.assertIn(
             "Do not mention or repeat the recommended film's title.",
             prompt,
@@ -623,10 +449,7 @@ class BuildPromptTests(TestCase):
             "Candidates (neither has watched them):\n(none)",
             prompt,
         )
-        self.assertIn(
-            "recommendations: an empty list.",
-            prompt,
-        )
+        self.assertIn("recommendations: an empty list.", prompt)
 
 
 class ComparisonNarrativeClientTests(TestCase):
@@ -634,10 +457,7 @@ class ComparisonNarrativeClientTests(TestCase):
         return {
             "compatibility_score": 85,
             "taste_similarity": 0.8,
-            "library_sizes": {
-                "1": 10,
-                "2": 12,
-            },
+            "library_sizes": {"1": 10, "2": 12},
             "common_count": 5,
             "overlap_ratio": 0.5,
             "jaccard": 0.3,
@@ -664,84 +484,55 @@ class ComparisonNarrativeClientTests(TestCase):
             release_year=2021,
             wikidata_description="A science-fiction epic.",
         )
-
         movie.directors = []
-
         movie.genres.all.return_value = [
             SimpleNamespace(name="Sci-Fi"),
         ]
 
-        return mock.Mock(
-            movie=movie,
-            per_user=[0.91, 0.84],
-        )
+        return mock.Mock(movie=movie, per_user=[0.91, 0.84])
 
     @override_settings(GEMINI_API_KEY="settings-key")
-    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    @mock.patch("apps.common.services.gemini.genai.Client")
     def test_uses_settings_api_key(self, mock_client):
         client = ComparisonNarrativeClient()
 
-        mock_client.assert_called_once_with(
-            api_key="settings-key",
-        )
-        self.assertEqual(
-            client.model,
-            DEFAULT_MODEL,
-        )
+        mock_client.assert_called_once_with(api_key="settings-key")
+        self.assertEqual(client.model, DEFAULT_MODEL)
 
-    @mock.patch("apps.comparisons.services.narrative.genai.Client")
+    @mock.patch("apps.common.services.gemini.genai.Client")
     def test_uses_explicit_api_key(self, mock_client):
-        ComparisonNarrativeClient(
-            api_key="explicit-key",
-        )
+        ComparisonNarrativeClient(api_key="explicit-key")
 
-        mock_client.assert_called_once_with(
-            api_key="explicit-key",
-        )
+        mock_client.assert_called_once_with(api_key="explicit-key")
 
-    @mock.patch("apps.comparisons.services.narrative.genai.Client")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
+    @mock.patch.object(
+        ComparisonNarrativeClient,
+        "complete",
+        side_effect=AIUnavailableError("Quota exceeded"),
+    )
+    @mock.patch("apps.common.services.gemini.genai.Client")
     def test_generate_returns_none_when_quota_is_exceeded(
         self,
-        estimate,
-        cost,
-        consume,
-        client_mock,
+        mock_client,
+        mock_complete,
     ):
-        estimate.return_value = 10
-        cost.return_value = 5
+        client = ComparisonNarrativeClient(api_key="test-key")
 
-        consume.side_effect = QuotaExceeded(
-            "gemini_narrative",
-            "day",
-            10,
-        )
+        result = self._generate(client)
 
-        client = ComparisonNarrativeClient(
-            api_key="test-key",
-        )
+        self.assertIsNone(result)
+        mock_complete.assert_called_once()
+        mock_client.return_value.models.generate_content.assert_not_called()
 
-        self.assertIsNone(
-            self._generate(client),
-        )
-
-        consume.assert_called_once_with(
-            "gemini_narrative",
-            5,
-        )
-
-        client_mock.return_value.models.generate_content.assert_not_called()
-
-    @mock.patch("apps.comparisons.services.narrative.api_quota.adjust")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
+    @mock.patch("apps.common.services.gemini.api_quota.adjust")
+    @mock.patch("apps.common.services.gemini.api_quota.cost_units")
     def test_reconcile_cost_adjusts_actual_difference(
         self,
-        cost,
-        adjust,
+        mock_cost,
+        mock_adjust,
     ):
-        cost.return_value = 12
+        mock_cost.return_value = 12
+        client = object.__new__(ComparisonNarrativeClient)
 
         response = mock.Mock(
             usage_metadata=mock.Mock(
@@ -751,71 +542,58 @@ class ComparisonNarrativeClientTests(TestCase):
             ),
         )
 
-        ComparisonNarrativeClient._reconcile_cost(
+        client._reconcile_cost(
             response,
             reserved=10,
+            label="comparison narrative",
         )
 
-        cost.assert_called_once_with(
+        mock_cost.assert_called_once_with(
             "gemini_narrative",
             input_tokens=50,
             output_tokens=25,
         )
+        mock_adjust.assert_called_once_with("gemini_narrative", 2)
 
-        adjust.assert_called_once_with(
-            "gemini_narrative",
-            2,
+    @mock.patch("apps.common.services.gemini.api_quota.adjust")
+    def test_reconcile_cost_does_nothing_without_usage(self, mock_adjust):
+        client = object.__new__(ComparisonNarrativeClient)
+        response = mock.Mock(usage_metadata=None)
+
+        client._reconcile_cost(
+            response,
+            reserved=10,
+            label="comparison narrative",
         )
 
-    def test_reconcile_cost_does_nothing_without_usage(self):
+        mock_adjust.assert_not_called()
+
+    @mock.patch("apps.common.services.gemini.api_quota.adjust")
+    def test_reconcile_cost_does_nothing_without_prompt_count(
+        self,
+        mock_adjust,
+    ):
+        client = object.__new__(ComparisonNarrativeClient)
         response = mock.Mock(
-            usage_metadata=None,
+            usage_metadata=mock.Mock(prompt_token_count=None),
         )
 
-        with mock.patch(
-            "apps.comparisons.services.narrative.api_quota.adjust",
-        ) as adjust:
-            ComparisonNarrativeClient._reconcile_cost(
-                response,
-                10,
-            )
-
-        adjust.assert_not_called()
-
-    def test_reconcile_cost_does_nothing_without_prompt_count(self):
-        response = mock.Mock(
-            usage_metadata=mock.Mock(
-                prompt_token_count=None,
-            ),
+        client._reconcile_cost(
+            response,
+            reserved=10,
+            label="comparison narrative",
         )
 
-        with mock.patch(
-            "apps.comparisons.services.narrative.api_quota.adjust",
-        ) as adjust:
-            ComparisonNarrativeClient._reconcile_cost(
-                response,
-                10,
-            )
+        mock_adjust.assert_not_called()
 
-        adjust.assert_not_called()
-
-    @mock.patch("apps.comparisons.services.narrative.genai.Client")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.adjust")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
+    @mock.patch.object(ComparisonNarrativeClient, "complete")
+    @mock.patch("apps.common.services.gemini.genai.Client")
     def test_generate_calls_gemini_and_parses_response(
         self,
-        estimate,
-        consume,
-        cost,
-        adjust,
-        client_mock,
+        mock_client,
+        mock_complete,
     ):
-        estimate.return_value = 50
-        cost.side_effect = [10, 12]
-
-        response = mock.Mock(
+        mock_complete.return_value = Completion(
             text=(
                 '{"narrative":"You have similar tastes.",'
                 '"individual":{'
@@ -823,38 +601,16 @@ class ComparisonNarrativeClientTests(TestCase):
                 '"B":"This person also enjoys science fiction."},'
                 '"recommendations":["Good fit."]}'
             ),
-            usage_metadata=mock.Mock(
-                prompt_token_count=50,
-                candidates_token_count=20,
-                thoughts_token_count=0,
-            ),
+            finish_reason=None,
         )
 
-        client_mock.return_value.models.generate_content.return_value = (
-            response
-        )
+        client = ComparisonNarrativeClient(api_key="test-key")
 
-        client = ComparisonNarrativeClient(
-            api_key="test-key",
-        )
+        result = self._generate(client, [self._candidate()])
 
-        result = self._generate(
-            client,
-            [self._candidate()],
-        )
-
-        self.assertEqual(
-            result.summary,
-            "You have similar tastes.",
-        )
-
-        self.assertEqual(
-            result.reasons,
-            {
-                1: "Good fit.",
-            },
-        )
-
+        self.assertIsNotNone(result)
+        self.assertEqual(result.summary, "You have similar tastes.")
+        self.assertEqual(result.reasons, {1: "Good fit."})
         self.assertEqual(
             result.individual,
             {
@@ -863,71 +619,53 @@ class ComparisonNarrativeClientTests(TestCase):
             },
         )
 
-        consume.assert_called_once_with(
-            "gemini_narrative",
-            10,
+        mock_complete.assert_called_once()
+        args, kwargs = mock_complete.call_args
+        self.assertIsInstance(args[0], str)
+        self.assertIn("Dune (2021)", args[0])
+        self.assertEqual(
+            kwargs,
+            {
+                "max_output_tokens": _max_output_tokens(1),
+                "json_output": True,
+                "label": "comparison narrative",
+            },
         )
+        mock_client.return_value.models.generate_content.assert_not_called()
 
-        adjust.assert_called_once_with(
-            "gemini_narrative",
-            2,
-        )
-
-        client_mock.return_value.models.generate_content.assert_called_once()
-
-    @mock.patch("apps.comparisons.services.narrative.genai.Client")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.adjust")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
+    @mock.patch.object(ComparisonNarrativeClient, "complete")
+    @mock.patch("apps.common.services.gemini.genai.Client")
     def test_generate_returns_none_for_unparseable_response(
         self,
-        estimate,
-        consume,
-        cost,
-        adjust,
-        client_mock,
+        mock_client,
+        mock_complete,
     ):
-        estimate.return_value = 10
-        cost.side_effect = [5, 5]
-
-        client_mock.return_value.models.generate_content.return_value = (
-            mock.Mock(
-                text="not json",
-                usage_metadata=None,
-            )
+        mock_complete.return_value = Completion(
+            text="not json",
+            finish_reason=None,
         )
 
-        self.assertIsNone(
-            self._generate(
-                ComparisonNarrativeClient(
-                    api_key="test-key",
-                ),
-            ),
-        )
+        client = ComparisonNarrativeClient(api_key="test-key")
 
-    @mock.patch("apps.comparisons.services.narrative.genai.Client")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.consume")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.cost_units")
-    @mock.patch("apps.comparisons.services.narrative.api_quota.estimate_tokens")
+        self.assertIsNone(self._generate(client))
+
+        mock_complete.assert_called_once()
+        mock_client.return_value.models.generate_content.assert_not_called()
+
+    @mock.patch.object(
+        ComparisonNarrativeClient,
+        "complete",
+        side_effect=AIUnavailableError("Gemini failed"),
+    )
+    @mock.patch("apps.common.services.gemini.genai.Client")
     def test_generate_returns_none_on_gemini_exception(
         self,
-        estimate,
-        cost,
-        consume,
-        client_mock,
+        mock_client,
+        mock_complete,
     ):
-        estimate.return_value = 10
-        cost.return_value = 5
+        client = ComparisonNarrativeClient(api_key="test-key")
 
-        client_mock.return_value.models.generate_content.side_effect = (
-            RuntimeError("Gemini failed")
-        )
+        self.assertIsNone(self._generate(client))
 
-        self.assertIsNone(
-            self._generate(
-                ComparisonNarrativeClient(
-                    api_key="test-key",
-                ),
-            ),
-        )
+        mock_complete.assert_called_once()
+        mock_client.return_value.models.generate_content.assert_not_called()

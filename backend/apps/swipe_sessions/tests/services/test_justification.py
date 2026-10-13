@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -6,31 +7,42 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import override_settings
 
-from apps.swipe_sessions.exceptions import (CandidateNotFoundError, JustificationUnavailableError)
-from apps.swipe_sessions.models import CandidateJustification, SwipeSessionCandidate
+from apps.common.exceptions import (
+    AIUnavailableError,
+    NotSessionMemberError,
+    QuotaExceeded,
+    SessionNotFoundError,
+)
+from apps.common.services.gemini import DEFAULT_MODEL, Completion
+from apps.swipe_sessions.exceptions import (
+    CandidateNotFoundError,
+    JustificationUnavailableError,
+)
+from apps.swipe_sessions.models import (
+    CandidateJustification,
+    SwipeSessionCandidate,
+)
 from apps.swipe_sessions.services.justification import (
-    DEFAULT_MODEL,
     JustificationClient,
     _build_prompt,
     _recent_liked_ratings,
     ensure_candidate_justification,
     get_candidate_justification,
 )
-from apps.common.exceptions import NotSessionMemberError, QuotaExceeded, SessionNotFoundError
 
 
 class TestJustificationClient:
-    @patch("apps.swipe_sessions.services.justification.genai.Client")
+    @patch("apps.common.services.gemini.genai.Client")
     def test_uses_default_settings(self, mock_client):
         client = JustificationClient()
 
         assert client.model == DEFAULT_MODEL
-        mock_client.assert_called_once()
+        mock_client.assert_called_once_with(
+            api_key=client.api_key,
+        )
 
-    @patch("apps.swipe_sessions.services.justification.genai.Client")
-    @override_settings(
-        GEMINI_API_KEY="test-api-key",
-    )
+    @patch("apps.common.services.gemini.genai.Client")
+    @override_settings(GEMINI_API_KEY="test-api-key")
     def test_uses_custom_settings(self, mock_client):
         client = JustificationClient(
             api_key="test-api-key",
@@ -40,26 +52,25 @@ class TestJustificationClient:
         assert client.model == "custom-model"
         mock_client.assert_called_once_with(api_key="test-api-key")
 
-    @patch("apps.swipe_sessions.services.justification.genai.Client")
+    @patch.object(JustificationClient, "complete")
     @patch("apps.swipe_sessions.services.justification._build_prompt")
-    @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
-    @patch("apps.swipe_sessions.services.justification.api_quota.consume")
+    @patch(
+        "apps.swipe_sessions.services.justification._recent_liked_ratings"
+    )
+    @patch("apps.common.services.gemini.genai.Client")
     def test_generate_uses_primary_model(
         self,
-        mock_consume,
+        mock_client,
         mock_history,
         mock_build_prompt,
-        mock_client,
+        mock_complete,
     ):
         history = [MagicMock()]
         mock_history.return_value = history
         mock_build_prompt.return_value = "test prompt"
-
-        response = MagicMock()
-        response.text = "  Great recommendation.  "
-        response.usage_metadata = None
-
-        mock_client.return_value.models.generate_content.return_value = response
+        mock_complete.return_value = Completion(
+            text="  Great recommendation.  ",
+        )
 
         client = JustificationClient(
             api_key="test-key",
@@ -74,79 +85,37 @@ class TestJustificationClient:
             movie=movie,
         )
 
-        assert result == "Great recommendation."
+        assert result == "  Great recommendation.  "
 
         mock_history.assert_called_once()
         mock_build_prompt.assert_called_once_with(
             movie,
             history,
         )
-
-        mock_client.return_value.models.generate_content.assert_called_once()
-
-        _, kwargs = (
-            mock_client.return_value.models.generate_content.call_args
+        mock_complete.assert_called_once_with(
+            "test prompt",
+            max_output_tokens=80,
+            label="justification for movie 123",
         )
 
-        assert kwargs["model"] == "primary-model"
-        assert kwargs["contents"] == "test prompt"
+        mock_client.return_value.models.generate_content.assert_not_called()
 
-        config = kwargs["config"]
-        assert config.max_output_tokens == 80
-        assert config.thinking_config.thinking_level == "MINIMAL"
-
-    @patch("apps.swipe_sessions.services.justification.genai.Client")
+    @patch.object(JustificationClient, "complete")
     @patch("apps.swipe_sessions.services.justification._build_prompt")
-    @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
-    @patch("apps.swipe_sessions.services.justification.api_quota.consume")
+    @patch(
+        "apps.swipe_sessions.services.justification._recent_liked_ratings"
+    )
+    @patch("apps.common.services.gemini.genai.Client")
     def test_generate_returns_empty_string_when_primary_fail(
         self,
-        mock_consume,
+        mock_client,
         mock_history,
         mock_build_prompt,
-        mock_client,
+        mock_complete,
     ):
         mock_history.return_value = []
         mock_build_prompt.return_value = "test prompt"
-
-        mock_client.return_value.models.generate_content.side_effect = [
-            Exception("Primary model failed"),
-        ]
-
-        client = JustificationClient(
-            api_key="test-key",
-            model="primary-model",
-        )
-
-        movie = MagicMock()
-        movie.pk = 123
-
-        result = client.generate(
-            user=MagicMock(),
-            movie=movie,
-        )
-
-        assert result == ""
-
-    @patch("apps.swipe_sessions.services.justification.genai.Client")
-    @patch("apps.swipe_sessions.services.justification._build_prompt")
-    @patch("apps.swipe_sessions.services.justification._recent_liked_ratings")
-    @patch("apps.swipe_sessions.services.justification.api_quota.consume")
-    def test_generate_raises_when_quota_is_exceeded(
-        self,
-        mock_consume,
-        mock_history,
-        mock_build_prompt,
-        mock_client,
-    ):
-        mock_history.return_value = []
-        mock_build_prompt.return_value = "test prompt"
-
-        mock_consume.side_effect = QuotaExceeded(
-            "gemini_generate",
-            1,
-            0,
-        )
+        mock_complete.side_effect = AIUnavailableError("Primary model failed")
 
         client = JustificationClient(
             api_key="test-key",
@@ -162,6 +131,44 @@ class TestJustificationClient:
                 movie=movie,
             )
 
+        mock_complete.assert_called_once_with(
+            "test prompt",
+            max_output_tokens=80,
+            label="justification for movie 123",
+        )
+
+    @patch.object(JustificationClient, "complete")
+    @patch("apps.swipe_sessions.services.justification._build_prompt")
+    @patch(
+        "apps.swipe_sessions.services.justification._recent_liked_ratings"
+    )
+    @patch("apps.common.services.gemini.genai.Client")
+    def test_generate_raises_when_quota_is_exceeded(
+        self,
+        mock_client,
+        mock_history,
+        mock_build_prompt,
+        mock_complete,
+    ):
+        mock_history.return_value = []
+        mock_build_prompt.return_value = "test prompt"
+        mock_complete.side_effect = AIUnavailableError("Quota exceeded")
+
+        client = JustificationClient(
+            api_key="test-key",
+            model="primary-model",
+        )
+
+        movie = MagicMock()
+        movie.pk = 123
+
+        with pytest.raises(JustificationUnavailableError):
+            client.generate(
+                user=MagicMock(),
+                movie=movie,
+            )
+
+        mock_complete.assert_called_once()
         mock_client.return_value.models.generate_content.assert_not_called()
 
 
@@ -370,10 +377,12 @@ class TestGetCandidateJustification:
             "apps.swipe_sessions.services.justification.ensure_candidate_justification",
             return_value=justification,
         ) as ensure_justification:
-            result_candidate, result_justification = get_candidate_justification(
-                user=user,
-                session_id=swipe_session.pk,
-                candidate_id=candidate.pk,
+            result_candidate, result_justification = (
+                get_candidate_justification(
+                    user=user,
+                    session_id=swipe_session.pk,
+                    candidate_id=candidate.pk,
+                )
             )
 
         assert result_candidate == candidate
@@ -417,7 +426,6 @@ class TestBuildPrompt:
         movie.title = "Dune"
         movie.release_year = 2021
         movie.wikidata_description = "A science fiction film."
-
         movie.genres.all.return_value = []
 
         prompt = _build_prompt(
