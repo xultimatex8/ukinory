@@ -60,3 +60,7 @@ class InvalidSessionStateError(APIException):
     status_code = status.HTTP_400_BAD_REQUEST
     default_detail = "The session is not in a valid state for this action."
     default_code = "invalid_session_state"
+
+
+class AIUnavailableError(Exception):
+    """No completion could be obtained: quota exhausted, provider failure or empty answer."""

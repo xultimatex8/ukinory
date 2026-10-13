@@ -1,30 +1,22 @@
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, field
-from typing import Optional
-
-from django.conf import settings
 from django.db import transaction
-from google import genai
-from google.genai import types
 
-from apps.common import api_quota
 from apps.common.enums import SwipeSessionType
+from apps.common.services.gemini import AIUnavailableError, GeminiClient
 from apps.library.models import Rating
 from apps.movies.models import Movie
 from apps.swipe_sessions.models import (
     CandidateJustification,
-    SwipeSession,
     SwipeSessionCandidate,
 )
 from apps.swipe_sessions.exceptions import CandidateNotFoundError, JustificationUnavailableError
-from apps.swipe_sessions.services.session import ensure_session_active, get_user_swipe_session
-
-logger = logging.getLogger(__name__)
+from apps.swipe_sessions.services.session import (
+    ensure_session_active,
+    get_user_swipe_session,
+)
 
 QUOTA_CLIENT_NAME = "gemini_generate"
-DEFAULT_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_MAX_OUTPUT_TOKENS = 80
 DEFAULT_MAX_HISTORY_MOVIES = 35
 
@@ -32,15 +24,8 @@ JOINT_MAX_OUTPUT_TOKENS = 120
 JOINT_MAX_HISTORY_MOVIES = 20
 
 
-@dataclass(slots=True)
-class JustificationClient:
-    api_key: Optional[str] = None
-    model: Optional[str] = DEFAULT_MODEL
-    _client: genai.Client = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self.api_key = self.api_key or getattr(settings, "GEMINI_API_KEY", None)
-        self._client = genai.Client(api_key=self.api_key)
+class JustificationClient(GeminiClient):
+    quota_name = QUOTA_CLIENT_NAME
 
     def generate(self, user, movie: Movie) -> str:
         history = _recent_liked_ratings(user)
@@ -55,49 +40,14 @@ class JustificationClient:
         return self._complete(prompt, movie, JOINT_MAX_OUTPUT_TOKENS)
 
     def _complete(self, prompt: str, movie: Movie, max_output_tokens: int) -> str:
-        reserved = api_quota.cost_units(
-            QUOTA_CLIENT_NAME,
-            input_tokens=api_quota.estimate_tokens(prompt),
-            output_tokens=max_output_tokens,
-        )
         try:
-            api_quota.consume(QUOTA_CLIENT_NAME, reserved)
-        except api_quota.QuotaExceeded as exc:
-            logger.warning("Skipping justification for movie %s: %s", movie.pk, exc)
+            return self.complete(
+                prompt,
+                max_output_tokens=max_output_tokens,
+                label=f"justification for movie {movie.pk}",
+            ).text
+        except AIUnavailableError as exc:
             raise JustificationUnavailableError from exc
-
-        try:
-            response = self._client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=max_output_tokens,
-                    thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
-                ),
-            )
-            self._reconcile_cost(response, reserved)
-            return (response.text or "").strip()
-        except Exception as exc:
-            logger.warning(
-                "Could not generate justification for movie %s with model %s: %s",
-                movie.pk,
-                self.model,
-                exc,
-            )
-
-        return ""
-
-    @staticmethod
-    def _reconcile_cost(response, reserved: int) -> None:
-        usage = getattr(response, "usage_metadata", None)
-        if usage is None or usage.prompt_token_count is None:
-            return
-        actual = api_quota.cost_units(
-            QUOTA_CLIENT_NAME,
-            input_tokens=usage.prompt_token_count or 0,
-            output_tokens=(usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0),
-        )
-        api_quota.adjust(QUOTA_CLIENT_NAME, actual - reserved)
 
 
 def ensure_candidate_justification(
@@ -158,7 +108,6 @@ def get_candidate_justification(
     candidate_id,
 ) -> tuple[SwipeSessionCandidate, CandidateJustification]:
     session = get_user_swipe_session(session_id=session_id, user=user)
-
     ensure_session_active(session)
 
     try:
