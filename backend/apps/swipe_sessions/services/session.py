@@ -4,15 +4,15 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.common.enums import SessionStatus, SessionType, SwipeSessionType
-from apps.common.exceptions import InvalidSessionStateError, PartnerNotJoinedError
+from apps.common.exceptions import InvalidSessionStateError
 from apps.common.services.sessions import (
     StaleOutcome,
+    activate_session,
     close_stale_sessions,
     get_user_session,
     lock_session,
 )
 from apps.common.services.sessions import ensure_session_active as _ensure_session_active
-from apps.swipe_sessions.constants import PAIRED_MAX_PARTICIPANTS
 from apps.swipe_sessions.dtos.swipe_summary import SwipeExportSummary
 from apps.swipe_sessions.models import SwipeSession
 from apps.swipe_sessions.realtime import notify_session
@@ -52,25 +52,14 @@ def create_swipe_session(user, session_type: str) -> SwipeSession:
 
 
 def _start_paired_session(session: SwipeSession) -> SwipeSession:
-    session = lock_session(SwipeSession, session.pk)
-
-    if session.status == SessionStatus.ACTIVE:
-        return session
-    if session.status != SessionStatus.WAITING:
-        raise InvalidSessionStateError("Swipe session has already started or finished.")
-    if session.users.count() < PAIRED_MAX_PARTICIPANTS:
-        raise PartnerNotJoinedError
-
-    fill_paired_candidate_pool(session)
-
-    session.status = SessionStatus.ACTIVE
-    session.last_seen_at = timezone.now()
-    session.save(update_fields=["status", "last_seen_at"])
-
-    transaction.on_commit(
-        lambda: notify_session(session.pk, event="session.updated", reason="started")
+    return activate_session(
+        SwipeSession,
+        session.pk,
+        prepare=fill_paired_candidate_pool,
+        notify=lambda s: notify_session(
+            s.pk, event="session.updated", reason="started"
+        ),
     )
-    return session
 
 
 @transaction.atomic

@@ -8,25 +8,18 @@ from django.utils import timezone
 
 from apps.common.enums import (
     GenerationStatus,
-    InviteStatus,
     InviteType,
     SessionStatus,
     SessionType,
 )
-from apps.common.exceptions import (
-    NotSessionMemberError,
-    SessionClosedError,
-    SessionFullError,
-    SessionNotFoundError,
-    SessionNotReadyError,
-)
+from apps.common.exceptions import NotSessionMemberError, SessionClosedError
 from apps.common.services.sessions import (
     StaleOutcome,
+    activate_session,
     close_stale_session,
     close_stale_sessions,
     get_user_session,
     is_stale,
-    lock_session,
     touch_session,
 )
 from apps.comparisons.exceptions import InsufficientDataError
@@ -34,11 +27,11 @@ from apps.comparisons.models import Comparison, ComparisonSession
 from apps.comparisons.realtime import notify_room
 from apps.invites.models import Invite
 from apps.invites.services.invite import create_invite
+from apps.invites.services.session_invites import regenerate_session_invite
 from apps.library.models import Rating
 
 logger = logging.getLogger(__name__)
 
-MAX_PARTICIPANTS = 2
 RUNNING_TIMEOUT = timedelta(minutes=2)
 
 
@@ -97,44 +90,19 @@ def create_room(user) -> tuple[ComparisonSession, Invite]:
     return room, invite
 
 
-@transaction.atomic
 def regenerate_invite(*, user, room: ComparisonSession) -> Invite:
-    if room.status != SessionStatus.WAITING:
-        raise SessionClosedError
-
-    Invite.objects.filter(
-        inviter=user, session_id=room.pk, status=InviteStatus.PENDING
-    ).update(status=InviteStatus.EXPIRED)
-
-    return create_invite(user=user, invite_type=InviteType.COMPARISON, session=room)
+    return regenerate_session_invite(
+        user=user, session=room, invite_type=InviteType.COMPARISON
+    )
 
 
-@transaction.atomic
-def join_room_from_invite(invite: Invite, user) -> ComparisonSession:
-    if invite.session_id is None:
-        raise SessionNotFoundError
-
-    room = lock_session(ComparisonSession, invite.session_id)
-
-    if room.status == SessionStatus.FINISHED:
-        raise SessionClosedError
-    if room.status != SessionStatus.WAITING or room.users.count() >= MAX_PARTICIPANTS:
-        raise SessionFullError
-
-    room.users.add(user)
-    room.status = SessionStatus.ACTIVE
-    room.last_seen_at = timezone.now()
-    room.save(update_fields=["status", "last_seen_at"])
-
-    Comparison.objects.create(session=room)
-    transaction.on_commit(lambda: notify_room(room.pk, reason="partner_joined"))
-    return room
+def _ensure_comparison(room: ComparisonSession) -> None:
+    Comparison.objects.get_or_create(session=room)
 
 
 def request_generation(*, room: ComparisonSession) -> str:
-    comparison = _comparison_of(room)
-    if room.status != SessionStatus.ACTIVE or comparison is None:
-        raise SessionNotReadyError("Both participants must be in the session first.")
+    activate_session(ComparisonSession, room.pk, prepare=_ensure_comparison)
+    comparison = Comparison.objects.get(session_id=room.pk)
     return run_generation(comparison.pk)
 
 

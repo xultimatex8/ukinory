@@ -19,13 +19,16 @@ from django.utils import timezone
 
 from apps.common.enums import SessionStatus
 from apps.common.exceptions import (
+    InvalidSessionStateError,
     NotSessionMemberError,
+    PartnerNotJoinedError,
     SessionFinishedError,
     SessionNotFoundError,
 )
 from apps.common.models import Session
 
 STALE_TIMEOUT = timedelta(minutes=2)
+MAX_PARTICIPANTS = 2
 LIVE_STATUSES = (SessionStatus.WAITING, SessionStatus.ACTIVE)
 
 
@@ -123,3 +126,32 @@ def ensure_session_active(session, *, on_closed: Optional[OnClosed] = None) -> N
         outcome = close_stale_session(session.pk, on_closed=on_closed)
         if outcome is not StaleOutcome.NOT_STALE:
             raise SessionFinishedError
+
+
+@transaction.atomic
+def activate_session(
+    model,
+    session_id,
+    *,
+    prepare: Optional[Callable] = None,
+    notify: Optional[Callable] = None,
+):
+    session = lock_session(model, session_id)
+
+    if session.status == SessionStatus.ACTIVE:
+        return session
+    if session.status != SessionStatus.WAITING:
+        raise InvalidSessionStateError("Session has already started or finished.")
+    if session.users.count() < MAX_PARTICIPANTS:
+        raise PartnerNotJoinedError
+
+    if prepare is not None:
+        prepare(session)
+
+    session.status = SessionStatus.ACTIVE
+    session.last_seen_at = timezone.now()
+    session.save(update_fields=["status", "last_seen_at"])
+
+    if notify is not None:
+        transaction.on_commit(lambda: notify(session))
+    return session

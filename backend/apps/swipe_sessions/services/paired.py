@@ -3,22 +3,16 @@ from __future__ import annotations
 from django.db import transaction
 from django.db.models import Count, Max, Q
 
-from apps.common.enums import (
-    InviteStatus,
-    InviteType,
-    SessionStatus,
-    SwipeAction,
-    SwipeSessionType,
-)
+from apps.common.enums import InviteType, SwipeAction, SwipeSessionType
+from apps.common.services.sessions import touch_session
 from apps.invites.models import Invite
 from apps.invites.services.invite import create_invite
+from apps.invites.services.session_invites import regenerate_session_invite
 from apps.library.models import Rating
 from apps.swipe_sessions.constants import PAIRED_MAX_PARTICIPANTS
 from apps.swipe_sessions.exceptions import PairedSessionRequiredError
 from apps.swipe_sessions.models import SwipeSession, SwipeSessionCandidate
 from apps.swipe_sessions.services.session import create_swipe_session
-from apps.common.services.sessions import touch_session
-from apps.common.exceptions import SessionClosedError
 
 
 def require_paired(session: SwipeSession) -> None:
@@ -38,22 +32,10 @@ def create_paired_session(user) -> tuple[SwipeSession, Invite]:
     return session, invite
 
 
-@transaction.atomic
 def regenerate_paired_invite(*, user, session: SwipeSession) -> Invite:
     require_paired(session)
-    if session.status != SessionStatus.WAITING:
-        raise SessionClosedError
-
-    Invite.objects.filter(
-        inviter=user,
-        session_id=session.pk,
-        status=InviteStatus.PENDING,
-    ).update(status=InviteStatus.EXPIRED)
-
-    return create_invite(
-        user=user,
-        invite_type=InviteType.PAIRED_SWIPE,
-        session=session,
+    return regenerate_session_invite(
+        user=user, session=session, invite_type=InviteType.PAIRED_SWIPE
     )
 
 
