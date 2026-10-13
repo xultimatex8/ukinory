@@ -1,3 +1,7 @@
+from rest_framework import status
+from rest_framework.exceptions import APIException
+
+
 class JustificationError(Exception):
     """Base exception for recommendation justification operations."""
 
@@ -52,3 +56,41 @@ class RecommendationError(SwipeSessionError):
 
 class SwipeError(SwipeSessionError):
     """Errors specific to recording a swipe, still a session error."""
+
+
+class PairedSessionRequiredError(APIException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_detail = "This action is only available in paired swipe sessions."
+    default_code = "paired_session_required"
+ 
+ 
+class PairedSessionFullError(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "This session already has two participants."
+    default_code = "paired_session_full"
+ 
+ 
+class PairedSessionClosedError(APIException):
+    status_code = status.HTTP_410_GONE
+    default_detail = "This session is no longer available."
+    default_code = "paired_session_closed"
+ 
+ 
+class PartnerNotJoinedError(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "Your partner has not joined yet."
+    default_code = "partner_not_joined"
+ 
+ 
+class PairedDataMissingError(APIException):
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    default_detail = (
+        "Both of you need imported ratings before you can swipe together."
+    )
+    default_code = "paired_data_missing"
+ 
+ 
+class SessionNotStartedError(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "The session has not started yet."
+    default_code = "session_not_started"

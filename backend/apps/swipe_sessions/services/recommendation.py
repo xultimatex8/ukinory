@@ -2,14 +2,33 @@ from __future__ import annotations
 
 from django.conf import settings
 
+from apps.common.enums import SessionStatus, SwipeSessionType
 from apps.recommendations.dtos.candidate import RecommendationCandidate
 from apps.swipe_sessions.models import Swipe, SwipeSession, SwipeSessionCandidate
-from apps.swipe_sessions.services.candidate_pool import fill_candidate_pool
-from apps.swipe_sessions.exceptions import NotSessionMemberError, SwipeSessionNotFoundError
+from apps.swipe_sessions.services.candidate_pool import (
+    fill_candidate_pool,
+    fill_paired_candidate_pool,
+)
+from apps.swipe_sessions.exceptions import (
+    NotSessionMemberError,
+    PairedDataMissingError,
+    SessionNotStartedError,
+    SwipeSessionNotFoundError,
+)
 from apps.swipe_sessions.services.session import ensure_session_active
 
 
 DEFAULT_POOL_REFILL_THRESHOLD = 5
+
+
+def _refill(session, user) -> None:
+    if session.type == SwipeSessionType.PAIRED:
+        fill_paired_candidate_pool(
+            session=session,
+            refill_threshold=DEFAULT_POOL_REFILL_THRESHOLD,
+        )
+    else:
+        fill_candidate_pool(session=session, user=user)
 
 
 def get_next_recommendation(
@@ -18,12 +37,16 @@ def get_next_recommendation(
 ) -> tuple[SwipeSessionCandidate, RecommendationCandidate] | None:
     candidate = _get_next_candidate(session, user)
 
-    if candidate is None:
-        fill_candidate_pool(session=session, user=user)
-        candidate = _get_next_candidate(session, user)
+    try:
+        if candidate is None:
+            _refill(session, user)
+            candidate = _get_next_candidate(session, user)
 
-    elif _get_remaining_candidates(session, user) <= DEFAULT_POOL_REFILL_THRESHOLD:
-        fill_candidate_pool(session=session, user=user)
+        elif _get_remaining_candidates(session, user) <= DEFAULT_POOL_REFILL_THRESHOLD:
+            _refill(session, user)
+    except PairedDataMissingError:
+        if candidate is None:
+            raise
 
     if candidate is None:
         return None
@@ -53,6 +76,9 @@ def get_next_recommendation_for_session(
         raise NotSessionMemberError
 
     ensure_session_active(session)
+
+    if session.type == SwipeSessionType.PAIRED and session.status != SessionStatus.ACTIVE:
+        raise SessionNotStartedError
 
     return get_next_recommendation(
         session=session,

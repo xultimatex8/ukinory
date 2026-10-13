@@ -9,12 +9,20 @@ from apps.swipe_sessions.views import (
     SwipeSessionRecommendationView,
     SwipeSessionStartView,
     SwipeSessionSwipeView,
+    PairedSwipeSessionCreateView,
+    PairedSwipeSessionInviteView,
+    PairedSwipeSessionStateView,
+    SwipeSessionMatchesView,
 )
 
 
 urlpatterns = [
     path("", SwipeSessionListCreateView.as_view(), name="swipe-session-list-create"),
+    path("paired/", PairedSwipeSessionCreateView.as_view(), name="paired-swipe-session-create"),
     path("<uuid:pk>/", SwipeSessionDetailView.as_view(), name="swipe-session-detail"),
+    path("<uuid:pk>/paired/", PairedSwipeSessionStateView.as_view(), name="paired-swipe-session-state"),
+    path("<uuid:pk>/invite/", PairedSwipeSessionInviteView.as_view(), name="paired-swipe-session-invite"),
+    path("<uuid:pk>/matches/", SwipeSessionMatchesView.as_view(), name="swipe-session-matches"),
     path("<uuid:pk>/start/", SwipeSessionStartView.as_view(), name="swipe-session-start"),
     path("<uuid:pk>/end/", SwipeSessionEndView.as_view(), name="swipe-session-watchlist-export"),
     path("<uuid:pk>/heartbeat/", SwipeSessionHeartbeatView.as_view(), name="swipe-session-heartbeat"),
