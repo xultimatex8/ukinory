@@ -15,7 +15,7 @@ from apps.common.services.sessions import (
 from apps.common.services.sessions import ensure_session_active as _ensure_session_active
 from apps.swipe_sessions.dtos.swipe_summary import SwipeExportSummary
 from apps.swipe_sessions.models import SwipeSession
-from apps.swipe_sessions.realtime import notify_session
+from apps.common.realtime import notify_session
 from apps.swipe_sessions.services.candidate_pool import (
     fill_candidate_pool,
     fill_paired_candidate_pool,

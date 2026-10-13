@@ -8,7 +8,7 @@ from apps.library.services.watchlist import add_movie
 from apps.swipe_sessions.dtos.swipe_outcome import SwipeOutcome
 from apps.swipe_sessions.exceptions import CandidateNotFoundError
 from apps.swipe_sessions.models import Swipe, SwipeSessionCandidate
-from apps.swipe_sessions.realtime import notify_session
+from apps.common.realtime import notify_session
 from apps.swipe_sessions.services.paired import match_payload
 
 
@@ -34,9 +34,9 @@ def _detect_match(user, candidate: SwipeSessionCandidate, action: str) -> dict |
     if not partner_swipes:
         return None
 
-    add_movie(user, candidate.movie, WatchlistSource.SWIPE_MATCH, True)
+    add_movie(user, candidate.movie, WatchlistSource.SWIPE_MATCH)
     for partner_swipe in partner_swipes:
-        add_movie(partner_swipe.user, candidate.movie, WatchlistSource.SWIPE_MATCH, True)
+        add_movie(partner_swipe.user, candidate.movie, WatchlistSource.SWIPE_MATCH)
 
     return match_payload(candidate)
 

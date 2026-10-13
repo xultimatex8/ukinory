@@ -4,7 +4,7 @@ from apps.common.enums import SwipeSessionType
 from apps.common.exceptions import SessionClosedError
 from apps.invites.services.session_invites import join_session_from_invite
 from apps.swipe_sessions.models import SwipeSession
-from apps.swipe_sessions.realtime import notify_session
+from apps.common.realtime import notify_session
 
 
 def _ensure_paired(session: SwipeSession) -> None:
