@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError } from "../services/api";
 import {
   buildRoomSocketUrl,
   generateComparison,
@@ -10,6 +9,8 @@ import {
   type RoomState,
 } from "../services/comparisons";
 import { getErrorMessage } from "../utils/errors";
+import { type FatalSessionError, classifyFatalError } from "../services/sessions";
+import { getAccessToken } from "../utils/tokens";
 
 export type RoomPhase =
   | "loading"
@@ -20,11 +21,7 @@ export type RoomPhase =
   | "failed"
   | "ready";
 
-export type FatalRoomError =
-  | "not_found"
-  | "forbidden"
-  | "closed"
-  | null;
+export type FatalRoomError = FatalSessionError | null;
 
 const POLL_FAST_MS = 3000;
 const POLL_SLOW_MS = 15000;
@@ -57,16 +54,11 @@ export function useComparisonRoom(roomId: string | undefined) {
   const lastKickKeyRef = useRef<string | null>(null);
 
   const handleFailure = useCallback((err: unknown, silent = false) => {
-    if (err instanceof ApiError) {
-      if (err.status === 404) {
-        setFatal("not_found");
-        return;
-      }
+    const fatalKind = classifyFatalError(err);
 
-      if (err.status === 403) {
-        setFatal("forbidden");
-        return;
-      }
+    if (fatalKind) {
+      setFatal(fatalKind);
+      return;
     }
 
     if (!silent) {
@@ -138,7 +130,7 @@ export function useComparisonRoom(roomId: string | undefined) {
     let disposed = false;
 
     const connect = () => {
-      const token = localStorage.getItem("access_token");
+      const token = getAccessToken();
 
       if (!token || disposed) return;
 
@@ -185,12 +177,13 @@ export function useComparisonRoom(roomId: string | undefined) {
     if (!roomId || !room || result || fatal) return;
 
     const bothReady =
-      room.status === "ACTIVE" &&
+      room.status !== "FINISHED" &&
       room.partner_joined &&
       room.you_have_data &&
       room.partner_has_data === true;
 
     const needsKick =
+      room.generation_status === null ||
       room.generation_status === "pending" ||
       room.generation_status === "needs_data";
 

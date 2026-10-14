@@ -1,11 +1,14 @@
 import { apiFetch } from "./api";
-import { wsUrl } from "../api";
+import {
+  buildSocketUrl,
+  type Invite,
+  type ParticipantState,
+} from "./sessions";
 
 export interface SwipeSession {
   id: string;
   type: string;
   status: string;
-  leave_token: string | null;
 }
 
 export interface MovieRecommendation {
@@ -42,23 +45,13 @@ export interface SwipeResult {
   match: MatchEvent | null;
 }
 
-export interface PairedSessionState {
-  id: string;
+export interface PairedSessionState extends ParticipantState {
   type: string;
-  status: "WAITING" | "ACTIVE" | "FINISHED";
   current_user_id: string;
-  participants: number;
-  partner_joined: boolean;
-  you_have_data: boolean;
-  partner_has_data: boolean | null;
   matches_count: number;
 }
 
-export interface PairedInvite {
-  id?: string;
-  code: string;
-  expires_at: string;
-}
+export type PairedInvite = Invite;
 
 export interface CreatePairedSessionResponse {
   session: PairedSessionState;
@@ -235,7 +228,5 @@ export async function getSessionMatches(
 }
 
 export function buildSessionSocketUrl(sessionId: string, token: string): string {
-  const url = new URL(wsUrl(`/ws/swipe-sessions/${sessionId}/`));
-  url.searchParams.set("token", token);
-  return url.toString();
+  return buildSocketUrl(`/ws/swipe-sessions/${sessionId}/`, token);
 }

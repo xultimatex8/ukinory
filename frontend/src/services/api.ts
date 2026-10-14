@@ -1,4 +1,5 @@
 import { apiUrl } from "../api";
+import { clearTokens, getRefreshToken, setTokens, getAccessToken } from "../utils/tokens";
 
 export class ApiError extends Error {
   status: number;
@@ -23,8 +24,6 @@ export class ApiError extends Error {
 async function createApiError(response: Response): Promise<ApiError> {
   try {
     const result = await response.json();
-
-    console.log("API ERROR:", result);
 
     if (
       result &&
@@ -59,46 +58,44 @@ function handleServerError() {
   window.location.href = "/500";
 }
 
-export async function apiFetch(
+function logout() {
+  clearTokens();
+  window.location.href = "/auth";
+}
+
+function send(
   input: RequestInfo | URL,
-  init: RequestInit = {},
+  init: RequestInit,
+  token: string | null,
 ): Promise<Response> {
-  const accessToken = localStorage.getItem("access_token");
   const headers = new Headers(init.headers);
 
-  if (accessToken) {
-    headers.set("Authorization", `Bearer ${accessToken}`);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(apiUrl(input), {
-    ...init,
-    headers,
-  });
+  return fetch(apiUrl(input), { ...init, headers });
+}
 
-  if (response.status !== 401) {
-    if (response.status === 500) {
-      handleServerError();
-      throw await createApiError(response);
-    }
-
-    if (!response.ok) {
-      throw await createApiError(response);
-    }
-
-    return response;
-  }
-
-  const refreshToken = localStorage.getItem("refresh_token");
-
-  if (!refreshToken) {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    window.location.href = "/auth";
-
+async function ensureOk(response: Response): Promise<Response> {
+  if (response.status === 500) {
+    handleServerError();
     throw await createApiError(response);
   }
 
-  const refreshResponse = await fetch(apiUrl("/api/auth/token/refresh/"), {
+  if (!response.ok) {
+    throw await createApiError(response);
+  }
+
+  return response;
+}
+
+async function requestNewAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+
+  if (!refreshToken) return null;
+
+  const response = await fetch(apiUrl("/api/auth/token/refresh/"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -108,51 +105,63 @@ export async function apiFetch(
     }),
   });
 
-  if (!refreshResponse.ok) {
-    if (refreshResponse.status === 500) {
+  if (!response.ok) {
+    if (response.status === 500) {
       handleServerError();
-      throw await createApiError(refreshResponse);
+    } else {
+      logout();
     }
 
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    window.location.href = "/auth";
-
-    throw await createApiError(refreshResponse);
+    throw await createApiError(response);
   }
 
-  const tokens = await refreshResponse.json();
+  const tokens = await response.json();
 
-  localStorage.setItem("access_token", tokens.access);
+  setTokens(tokens.access, tokens.refresh);
 
-  if (tokens.refresh) {
-    localStorage.setItem("refresh_token", tokens.refresh);
+  return tokens.access;
+}
+
+let refreshInFlight: Promise<string | null> | null = null;
+
+function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = requestNewAccessToken().finally(() => {
+      refreshInFlight = null;
+    });
   }
 
-  const retryHeaders = new Headers(init.headers);
-  retryHeaders.set("Authorization", `Bearer ${tokens.access}`);
+  return refreshInFlight;
+}
 
-  const retryResponse = await fetch(apiUrl(input), {
-    ...init,
-    headers: retryHeaders,
-  });
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const usedToken = getAccessToken();
+  const response = await send(input, init, usedToken);
+
+  if (response.status !== 401) {
+    return ensureOk(response);
+  }
+
+  const currentToken = getAccessToken();
+  const token =
+    currentToken && currentToken !== usedToken
+      ? currentToken
+      : await refreshAccessToken();
+
+  if (!token) {
+    logout();
+    throw await createApiError(response);
+  }
+
+  const retryResponse = await send(input, init, token);
 
   if (retryResponse.status === 401) {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    window.location.href = "/auth";
-
+    logout();
     throw await createApiError(retryResponse);
   }
 
-  if (retryResponse.status === 500) {
-    handleServerError();
-    throw await createApiError(retryResponse);
-  }
-
-  if (!retryResponse.ok) {
-    throw await createApiError(retryResponse);
-  }
-
-  return retryResponse;
+  return ensureOk(retryResponse);
 }

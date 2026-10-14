@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError } from "../services/api";
 import {
   buildSessionSocketUrl,
   getPairedSessionState,
@@ -10,7 +9,12 @@ import {
   type MatchEvent,
   type PairedSessionState,
 } from "../services/swipeSessions";
+import {
+  classifyFatalError,
+  type FatalSessionError,
+} from "../services/sessions";
 import { getErrorMessage } from "../utils/errors";
+import { getAccessToken } from "../utils/tokens";
 
 export type PairedPhase =
   | "loading"
@@ -22,7 +26,7 @@ export type PairedPhase =
   | "active"
   | "closed";
 
-export type FatalPairedError = "not_found" | "forbidden" | null;
+export type FatalPairedError = FatalSessionError | null;
 
 export interface MatchToast {
   candidateId: string;
@@ -89,16 +93,11 @@ export function usePairedSession(sessionId: string | undefined) {
   const bootstrapStartedRef = useRef(false);
 
   const handleFailure = useCallback((err: unknown, silent = false) => {
-    if (err instanceof ApiError) {
-      if (err.status === 404) {
-        setFatal("not_found");
-        return;
-      }
+    const fatalKind = classifyFatalError(err);
 
-      if (err.status === 403) {
-        setFatal("forbidden");
-        return;
-      }
+    if (fatalKind) {
+      setFatal(fatalKind);
+      return;
     }
 
     if (!silent) {
@@ -241,7 +240,7 @@ export function usePairedSession(sessionId: string | undefined) {
     };
 
     const connect = () => {
-      const token = localStorage.getItem("access_token");
+      const token = getAccessToken();
 
       if (!token || disposed) return;
 
@@ -307,7 +306,7 @@ export function usePairedSession(sessionId: string | undefined) {
       startSwipeSession(sessionId)
         .then(() => refresh())
         .catch((err) => {
-          if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+          if (classifyFatalError(err)) {
             handleFailure(err);
             return;
           }

@@ -1,3 +1,4 @@
+import { downloadBlob } from "../utils/download";
 import { apiFetch } from "./api";
 
 export interface LibraryStats {
@@ -14,9 +15,6 @@ export interface RateMoviePayload {
 export async function checkLibraryData(): Promise<boolean> {
   const response = await apiFetch("/api/library/has-film-data/", {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-    },
   });
 
   return response.json();
@@ -24,10 +22,10 @@ export async function checkLibraryData(): Promise<boolean> {
 
 export async function getLibraryStats(): Promise<LibraryStats> {
   const response = await apiFetch("/api/library/stats/", {
-    method: 'GET',
+    method: "GET",
   });
- 
-  return await response.json();
+
+  return response.json();
 }
 
 export async function rateMovie(
@@ -48,15 +46,5 @@ export async function exportWatchlistCsv(): Promise<void> {
     method: "GET",
   });
 
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "ukinory_full_watchlist.csv";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  window.URL.revokeObjectURL(url);
+  downloadBlob(await response.blob(), "ukinory_full_watchlist.csv");
 }
