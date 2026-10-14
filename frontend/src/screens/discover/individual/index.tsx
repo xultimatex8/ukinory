@@ -67,10 +67,8 @@ export default function DiscoverScreen() {
 
     try {
       const session = await createIndividualSwipeSession();
-      const started = await startSwipeSession(session.id);
-      navigate(`/discover/${session.id}`, {
-        state: { leaveToken: started.leave_token },
-      });
+      await startSwipeSession(session.id);
+      navigate(`/discover/${session.id}`);
     } catch {
       setError("Unable to start a swipe session.");
     } finally {

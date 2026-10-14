@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMotionValue } from "motion/react";
 import { Check, Heart, LogOut, X } from "lucide-react";
-import { useLocation, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import AppLogo from "../../../../components/AppLogo";
 import EndSessionModal from "../../../../components/EndSessionModal";
 import ErrorScreen from "../../../../components/ErrorScreen";
@@ -14,9 +14,9 @@ import SwipeMovieCard from "../../../../components/SwipeMovieCard";
 import { useEndSwipeSession } from "../../../../hooks/useEndSwipeSession";
 import { useSwipeActions } from "../../../../hooks/useSwipeActions";
 import { useSwipeRecommendation } from "../../../../hooks/useSwipeRecommendation";
-import { useSwipeSessionLifecycle } from "../../../../hooks/useSwipeSessionLifecycle";
 import type { PairedSessionController } from "../../../../hooks/usePairedSession";
 import PairedSessionOverlay from "../../../../components/PairedSessionOverlay";
+import { useHeartbeat } from "../../../../hooks/useHeartbeat";
 
 interface DiscoverSessionScreenProps {
   paired?: PairedSessionController;
@@ -29,11 +29,6 @@ const PROMOTION_DURATION = 0.45;
 
 export default function DiscoverSessionScreen( { paired }: DiscoverSessionScreenProps) {
   const { id } = useParams<{ id: string }>();
-  const location = useLocation();
-
-  const [leaveToken, setLeaveToken] = useState<string | null>(
-    (location.state as { leaveToken?: string } | null)?.leaveToken ?? null,
-  );
 
   const [isPromotingBackCard, setIsPromotingBackCard] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
@@ -72,13 +67,7 @@ export default function DiscoverSessionScreen( { paired }: DiscoverSessionScreen
     cardStackGap: CARD_STACK_GAP,
   });
 
-  useSwipeSessionLifecycle({
-    id,
-    leaveToken,
-    finished,
-    error,
-    setLeaveToken,
-  });
+  useHeartbeat(id, !finished && !error);
 
   const {
     handleSwipe,
