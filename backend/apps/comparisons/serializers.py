@@ -11,7 +11,7 @@ class ComparisonSummarySerializer(serializers.ModelSerializer):
         fields = ["id", "user_ids", "generated_at"]
 
     def get_user_ids(self, obj):
-        return [u.pk for u in obj.users.all()]
+        return [u.pk for u in obj.session.users.all()]
 
 
 def serialize_result(result) -> dict:
@@ -22,5 +22,5 @@ def serialize_result(result) -> dict:
         "narrative": result.narrative,
         "narrative_available": result.narrative_available,
         "recommendations": result.recommendations,
-        "individual_narratives": result.individual
+        "individual_narratives": result.individual,
     }

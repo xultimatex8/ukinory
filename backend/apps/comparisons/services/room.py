@@ -13,6 +13,7 @@ from apps.common.enums import (
     SessionType,
 )
 from apps.common.exceptions import NotSessionMemberError, SessionClosedError
+from apps.common.services.session_state import build_participant_state
 from apps.common.services.sessions import (
     StaleOutcome,
     activate_session,
@@ -28,7 +29,6 @@ from apps.comparisons.realtime import notify_room
 from apps.invites.models import Invite
 from apps.invites.services.invite import create_invite
 from apps.invites.services.session_invites import regenerate_session_invite
-from apps.library.models import Rating
 
 logger = logging.getLogger(__name__)
 
@@ -60,22 +60,11 @@ def heartbeat_room(room: ComparisonSession) -> None:
 
 
 def build_room_state(room: ComparisonSession, user) -> dict:
-    users = list(room.users.all())
     comparison = _comparison_of(room)
-    with_data = set(
-        Rating.objects.filter(user__in=users).values_list("user_id", flat=True).distinct()
-    )
-    partner = next((u for u in users if u.pk != user.pk), None)
-
     return {
-        "id": str(room.pk),
-        "status": room.status,
-        "participants": len(users),
-        "partner_joined": partner is not None,
+        **build_participant_state(room, user),
         "comparison_id": str(comparison.pk) if comparison else None,
         "generation_status": comparison.generation_status if comparison else None,
-        "you_have_data": user.pk in with_data,
-        "partner_has_data": (partner.pk in with_data) if partner else None,
     }
 
 
