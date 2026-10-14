@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
-import LeaveRoomModal from "../../../components/LeaveRoomModal";
 import ErrorScreen from "../../../components/ErrorScreen";
 import { getCurrentUser, type User } from "../../../services/user";
 import {
@@ -23,6 +22,7 @@ import { useComparisonRoom } from "../../../hooks/useComparisonRoom";
 import InviteSharePanel from "../../../components/InviteSharePanel";
 import { importExport, type ImportResult } from "../../../services/imports";
 import ComparisonResultView from "../../../components/ComparisonResultView";
+import ConfirmModal from "../../../components/ConfirmModal";
 
 function StatusRow({
   label,
@@ -444,7 +444,7 @@ export default function ComparisonRoomScreen() {
   const [me, setMe] = useState<User | null>(null);
   const [meChecked, setMeChecked] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
-  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
 
   const handleLeave = async () => {
@@ -462,7 +462,7 @@ export default function ComparisonRoomScreen() {
     }
   };
 
-  const handleConfirmLeave = () => {
+  const onLeave = () => {
     if (isLeaving) return;
 
     void handleLeave();
@@ -532,7 +532,7 @@ export default function ComparisonRoomScreen() {
               type="button"
               onClick={() => {
                 setLeaveError(null);
-                setIsLeaveModalOpen(true);
+                setIsConfirmModalOpen(true);
               }}
               disabled={isLeaving}
               className="flex cursor-pointer items-center gap-2 border border-border bg-surface px-4 py-2 text-xs font-medium text-text-muted transition hover:bg-surface-hover hover:text-text disabled:cursor-auto disabled:opacity-50"
@@ -684,12 +684,26 @@ export default function ComparisonRoomScreen() {
         )}
       </div>
 
-      {isLeaveModalOpen && (
-        <LeaveRoomModal
-          isLeaving={isLeaving}
+      {isConfirmModalOpen && (
+        <ConfirmModal
+          title="Leave session?"
+          description="This closes the session for both of you. You can start a new one at any time."
           error={leaveError}
-          onClose={() => setIsLeaveModalOpen(false)}
-          onLeave={handleConfirmLeave}
+          onClose={() => setIsConfirmModalOpen(false)}
+          isProcessing={isLeaving}
+          actions={[
+            {
+              label: "Stay",
+              onClick: () => setIsConfirmModalOpen(false),
+              variant: "secondary",
+            },
+            {
+              label: "Leave",
+              loadingLabel: "Leaving...",
+              onClick: onLeave,
+              loading: isLeaving,
+            },
+          ]}
         />
       )}
     </main>

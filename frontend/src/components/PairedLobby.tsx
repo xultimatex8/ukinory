@@ -4,8 +4,8 @@ import { Check, Clock, Loader2, LogOut } from "lucide-react";
 import type { PairedPhase } from "../hooks/usePairedSession";
 import type { PairedInvite, PairedSessionState } from "../services/swipeSessions";
 import InviteSharePanel from "./InviteSharePanel";
-import LeaveSessionModal from "./LeaveSessionModal";
 import PairedImportSection from "./PairedImportSection";
+import ConfirmModal from "./ConfirmModal";
 
 interface PairedLobbyProps {
   phase: PairedPhase;
@@ -85,7 +85,7 @@ export default function PairedLobby({
   onLeave,
   onClearLeaveError,
 }: PairedLobbyProps) {
-  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
   const showStatus =
     state !== null && phase !== "loading" && phase !== "waiting_partner";
@@ -99,7 +99,7 @@ export default function PairedLobby({
               type="button"
               onClick={() => {
                 onClearLeaveError();
-                setIsLeaveModalOpen(true);
+                setIsConfirmModalOpen(true);
               }}
               disabled={isLeaving}
               className="flex cursor-pointer items-center gap-2 border border-border bg-surface px-4 py-2 text-xs font-medium text-text-muted transition hover:bg-surface-hover hover:text-text disabled:cursor-auto disabled:opacity-50"
@@ -217,12 +217,26 @@ export default function PairedLobby({
         )}
       </div>
 
-      {isLeaveModalOpen && (
-        <LeaveSessionModal
-          isLeaving={isLeaving}
+      {isConfirmModalOpen && (
+        <ConfirmModal
+          title="Leave session?"
+          description="This closes the session for both of you. You can start a new one at any time."
           error={leaveError}
-          onClose={() => setIsLeaveModalOpen(false)}
-          onLeave={onLeave}
+          onClose={() => setIsConfirmModalOpen(false)}
+          isProcessing={isLeaving}
+          actions={[
+            {
+              label: "Stay",
+              onClick: () => setIsConfirmModalOpen(false),
+              variant: "secondary",
+            },
+            {
+              label: "Leave",
+              loadingLabel: "Leaving...",
+              onClick: onLeave,
+              loading: isLeaving,
+            },
+          ]}
         />
       )}
     </main>
