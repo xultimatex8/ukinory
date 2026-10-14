@@ -22,10 +22,6 @@ from apps.swipe_sessions.services.candidate_pool import (
 )
 from apps.swipe_sessions.services.watchlist_export import export_watchlist_csv
 
-LEAVE_TOKEN_SALT = "swipe_sessions.leave"
-LEAVE_TOKEN_MAX_AGE = 60 * 60 * 6
-
-
 def get_user_swipe_session(*, session_id, user) -> SwipeSession:
     return get_user_session(SwipeSession, session_id=session_id, user=user)
 
