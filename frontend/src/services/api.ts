@@ -33,6 +33,16 @@ async function createApiError(response: Response): Promise<ApiError> {
       return new ApiError(response.status, result.detail, result);
     }
 
+    const envelope = result?.error;
+
+    if (
+      envelope &&
+      typeof envelope === "object" &&
+      typeof envelope.message === "string"
+    ) {
+      return new ApiError(response.status, envelope.message, result);
+    }
+
     if (result && typeof result === "object") {
       for (const value of Object.values(result)) {
         if (Array.isArray(value) && typeof value[0] === "string") {

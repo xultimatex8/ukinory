@@ -1,96 +1,56 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Check, FileArchive, FileText, Trash2, Upload } from "lucide-react";
 
-import { importExport, type ImportResult } from "../services/imports";
+import { fileKey, useLetterboxdImport } from "../hooks/useLetterboxdImport";
 
-export default function PairedImportSection({
-  onImported,
-}: {
+type ImportPurpose = "recommendations" | "comparison";
+
+const COPY: Record<ImportPurpose, { intro: string; accuracyOf: string }> = {
+  recommendations: {
+    intro:
+      "Import your Letterboxd history so we can pick movies that fit both of your tastes.",
+    accuracyOf: "recommendations",
+  },
+  comparison: {
+    intro:
+      "Import your Letterboxd history so your movie taste can be compared with your friend's.",
+    accuracyOf: "comparison",
+  },
+};
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+interface LetterboxdImportSectionProps {
+  purpose: ImportPurpose;
   onImported: () => void;
-}) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+}
 
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [isImporting, setIsImporting] = useState(false);
+export default function LetterboxdImportSection({
+  purpose,
+  onImported,
+}: LetterboxdImportSectionProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const addFiles = (files: File[]) => {
-    if (!files.length || isImporting) return;
+  const {
+    inputRef,
+    files,
+    isImporting,
+    result,
+    error,
+    addFiles,
+    removeFile,
+    openFilePicker,
+    startImport,
+  } = useLetterboxdImport(onImported);
 
-    setImportResult(null);
-    setError(null);
-
-    setPendingFiles((currentFiles) => {
-      const existingFiles = new Set(
-        currentFiles.map(
-          (file) => `${file.name}-${file.size}-${file.lastModified}`,
-        ),
-      );
-
-      const newFiles = files.filter(
-        (file) =>
-          !existingFiles.has(
-            `${file.name}-${file.size}-${file.lastModified}`,
-          ),
-      );
-
-      return [...currentFiles, ...newFiles];
-    });
-  };
-
-  const removeFile = (fileToRemove: File) => {
-    if (isImporting) return;
-
-    setPendingFiles((currentFiles) =>
-      currentFiles.filter(
-        (file) =>
-          file.name !== fileToRemove.name ||
-          file.size !== fileToRemove.size ||
-          file.lastModified !== fileToRemove.lastModified,
-      ),
-    );
-  };
-
-  const handleImport = async () => {
-    if (!pendingFiles.length || isImporting) return;
-
-    setIsImporting(true);
-    setIsDragging(false);
-    setImportResult(null);
-    setError(null);
-
-    try {
-      const result = await importExport(pendingFiles);
-
-      setImportResult(result);
-      setPendingFiles([]);
-
-      onImported();
-    } catch (error) {
-      if (typeof error === "object" && error !== null && "error" in error) {
-        const backendError = error as { error?: { message?: string } };
-
-        setError(
-          backendError.error?.message ??
-            "Unable to import your Letterboxd data.",
-        );
-      } else {
-        setError("Unable to import your Letterboxd data.");
-      }
-    } finally {
-      setIsImporting(false);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
+  const copy = COPY[purpose];
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (isImporting) return;
-
     addFiles(Array.from(event.target.files ?? []));
   };
 
@@ -119,13 +79,6 @@ export default function PairedImportSection({
     addFiles(Array.from(event.dataTransfer.files));
   };
 
-  const formatFileSize = (size: number) => {
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
   return (
     <div className="border border-border bg-surface p-6">
       <div className="flex items-start justify-between">
@@ -133,10 +86,9 @@ export default function PairedImportSection({
           <Upload size={36} strokeWidth={1.5} className="text-primary" />
         </div>
 
-        {pendingFiles.length > 0 && (
+        {files.length > 0 && (
           <span className="text-xs font-medium text-primary">
-            {pendingFiles.length}{" "}
-            {pendingFiles.length === 1 ? "file" : "files"}
+            {files.length} {files.length === 1 ? "file" : "files"}
           </span>
         )}
       </div>
@@ -144,18 +96,17 @@ export default function PairedImportSection({
       <h2 className="mt-5 text-lg font-semibold">Import Letterboxd</h2>
 
       <p className="mt-2 text-sm leading-relaxed text-text-muted">
-        Import your Letterboxd history so we can pick movies that fit both
-        of your tastes.
+        {copy.intro}
         <span className="mt-1 block text-xs text-text-muted/70">
           First import can take up to several minutes, depending on size.
         </span>
       </p>
 
-      {pendingFiles.length > 0 && (
+      {files.length > 0 && (
         <div className="mt-5 space-y-2">
-          {pendingFiles.map((file) => (
+          {files.map((file) => (
             <div
-              key={`${file.name}-${file.size}-${file.lastModified}`}
+              key={fileKey(file)}
               className={`flex items-center gap-3 border border-border bg-background px-3 py-2 ${
                 isImporting ? "opacity-60" : ""
               }`}
@@ -194,11 +145,7 @@ export default function PairedImportSection({
       )}
 
       <div
-        onClick={() => {
-          if (!isImporting) {
-            fileInputRef.current?.click();
-          }
-        }}
+        onClick={openFilePicker}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -221,7 +168,7 @@ export default function PairedImportSection({
         </p>
 
         <input
-          ref={fileInputRef}
+          ref={inputRef}
           type="file"
           accept=".zip,.csv"
           multiple
@@ -231,10 +178,10 @@ export default function PairedImportSection({
         />
       </div>
 
-      {pendingFiles.length > 0 && (
+      {files.length > 0 && (
         <button
           type="button"
-          onClick={handleImport}
+          onClick={() => void startImport()}
           disabled={isImporting}
           className="mt-3 flex w-full cursor-pointer items-center justify-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-background transition hover:bg-primary-hover disabled:cursor-auto disabled:opacity-60"
         >
@@ -249,7 +196,7 @@ export default function PairedImportSection({
         </button>
       )}
 
-      {importResult && (
+      {result && (
         <div className="mt-3 border border-border bg-surface p-5">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center border border-primary">
@@ -265,19 +212,19 @@ export default function PairedImportSection({
             </div>
           </div>
 
-          {importResult.missing.length > 0 && (
+          {result.missing.length > 0 && (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-xs leading-relaxed text-text-muted">
                 <span className="font-medium text-text-secondary">
                   Missing files:
                 </span>{" "}
-                {importResult.missing.join(" | ")}
+                {result.missing.join(" | ")}
               </p>
 
               <p className="mt-2 text-xs leading-relaxed text-text-muted">
                 If possible, please import the missing files as well. Having
                 more information about your movie history helps improve the
-                accuracy of your recommendations.
+                accuracy of your {copy.accuracyOf}.
               </p>
             </div>
           )}

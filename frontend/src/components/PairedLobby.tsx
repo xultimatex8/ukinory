@@ -4,8 +4,8 @@ import { Check, Clock, Loader2, LogOut } from "lucide-react";
 import type { PairedPhase } from "../hooks/usePairedSession";
 import type { PairedInvite, PairedSessionState } from "../services/swipeSessions";
 import InviteSharePanel from "./InviteSharePanel";
-import PairedImportSection from "./PairedImportSection";
 import ConfirmModal from "./ConfirmModal";
+import LetterboxdImportSection from "./LetterboxdImportSesction";
 
 interface PairedLobbyProps {
   phase: PairedPhase;
@@ -139,7 +139,10 @@ export default function PairedLobby({
                 </h2>
 
                 <div className="mt-3">
-                  <PairedImportSection onImported={onImported} />
+                  <LetterboxdImportSection
+                    purpose="recommendations"
+                    onImported={onImported}
+                  />
                 </div>
               </div>
             )}
@@ -168,11 +171,15 @@ export default function PairedLobby({
               <p className="mt-2 text-sm leading-relaxed text-text-secondary">
                 Your friend is in the session. We need your export to pick
                 movies for both of you — the session starts as soon as the
-                import finishes.
+                import finishes. Else, individually swipe and rate some
+                movies.
               </p>
             </div>
 
-            <PairedImportSection onImported={onImported} />
+            <LetterboxdImportSection
+                    purpose="recommendations"
+                    onImported={onImported}
+                  />
           </div>
         )}
 
