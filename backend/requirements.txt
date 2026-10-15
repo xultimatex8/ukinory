@@ -7,6 +7,7 @@ python-dotenv
 debugpy
 pytest
 pytest-django
+pytest-cov
 djangorestframework_simplejwt
 requests
 redis>=5.0
