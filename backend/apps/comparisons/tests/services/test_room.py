@@ -96,8 +96,6 @@ class RoomServiceTests(TestCase):
 
         return invite
 
-    # ------------------------------------------------------------------ access
-
     def test_get_user_room_returns_room_for_member(self):
         room = self._room()
 
@@ -141,8 +139,6 @@ class RoomServiceTests(TestCase):
         room = self._room()
 
         self.assertIsNone(_comparison_of(room))
-
-    # --------------------------------------------------------------- heartbeat
 
     def test_touch_session_updates_last_seen_at(self):
         old_time = timezone.now() - timedelta(minutes=10)
@@ -194,8 +190,6 @@ class RoomServiceTests(TestCase):
         room.refresh_from_db()
 
         self.assertEqual(room.status, SessionStatus.FINISHED)
-
-    # -------------------------------------------------------------------- state
 
     def test_build_room_state_for_waiting_room(self):
         room = self._room()
@@ -302,8 +296,6 @@ class RoomServiceTests(TestCase):
         self.assertTrue(state["you_have_data"])
         self.assertTrue(state["partner_has_data"])
 
-    # ----------------------------------------------------------- create/invites
-
     def test_create_room_creates_room_with_user_and_invite(self):
         room, invite = create_room(self.user)
 
@@ -396,8 +388,6 @@ class RoomServiceTests(TestCase):
                 user=self.user,
                 room=room,
             )
-
-    # --------------------------------------------------------------------- join
 
     def test_accept_comparison_invite_rejects_invite_without_session(self):
         invite = self._invite()
@@ -513,8 +503,6 @@ class RoomServiceTests(TestCase):
             Comparison.objects.filter(session=room).exists()
         )
 
-    # -------------------------------------------------------- request_generation
-
     def test_request_generation_rejects_room_without_partner(self):
         room = self._room(
             status=SessionStatus.WAITING,
@@ -597,8 +585,6 @@ class RoomServiceTests(TestCase):
         mock_run_generation.assert_called_once_with(
             comparison.pk,
         )
-
-    # ------------------------------------------------------------- run_generation
 
     def test_is_running_returns_true_for_recent_running_generation(self):
         comparison = Comparison(
@@ -810,8 +796,6 @@ class RoomServiceTests(TestCase):
     def test_run_generation_raises_for_missing_comparison(self):
         with self.assertRaises(Comparison.DoesNotExist):
             run_generation(uuid.uuid4())
-
-    # ------------------------------------------------------------ close stale
 
     def test_close_stale_rooms_deletes_old_waiting_rooms(self):
         stale = self._room(
