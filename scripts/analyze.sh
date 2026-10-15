@@ -1,20 +1,20 @@
-
 #!/usr/bin/env bash
 
 set -e
 
 echo "Generating pytest coverage report..."
 
-docker compose exec -T backend pytest \
-    --cov=. \
-    --cov-report=xml:coverage.xml
+docker compose exec -T backend pytest 
+    --cov=. 
+    --cov-report=xml:/app/coverage.xml
 
 echo "Adjusting coverage report paths for SonarQube..."
 
-COVERAGE_PATH="backend/coverage.xml"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COVERAGE_PATH="$PROJECT_ROOT/backend/coverage.xml"
 
 if [ ! -f "$COVERAGE_PATH" ]; then
-    echo "Coverage report not found: $COVERAGE_PATH"
+    echo "Coverage report not found at '$COVERAGE_PATH'. Check the Docker volume mapping for the backend service."
     exit 1
 fi
 
@@ -26,7 +26,7 @@ coverage_path = sys.argv[1]
 tree = ET.parse(coverage_path)
 root = tree.getroot()
 
-for source in root.findall("./sources/source"):
+for source in root.findall(".//sources/source"):
     if source.text == "/app":
         source.text = "/usr/src/backend"
 
