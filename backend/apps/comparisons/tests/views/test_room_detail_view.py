@@ -76,5 +76,5 @@ class TestRoomDetailView:
             room_id=UUID("00000000-0000-0000-0000-000000000001"),
             user=user,
         )
-        mock_heartbeat_room.assert_called_once_with(room.pk)
+        mock_heartbeat_room.assert_called_once_with(room)
         mock_build_room_state.assert_called_once_with(room, user)
