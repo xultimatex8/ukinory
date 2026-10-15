@@ -71,7 +71,7 @@ class RoomDetailView(APIView):
 
     def get(self, request, room_id):
         room = get_user_room(room_id=room_id, user=request.user)
-        heartbeat_room(room.pk)
+        heartbeat_room(room)
         return Response(build_room_state(room, request.user))
 
 
