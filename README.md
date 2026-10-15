@@ -79,7 +79,7 @@ The full walkthrough is in [the import flow](docs/letterboxd-export-import-flow.
 | Frontend | React (Vite) + TypeScript |
 | Styling | Tailwind CSS |
 | Data sources | TMDb, Wikidata |
-| Infrastructure | Docker Compose, GitHub Actions (CI/CD), Render, Vercel |
+| Infrastructure | Docker Compose, GitHub Actions (CI/CD), SonarQube (static analysis), Render, Vercel, Neon |
 
 Rationale for each choice: [docs/tech-stack.md](docs/tech-stack.md).
 
@@ -94,8 +94,9 @@ Everything runs on [GitHub Actions](https://github.com/xultimatex8/ukinory/actio
 - **Secrets scan** (`secrets-scan.yml`): Gitleaks on every push and pull request, plus a weekly full run.
 - **CD** (`cd.yml`): publishing a GitHub release deploys the backend to Render and the frontend to Vercel.
 - **Scheduled jobs**: catalog seeding, embedding batch sync and the cleanup of stale guests, rooms, sessions, invites and import jobs run as scheduled workflows that call Django management commands against production. The import queue is processed the same way, by an RQ worker in burst mode that runs hourly and can also be dispatched by the backend on demand, so no always-on worker is needed.
+- **Static analysis:** SonarQube Community Build can be run locally through Docker Compose to inspect code quality and review analysis results, including backend test coverage. It is separate from the GitHub Actions CI pipeline.
 
-See [docs/development.md](docs/development.md#tests) for how to run the tests locally.
+See [docs/development.md](docs/development.md#tests) for how to run the tests locally, and [docs/development.md](docs/development.md#sonarqube) for local SonarQube analysis.
 
 ## Quick start
 
@@ -123,7 +124,7 @@ Environment variables, migrations, day-to-day workflow and Jupyter are covered i
 | [Functional requirements](docs/mvp-functional-requirements.md) | What the MVP does, requirement by requirement |
 | [Data model](docs/data-model.md) | Entities, relationships, design notes and requirement traceability |
 | [Letterboxd import flow](docs/letterboxd-export-import-flow.md) | End-to-end walkthrough of the import and embedding pipeline |
-| [Development guide](docs/development.md) | Local setup, environment variables, Jupyter, tests |
+| [Development guide](docs/development.md) | Local setup, environment variables, Jupyter, tests and SonarQube static analysis |
 
 ## Known constraints
 
