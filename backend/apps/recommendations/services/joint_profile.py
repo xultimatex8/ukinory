@@ -110,6 +110,8 @@ def _catalog_sample() -> Optional[np.ndarray]:
     if len(pks) < CALIBRATION_MIN_SAMPLE:
         return None
 
+    # SonarQube false positive: random sampling is used only for recommendation
+    # profile calibration, not for security-sensitive operations.
     sample_pks = random.sample(pks, min(CALIBRATION_SAMPLE_SIZE, len(pks)))
     vectors = Movie.objects.filter(pk__in=sample_pks).values_list(
         "embedding", flat=True

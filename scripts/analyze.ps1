@@ -4,7 +4,7 @@ Write-Host "Generating pytest coverage report..."
 
 docker compose exec -T backend pytest `
     --cov=. `
-    --cov-report=xml:coverage.xml
+    --cov-report=xml:/app/coverage.xml
 
 if ($LASTEXITCODE -ne 0) {
     throw "Tests failed. Aborting analysis."
@@ -12,7 +12,12 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Adjusting coverage report paths for SonarQube..."
 
-$coveragePath = Join-Path $PSScriptRoot "backend/coverage.xml"
+$projectRoot = Split-Path $PSScriptRoot -Parent
+$coveragePath = Join-Path $projectRoot "backend/coverage.xml"
+
+if (-not (Test-Path $coveragePath)) {
+    throw "Coverage report not found at '$coveragePath'. Check the Docker volume mapping for the backend service."
+}
 
 [xml]$coverage = Get-Content $coveragePath -Raw
 
