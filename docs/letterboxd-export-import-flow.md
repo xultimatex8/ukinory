@@ -48,6 +48,18 @@ sequenceDiagram
     Gemini-->>DB: embeddings applied after completion
 ```
 
+## Where the code lives
+
+| Module | Responsibility |
+|---|---|
+| `LetterboxdImportView` | HTTP entry point: accepts the zip or CSVs, maps errors to responses |
+| `letterboxd_extraction.py` | Detects zip vs. CSVs, decodes, validates columns. Knows nothing about TMDb or Wikidata |
+| `letterboxd_persistence.py` | Orchestrates the import: collects film keys, matches films, splits priority/deferred, upserts `Rating` and `WatchlistEntry` |
+| `tmdb_matching.py` | `match_movie()`: title + year → `tmdbId` |
+| `movie_cache.py` | `fetch_and_store_movies()`: metadata + embeddings → `Movie` rows |
+| `wikidata_metadata.py` | Batched Wikidata lookups (chunks of 50) |
+| `embedding_batch.py` | `sync_embedding_batches`: asynchronous Gemini batch embeddings for deferred films |
+
 ## Step by step
 
 ### 1. Upload and extraction
@@ -70,7 +82,7 @@ it just:
 
 `letterboxd_persistence._collect_film_keys()` and `_merge_rating_sources()` reduce all
 of those CSV rows down to a single `set[(title, year)]` — one entry per distinct film
-across `ratings.csv`, `diary.csv`, `liked/films.csv`, `watched.csv`, and
+across `ratings.csv`, `diary.csv`, `likes/films.csv`, `watched.csv`, and
 `watchlist.csv`. This is also where per-film data from multiple CSVs gets merged (e.g.
 a film's rating and liked-status and diary watched-date can each come from a different
 file, but they all resolve to the same `(title, year)` key).
@@ -109,7 +121,7 @@ flowchart TD
    Part One" from stealing a plain "Dune" match when both appear in the same year.
 5. Break any remaining tie by TMDb `popularity`, descending.
 6. If more than one candidate survived step 4, the match is flagged `is_ambiguous`
-   (logged, not currently surfaced to the end user — see *Known limitations* below).
+   (logged, not currently surfaced to the end user — see [Known limitations](#known-limitations)).
 
 If nothing at all matches, `match_movie()` raises `MovieMatchNotFound` and that one
 film is recorded as unmatched **without** stopping the rest of the import. If TMDb
@@ -119,7 +131,7 @@ as unmatched too, since there's no point hammering a TMDb that's already failing
 
 Note what **doesn't** happen in this phase: no `Movie` row is created yet just because
 a `tmdbId` was found. A fresh `tmdbId` only ever gets queued as *pending* — the actual
-row is only written once its Wikidata metadata is resolved, in phase 4.
+row is only written once its Wikidata metadata is resolved, in [step 5](#5-resolving-metadata--the-batched-wikidata--embedding-phase).
 
 **One extra thing happens alongside the match/cache lookup in this same loop:** every
 film that resolves — whether it was already cached (by title+year or by tmdbId) or
@@ -240,8 +252,13 @@ key is `movie_matches.get(key)` — `None` when the film was never resolved to a
 `Movie` in the previous phases, which is exactly what the model's `0..1` cardinality
 documents.
 
-**## Why the priority split matters**
+## Why the priority split matters
 
 The priority/deferred split addresses a separate cost: embedding generation. Fetching metadata for every film in an import is one thing, but calling Gemini synchronously for every one of them would make a large import's response time scale with its size and consume a large number of embedding tokens.
 
 Capping the synchronous embedding work at the top `RECOMMENDATION_MAX_HISTORY_MOVIES` films — the ones that actually feed recommendations most directly — keeps import latency roughly constant and avoids spending embedding tokens unnecessarily on less relevant history. The async batch pipeline (step 6) catches up on the rest without anyone waiting on it.
+
+## Related documents
+
+- [Functional requirements](mvp-functional-requirements.md) — FR-B14 to FR-B19, FR-B22
+- [Data model](data-model.md) — `Movie`, `Rating`, `WatchlistEntry`, `EmbeddingBatchJob`, `ImportJob`
