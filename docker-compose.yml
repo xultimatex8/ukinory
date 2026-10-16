@@ -223,6 +223,18 @@ services:
       SONAR_TOKEN: ${SONAR_TOKEN}
 
 
+  sonarqube-tools:
+    build:
+      context: ./backend
+    working_dir: /workspace
+    entrypoint: []
+    volumes:
+      - .:/workspace
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+      SONAR_PROJECT_KEY: ukinory
+
+
 volumes:
   postgres_data:
   sonarqube_data:
