@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { getSessionMatches, type SessionMatch } from "../services/swipeSessions";
 import { getErrorMessage } from "../utils/errors";
+import { letterboxdUrl } from "../utils/movie";
+import Modal from "./Modal";
 
 interface MatchesModalProps {
   sessionId: string;
@@ -30,83 +32,65 @@ export default function MatchesModal({ sessionId, onClose }: MatchesModalProps) 
   }, [sessionId]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6"
-      onClick={onClose}
+    <Modal
+      title="Your matches"
+      size="md"
+      titleClassName="text-sm font-semibold text-text"
+      onClose={onClose}
     >
-      <div
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto border border-border bg-surface"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <h2 className="text-sm font-semibold text-text">Your matches</h2>
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="cursor-pointer p-1 text-text-muted transition hover:text-text"
-          >
-            <X size={19} />
-          </button>
+      {!error && matches === null && (
+        <div className="flex justify-center py-6">
+          <Loader2 size={22} className="animate-spin text-primary" />
         </div>
+      )}
 
-        <div className="p-6">
-          {error && <p className="text-sm text-red-400">{error}</p>}
+      {matches !== null && matches.length === 0 && (
+        <p className="text-sm leading-relaxed text-text-muted">
+          No matches yet. A movie shows up here when you both add it to your
+          watchlist.
+        </p>
+      )}
 
-          {!error && matches === null && (
-            <div className="flex justify-center py-6">
-              <Loader2 size={22} className="animate-spin text-primary" />
-            </div>
-          )}
+      {matches !== null && matches.length > 0 && (
+        <ul className="flex flex-col gap-4">
+          {matches.map((match) => (
+            <li key={match.candidate_id} className="flex items-center gap-4">
+              {match.movie.poster_url ? (
+                <img
+                  src={match.movie.poster_url}
+                  alt={`${match.movie.title} poster`}
+                  className="h-20 w-14 shrink-0 border border-border object-cover"
+                />
+              ) : (
+                <div className="h-20 w-14 shrink-0 border border-border bg-background" />
+              )}
 
-          {matches !== null && matches.length === 0 && (
-            <p className="text-sm leading-relaxed text-text-muted">
-              No matches yet. A movie shows up here when you both add it to
-              your watchlist.
-            </p>
-          )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-text">
+                  {match.movie.title}
+                </p>
 
-          {matches !== null && matches.length > 0 && (
-            <ul className="flex flex-col gap-4">
-              {matches.map((match) => (
-                <li key={match.candidate_id} className="flex items-center gap-4">
-                  {match.movie.poster_url ? (
-                    <img
-                      src={match.movie.poster_url}
-                      alt={`${match.movie.title} poster`}
-                      className="h-20 w-14 shrink-0 border border-border object-cover"
-                    />
-                  ) : (
-                    <div className="h-20 w-14 shrink-0 border border-border bg-background" />
-                  )}
+                {match.movie.release_year && (
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    {match.movie.release_year}
+                  </p>
+                )}
+              </div>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-text">
-                      {match.movie.title}
-                    </p>
-
-                    {match.movie.release_year && (
-                      <p className="mt-0.5 text-xs text-text-muted">
-                        {match.movie.release_year}
-                      </p>
-                    )}
-                  </div>
-
-                  <a
-                    href={`https://letterboxd.com/tmdb/${match.movie.tmdb_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 border border-border bg-background px-3 py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-primary hover:text-primary"
-                  >
-                    Letterboxd
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
+              <a
+                href={letterboxdUrl(match.movie.tmdb_id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 border border-border bg-background px-3 py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-primary hover:text-primary"
+              >
+                Letterboxd
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   );
 }
