@@ -8,15 +8,14 @@ import { Info } from "lucide-react";
 import type { MovieRecommendation } from "../services/swipeSessions";
 import GenreChips from "./GenreChips";
 import MovieMeta from "./MovieMeta";
+import { CARD_STACK_GAP } from "../hooks/useSwipeDeck";
 import WhyRecommended from "./WhyRecommend";
 
 interface SwipeMovieCardProps {
   movie: MovieRecommendation;
   candidateId: string;
   sessionId: string;
-  isLoading: boolean;
-  isSwiping: boolean;
-  isRecordingSwipe: boolean;
+  locked: boolean;
   isPromotingBackCard: boolean;
   swipeDirection: "left" | "right" | null;
 
@@ -33,16 +32,13 @@ interface SwipeMovieCardProps {
 const SWIPE_THRESHOLD = 120;
 const MAX_DRAG_ROTATION = 12;
 
-const CARD_STACK_GAP = 24;
 const MOVIE_FADE_DURATION = 0.3;
 
 export default function SwipeMovieCard({
   movie,
   candidateId,
   sessionId,
-  isLoading,
-  isSwiping,
-  isRecordingSwipe,
+  locked,
   isPromotingBackCard,
   swipeDirection,
   dragX,
@@ -54,14 +50,7 @@ export default function SwipeMovieCard({
   onPromotionComplete,
 }: SwipeMovieCardProps) {
   const handleDrag = () => {
-    if (
-      isSwiping ||
-      isRecordingSwipe ||
-      isPromotingBackCard ||
-      isLoading
-    ) {
-      return;
-    }
+    if (locked) return;
 
     const x = dragX.get();
 
@@ -80,14 +69,7 @@ export default function SwipeMovieCard({
     _event: MouseEvent | TouchEvent | PointerEvent,
     info: PanInfo,
   ) => {
-    if (
-      isSwiping ||
-      isRecordingSwipe ||
-      isPromotingBackCard ||
-      isLoading
-    ) {
-      return;
-    }
+    if (locked) return;
 
     const offsetX = info.offset.x;
 
@@ -161,14 +143,7 @@ export default function SwipeMovieCard({
 
       <motion.div
         key={candidateId}
-        drag={
-          isSwiping ||
-          isRecordingSwipe ||
-          isLoading ||
-          isPromotingBackCard
-            ? false
-            : "x"
-        }
+        drag={locked ? false : "x"}
         dragConstraints={{
           left: 0,
           right: 0,
@@ -241,12 +216,7 @@ export default function SwipeMovieCard({
 
           <button
             type="button"
-            disabled={
-              isSwiping ||
-              isRecordingSwipe ||
-              isLoading ||
-              isPromotingBackCard
-            }
+            disabled={locked}
             onPointerDown={(event) =>
               event.stopPropagation()
             }

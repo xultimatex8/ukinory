@@ -16,6 +16,7 @@ export default function WhyRecommended({
   const [justification, setJustification] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isAvailable, setIsAvailable] = useState(true);
+  const [hasFailed, setHasFailed] = useState(false);
 
   const handleToggle = async () => {
     if (isLoading) {
@@ -33,6 +34,7 @@ export default function WhyRecommended({
     }
 
     setIsLoading(true);
+    setHasFailed(false);
 
     try {
       const result = await getRecommendationJustification(
@@ -49,6 +51,8 @@ export default function WhyRecommended({
         setJustification(result.justification);
         setShowJustification(true);
       }
+    } catch {
+      setHasFailed(true);
     } finally {
       setIsLoading(false);
     }
@@ -81,6 +85,12 @@ export default function WhyRecommended({
       {!isAvailable && (
         <p className="mt-1.5 text-xs leading-relaxed text-white/50">
           Explanations are currently unavailable.
+        </p>
+      )}
+
+      {hasFailed && (
+        <p className="mt-1.5 text-xs leading-relaxed text-white/50">
+          Couldn't load the explanation. Tap to try again.
         </p>
       )}
 
