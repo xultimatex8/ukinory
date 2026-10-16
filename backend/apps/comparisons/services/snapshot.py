@@ -5,12 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.library.models import Rating
-
-FilmKey = tuple[str, int | None]
-
-
-def film_key(title: str, release_year: int | None) -> FilmKey:
-    return (title.strip().casefold(), release_year)
+from apps.library.services.keys import FilmKey, film_key
 
 
 @dataclass(frozen=True, slots=True)

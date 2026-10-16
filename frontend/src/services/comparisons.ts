@@ -1,5 +1,11 @@
 import { apiFetch } from "./api";
-import { wsUrl } from "../api";
+import {
+  buildSocketUrl,
+  type Invite,
+  type ParticipantState,
+} from "./sessions";
+
+export type { Invite } from "./sessions";
 
 const COMPARISONS_PATH = "/api/comparisons";
 const ROOMS_PATH = COMPARISONS_PATH + "/comparison-rooms";
@@ -11,23 +17,9 @@ export type GenerationStatus =
   | "needs_data"
   | "failed";
 
-export interface Invite {
-  id?: string;
-  code: string;
-  type?: string;
-  status?: string;
-  expires_at: string;
-}
-
-export interface RoomState {
-  id: string;
-  status: "WAITING" | "ACTIVE" | "FINISHED";
-  participants: number;
-  partner_joined: boolean;
+export interface RoomState extends ParticipantState {
   comparison_id: string | null;
   generation_status: GenerationStatus | null;
-  you_have_data: boolean;
-  partner_has_data: boolean | null;
 }
 
 export interface CreateRoomResponse {
@@ -152,7 +144,5 @@ export async function exportRecommendationsWatchlist(
 }
 
 export function buildRoomSocketUrl(roomId: string, token: string): string {
-  const url = new URL(wsUrl(`/ws/comparison-rooms/${roomId}/`));
-  url.searchParams.set("token", token);
-  return url.toString();
+  return buildSocketUrl(`/ws/comparison-rooms/${roomId}/`, token);
 }

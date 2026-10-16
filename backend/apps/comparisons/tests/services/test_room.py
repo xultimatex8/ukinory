@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import timedelta
 from unittest import mock
 
@@ -14,25 +15,26 @@ from apps.common.enums import (
     SessionStatus,
     SessionType,
 )
-from apps.comparisons.exceptions import (
-    InsufficientDataError,
-    NotRoomMemberError,
-    RoomClosedError,
-    RoomFullError,
-    RoomNotFoundError,
-    RoomNotReadyError,
+from apps.common.exceptions import (
+    NotSessionMemberError,
+    PartnerNotJoinedError,
+    SessionClosedError,
+    SessionFullError,
+    SessionNotFoundError,
 )
+from apps.common.services.sessions import STALE_TIMEOUT, touch_session
+from apps.comparisons.exceptions import InsufficientDataError
 from apps.comparisons.models import Comparison, ComparisonSession
+from apps.comparisons.services.invite_handler import accept_comparison_invite
 from apps.comparisons.services.room import (
     RUNNING_TIMEOUT,
-    STALE_ROOM_TIMEOUT,
     _comparison_of,
     _is_running,
     build_room_state,
     close_stale_rooms,
     create_room,
     get_user_room,
-    join_room_from_invite,
+    heartbeat_room,
     regenerate_invite,
     request_generation,
     run_generation,
@@ -105,14 +107,14 @@ class RoomServiceTests(TestCase):
         self.assertEqual(result.pk, room.pk)
 
     def test_get_user_room_raises_for_missing_room(self):
-        with self.assertRaises(RoomNotFoundError):
+        with self.assertRaises(SessionNotFoundError):
             get_user_room(
-                room_id=999999,
+                room_id=uuid.uuid4(),
                 user=self.user,
             )
 
     def test_get_user_room_raises_for_invalid_room_id(self):
-        with self.assertRaises(RoomNotFoundError):
+        with self.assertRaises(SessionNotFoundError):
             get_user_room(
                 room_id="not-an-id",
                 user=self.user,
@@ -121,7 +123,7 @@ class RoomServiceTests(TestCase):
     def test_get_user_room_raises_for_non_member(self):
         room = self._room()
 
-        with self.assertRaises(NotRoomMemberError):
+        with self.assertRaises(NotSessionMemberError):
             get_user_room(
                 room_id=room.pk,
                 user=self.partner,
@@ -138,21 +140,56 @@ class RoomServiceTests(TestCase):
 
         self.assertIsNone(_comparison_of(room))
 
-    def test_touch_room_updates_last_seen_at(self):
+    def test_touch_session_updates_last_seen_at(self):
         old_time = timezone.now() - timedelta(minutes=10)
         room = self._room(last_seen_at=old_time)
 
-        with mock.patch(
-            "apps.comparisons.services.room.timezone.now",
-            return_value=timezone.now(),
-        ):
-            from apps.comparisons.services.room import touch_room
-
-            touch_room(room.pk)
+        touch_session(room.pk)
 
         room.refresh_from_db()
 
         self.assertGreater(room.last_seen_at, old_time)
+
+    def test_heartbeat_room_touches_fresh_room(self):
+        old_time = timezone.now() - timedelta(seconds=30)
+        room = self._room(last_seen_at=old_time)
+
+        heartbeat_room(room)
+
+        room.refresh_from_db()
+
+        self.assertGreater(room.last_seen_at, old_time)
+        self.assertEqual(room.status, SessionStatus.WAITING)
+
+    def test_heartbeat_room_deletes_stale_waiting_room_and_raises(self):
+        room = self._room(
+            last_seen_at=(
+                timezone.now() - STALE_TIMEOUT - timedelta(seconds=1)
+            ),
+        )
+
+        with self.assertRaises(SessionClosedError):
+            heartbeat_room(room)
+
+        self.assertFalse(
+            ComparisonSession.objects.filter(pk=room.pk).exists()
+        )
+
+    def test_heartbeat_room_finishes_stale_active_room_without_raising(self):
+        room = self._room(
+            status=SessionStatus.ACTIVE,
+            last_seen_at=(
+                timezone.now() - STALE_TIMEOUT - timedelta(seconds=1)
+            ),
+        )
+
+        heartbeat_room(room)
+
+        self.assertEqual(room.status, SessionStatus.FINISHED)
+
+        room.refresh_from_db()
+
+        self.assertEqual(room.status, SessionStatus.FINISHED)
 
     def test_build_room_state_for_waiting_room(self):
         room = self._room()
@@ -336,84 +373,88 @@ class RoomServiceTests(TestCase):
             status=SessionStatus.ACTIVE,
         )
 
-        with self.assertRaises(RoomClosedError):
+        with self.assertRaises(SessionClosedError):
             regenerate_invite(
                 user=self.user,
                 room=room,
             )
 
-    def test_join_room_from_invite_rejects_invite_without_session(self):
+    def test_regenerate_invite_rejects_full_waiting_room(self):
+        room = self._room()
+        room.users.add(self.partner)
+
+        with self.assertRaises(SessionFullError):
+            regenerate_invite(
+                user=self.user,
+                room=room,
+            )
+
+    def test_accept_comparison_invite_rejects_invite_without_session(self):
         invite = self._invite()
         invite.session = None
         invite.save(update_fields=["session"])
 
-        with self.assertRaises(RoomNotFoundError):
-            join_room_from_invite(
+        with self.assertRaises(SessionNotFoundError):
+            accept_comparison_invite(
                 invite,
                 self.partner,
             )
 
-    def test_join_room_from_invite_rejects_missing_room(self):
-        invite = Invite.objects.create(
+    def test_accept_comparison_invite_rejects_missing_room(self):
+        invite = Invite(
             inviter=self.user,
-            session=None,
+            session_id=uuid.uuid4(),
             type=InviteType.COMPARISON,
             code="missing-room-code",
             expires_at=timezone.now() + timedelta(minutes=5),
         )
 
-        with self.assertRaises(RoomNotFoundError):
-            join_room_from_invite(
+        with self.assertRaises(SessionNotFoundError):
+            accept_comparison_invite(
                 invite,
                 self.partner,
             )
 
-    def test_join_room_from_invite_rejects_finished_room(self):
+    def test_accept_comparison_invite_rejects_finished_room(self):
         room = self._room(
             status=SessionStatus.FINISHED,
         )
         invite = self._invite(room=room)
 
-        with self.assertRaises(RoomClosedError):
-            join_room_from_invite(
+        with self.assertRaises(SessionClosedError):
+            accept_comparison_invite(
                 invite,
                 self.partner,
             )
 
-    def test_join_room_from_invite_rejects_active_room(self):
+    def test_accept_comparison_invite_rejects_active_room(self):
         room = self._room(
             status=SessionStatus.ACTIVE,
         )
         invite = self._invite(room=room)
 
-        with self.assertRaises(RoomFullError):
-            join_room_from_invite(
+        with self.assertRaises(SessionFullError):
+            accept_comparison_invite(
                 invite,
                 self.partner,
             )
 
-    def test_join_room_from_invite_rejects_full_waiting_room(self):
+    def test_accept_comparison_invite_rejects_full_waiting_room(self):
         room = self._room()
         room.users.add(self.partner)
 
         invite = self._invite(room=room)
 
-        other = User.objects.create_user(
-            email="d@x.com",
-            username="d",
-            password="pw",
-        )
-
-        with self.assertRaises(RoomFullError):
-            join_room_from_invite(
+        with self.assertRaises(SessionFullError):
+            accept_comparison_invite(
                 invite,
-                other,
+                self.other,
             )
 
     @mock.patch(
-        "apps.comparisons.services.room.notify_room"
+        "apps.comparisons.services.invite_handler.notify_room"
     )
-    def test_join_room_from_invite_adds_user_and_activates_room(
+    def test_accept_comparison_invite_adds_user_without_starting_room(
         self,
         mock_notify,
     ):
@@ -421,7 +462,7 @@ class RoomServiceTests(TestCase):
         invite = self._invite(room=room)
 
         with self.captureOnCommitCallbacks(execute=True):
-            result = join_room_from_invite(
+            result = accept_comparison_invite(
                 invite,
                 self.partner,
             )
@@ -431,14 +472,10 @@ class RoomServiceTests(TestCase):
         self.assertEqual(result.pk, room.pk)
         self.assertEqual(
             room.status,
-            SessionStatus.ACTIVE,
+            SessionStatus.WAITING,
         )
         self.assertTrue(
             room.users.filter(pk=self.partner.pk).exists()
-        )
-        self.assertEqual(
-            Comparison.objects.filter(session=room).count(),
-            1,
         )
 
         mock_notify.assert_called_once_with(
@@ -447,9 +484,9 @@ class RoomServiceTests(TestCase):
         )
 
     @mock.patch(
-        "apps.comparisons.services.room.notify_room"
+        "apps.comparisons.services.invite_handler.notify_room"
     )
-    def test_join_room_from_invite_creates_comparison(
+    def test_accept_comparison_invite_does_not_create_comparison(
         self,
         mock_notify,
     ):
@@ -457,35 +494,71 @@ class RoomServiceTests(TestCase):
         invite = self._invite(room=room)
 
         with self.captureOnCommitCallbacks(execute=True):
-            join_room_from_invite(
+            accept_comparison_invite(
                 invite,
                 self.partner,
             )
 
-        comparison = Comparison.objects.get(
-            session=room,
+        self.assertFalse(
+            Comparison.objects.filter(session=room).exists()
         )
 
-        self.assertEqual(
-            comparison.session_id,
-            room.pk,
-        )
-
-    def test_request_generation_rejects_waiting_room(self):
+    def test_request_generation_rejects_room_without_partner(self):
         room = self._room(
             status=SessionStatus.WAITING,
         )
 
-        with self.assertRaises(RoomNotReadyError):
+        with self.assertRaises(PartnerNotJoinedError):
             request_generation(room=room)
 
-    def test_request_generation_rejects_room_without_comparison(self):
-        room = self._room(
-            status=SessionStatus.ACTIVE,
+        room.refresh_from_db()
+
+        self.assertEqual(room.status, SessionStatus.WAITING)
+        self.assertFalse(
+            Comparison.objects.filter(session=room).exists()
         )
 
-        with self.assertRaises(RoomNotReadyError):
-            request_generation(room=room)
+    @mock.patch(
+        "apps.comparisons.services.room.run_generation"
+    )
+    def test_request_generation_starts_room_with_both_participants(
+        self,
+        mock_run_generation,
+    ):
+        room = self._room()
+        room.users.add(self.partner)
+
+        mock_run_generation.return_value = GenerationStatus.RUNNING
+
+        result = request_generation(room=room)
+
+        room.refresh_from_db()
+        comparison = Comparison.objects.get(session=room)
+
+        self.assertEqual(result, GenerationStatus.RUNNING)
+        self.assertEqual(room.status, SessionStatus.ACTIVE)
+        mock_run_generation.assert_called_once_with(comparison.pk)
+
+    @mock.patch(
+        "apps.comparisons.services.room.run_generation"
+    )
+    def test_request_generation_is_idempotent(
+        self,
+        mock_run_generation,
+    ):
+        room = self._room()
+        room.users.add(self.partner)
+
+        mock_run_generation.return_value = GenerationStatus.RUNNING
+
+        request_generation(room=room)
+        request_generation(room=room)
+
+        self.assertEqual(
+            Comparison.objects.filter(session=room).count(),
+            1,
+        )
+        self.assertEqual(mock_run_generation.call_count, 2)
 
     @mock.patch(
         "apps.comparisons.services.room.run_generation"
@@ -722,13 +795,13 @@ class RoomServiceTests(TestCase):
 
     def test_run_generation_raises_for_missing_comparison(self):
         with self.assertRaises(Comparison.DoesNotExist):
-            run_generation(999999)
+            run_generation(uuid.uuid4())
 
     def test_close_stale_rooms_deletes_old_waiting_rooms(self):
         stale = self._room(
             last_seen_at=(
                 timezone.now()
-                - STALE_ROOM_TIMEOUT
+                - STALE_TIMEOUT
                 - timedelta(seconds=1)
             ),
         )
@@ -749,7 +822,7 @@ class RoomServiceTests(TestCase):
     ):
         old_created = (
             timezone.now()
-            - STALE_ROOM_TIMEOUT
+            - STALE_TIMEOUT
             - timedelta(seconds=1)
         )
 
@@ -776,7 +849,7 @@ class RoomServiceTests(TestCase):
             status=SessionStatus.ACTIVE,
             last_seen_at=(
                 timezone.now()
-                - STALE_ROOM_TIMEOUT
+                - STALE_TIMEOUT
                 - timedelta(days=1)
             ),
         )
@@ -792,7 +865,7 @@ class RoomServiceTests(TestCase):
             SessionStatus.FINISHED,
         )
 
-    def test_close_stale_rooms_does_not_close_active_rooms(self):
+    def test_close_stale_rooms_does_not_close_fresh_active_rooms(self):
         room = self._room(
             status=SessionStatus.ACTIVE,
         )

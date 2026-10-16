@@ -2,21 +2,15 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-from django.conf import settings
-from google import genai
-from google.genai import types
-
-from apps.common import api_quota
+from apps.common.services.gemini import AIUnavailableError, GeminiClient
 from apps.recommendations.services.joint_profile import JointCandidate
 from apps.comparisons.dtos.narrative_result import NarrativeResult
 
 logger = logging.getLogger(__name__)
 
 QUOTA_CLIENT_NAME = "gemini_narrative"
-DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
 BASE_OUTPUT_TOKENS = 650
 OUTPUT_TOKENS_PER_REC = 62
@@ -291,15 +285,8 @@ def _parse(
     return NarrativeResult(summary=summary, reasons=reasons, individual=individual)
 
 
-@dataclass(slots=True)
-class ComparisonNarrativeClient:
-    api_key: Optional[str] = None
-    model: str = DEFAULT_MODEL
-    _client: genai.Client = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self.api_key = self.api_key or getattr(settings, "GEMINI_API_KEY", None)
-        self._client = genai.Client(api_key=self.api_key)
+class ComparisonNarrativeClient(GeminiClient):
+    quota_name = QUOTA_CLIENT_NAME
 
     def generate(
         self,
@@ -310,63 +297,21 @@ class ComparisonNarrativeClient:
         user_ids: Sequence[str],
     ) -> Optional[NarrativeResult]:
         prompt = _build_prompt(public, internal, candidates, user_ids)
-        max_output_tokens = _max_output_tokens(len(candidates))
-
-        reserved = api_quota.cost_units(
-            QUOTA_CLIENT_NAME,
-            input_tokens=api_quota.estimate_tokens(prompt),
-            output_tokens=max_output_tokens,
-        )
-        try:
-            api_quota.consume(QUOTA_CLIENT_NAME, reserved)
-        except api_quota.QuotaExceeded as exc:
-            logger.warning("Skipping comparison narrative: %s", exc)
-            return None
 
         try:
-            response = self._client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=max_output_tokens,
-                    response_mime_type="application/json",
-                    thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
-                ),
+            completion = self.complete(
+                prompt,
+                max_output_tokens=_max_output_tokens(len(candidates)),
+                json_output=True,
+                label="comparison narrative",
             )
-            self._reconcile_cost(response, reserved)
-            parsed = _parse(response.text or "", len(candidates), user_ids)
-            if parsed is None:
-                logger.warning(
-                    "Unparseable comparison narrative response (finish_reason=%s)",
-                    getattr(
-                        (getattr(response, "candidates", None) or [None])[0],
-                        "finish_reason",
-                        None,
-                    ),
-                )
-            return parsed
-        except Exception as exc:
-            logger.warning("Could not generate comparison narrative: %s", exc)
+        except AIUnavailableError:
             return None
 
-    @staticmethod
-    def _reconcile_cost(response, reserved: int) -> None:
-        usage = getattr(response, "usage_metadata", None)
-        if usage is None or usage.prompt_token_count is None:
-            return
-        actual = api_quota.cost_units(
-            QUOTA_CLIENT_NAME,
-            input_tokens=usage.prompt_token_count or 0,
-            output_tokens=(usage.candidates_token_count or 0)
-            + (usage.thoughts_token_count or 0),
-        )
-        logger.info(
-            "Comparison narrative usage: in=%s out=%s thoughts=%s "
-            "units=%s reserved=%s",
-            usage.prompt_token_count,
-            usage.candidates_token_count,
-            usage.thoughts_token_count,
-            actual,
-            reserved,
-        )
-        api_quota.adjust(QUOTA_CLIENT_NAME, actual - reserved)
+        parsed = _parse(completion.text, len(candidates), user_ids)
+        if parsed is None:
+            logger.warning(
+                "Unparseable comparison narrative response (finish_reason=%s)",
+                completion.finish_reason,
+            )
+        return parsed

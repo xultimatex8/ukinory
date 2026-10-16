@@ -65,15 +65,17 @@ class TestRecordSwipe:
         user,
         candidate,
     ):
-        swipe = record_swipe(
+        result = record_swipe(
             user=user,
             candidate=candidate,
             action=SwipeAction.SKIP,
         )
 
-        assert swipe.user == user
-        assert swipe.candidate == candidate
-        assert swipe.action == SwipeAction.SKIP
+        assert result.swipe.user == user
+        assert result.swipe.candidate == candidate
+        assert result.swipe.action == SwipeAction.SKIP
+        assert result.created is True
+        assert result.match is None
 
     @pytest.mark.django_db
     def test_does_not_create_watchlist_entry_for_non_watchlist_action(
@@ -99,11 +101,14 @@ class TestRecordSwipe:
         user,
         candidate,
     ):
-        record_swipe(
+        result = record_swipe(
             user=user,
             candidate=candidate,
             action=SwipeAction.WATCHLIST,
         )
+
+        assert result.swipe.user == user
+        assert result.created is True
 
         entry = WatchlistEntry.objects.get(
             user=user,
@@ -137,7 +142,7 @@ class TestRecordSwipe:
             action=SwipeAction.WATCHLIST,
         )
 
-        assert result is not None
+        assert result.created is True
 
         entries = WatchlistEntry.objects.filter(
             user=user,

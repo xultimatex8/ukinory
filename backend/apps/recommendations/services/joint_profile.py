@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Collection, Optional, Sequence
 
 import numpy as np
 from pgvector.django import CosineDistance
@@ -55,6 +54,7 @@ def find_joint_candidates(
     limit: int = 10,
     pool_size: int = DEFAULT_POOL_SIZE,
     least_misery_weight: float = LEAST_MISERY_WEIGHT,
+    exclude_movie_ids: Optional[Collection] = None,
 ) -> list[JointCandidate]:
     profiles = (
         list(profiles)
@@ -76,6 +76,7 @@ def find_joint_candidates(
     shortlist = list(
         Movie.objects.filter(embedding__isnull=False)
         .exclude(pk__in=watched)
+        .exclude(pk__in=list(exclude_movie_ids or ()))
         .annotate(distance=CosineDistance("embedding", joint))
         .order_by("distance")
         .prefetch_related("genres")[:pool_size]

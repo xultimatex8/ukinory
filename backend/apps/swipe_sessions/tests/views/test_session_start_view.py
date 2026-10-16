@@ -2,10 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.swipe_sessions.exceptions import (
-    NotSessionMemberError,
-    SwipeSessionNotFoundError,
-)
+from apps.common.exceptions import NotSessionMemberError, SessionNotFoundError
 from apps.swipe_sessions.views import SwipeSessionStartView
 
 
@@ -48,7 +45,7 @@ class TestSwipeSessionStartView:
     ):
         with patch(
             "apps.swipe_sessions.views.get_user_swipe_session",
-            side_effect=SwipeSessionNotFoundError,
+            side_effect=SessionNotFoundError,
         ):
             request = authenticated_post()
 
@@ -59,7 +56,7 @@ class TestSwipeSessionStartView:
 
         assert response.status_code == 404
         assert response.data == {
-            "detail": "Swipe session not found."
+            "detail": "Session not found."
         }
 
     def test_returns_403_when_user_is_not_member(
@@ -88,12 +85,17 @@ class TestSwipeSessionStartView:
         authenticated_post,
         swipe_session,
     ):
+        from rest_framework.exceptions import APIException
+
+        error = APIException("Session cannot be started.")
+        error.status_code = 400
+
         with patch(
             "apps.swipe_sessions.views.get_user_swipe_session",
             return_value=swipe_session,
         ), patch(
             "apps.swipe_sessions.views.start_swipe_session",
-            side_effect=ValueError("Session cannot be started."),
+            side_effect=error,
         ):
             request = authenticated_post()
 

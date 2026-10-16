@@ -1,25 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   FileArchive,
   FileText,
-  Compass,
   Trash2,
   Upload,
+  Users,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
-import AppHeader from "../../components/LogoHeader";
-import {
-  createIndividualSwipeSession,
-  startSwipeSession,
-} from "../../services/swipeSessions";
-import { importExport, type ImportResult } from "../../services/imports";
-import { getLibraryStats, type LibraryStats } from "../../services/library";
+import AppHeader from "../../../components/LogoHeader";
+import { importExport, type ImportResult } from "../../../services/imports";
+import { createPairedSwipeSession } from "../../../services/swipeSessions";
+import { getErrorMessage } from "../../../utils/errors";
 
-export default function DiscoverScreen() {
+function extractInviteCode(value: string): string {
+  const trimmed = value.trim().split(/[?#]/)[0];
+  const parts = trimmed.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+export default function TogetherScreen() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -29,56 +32,33 @@ export default function DiscoverScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
-  const [isLoadingLibraryStats, setIsLoadingLibraryStats] = useState(true);
-
-  const hasLibraryData =
-    libraryStats === null ? null : libraryStats.rated_total > 0;
-
-  const refreshLibraryStats = async () => {
-    try {
-      setLibraryStats(await getLibraryStats());
-    } catch {
-      setLibraryStats(null);
-    }
-  };
-
-  useEffect(() => {
-    const loadLibraryStats = async () => {
-      try {
-        setIsLoadingLibraryStats(true);
-
-        const [stats] = await Promise.all([
-          getLibraryStats(),
-          new Promise((resolve) => setTimeout(resolve, 350)),
-        ]);
-
-        setLibraryStats(stats);
-      } catch {
-        setLibraryStats(null);
-      } finally {
-        setIsLoadingLibraryStats(false);
-      }
-    };
-
-    void loadLibraryStats();
-  }, []);
+  const [codeInput, setCodeInput] = useState("");
 
   const handleCreateSession = async () => {
+    if (isCreatingSession) return;
+
     setIsCreatingSession(true);
     setImportResult(null);
     setError(null);
 
     try {
-      const session = await createIndividualSwipeSession();
-      const started = await startSwipeSession(session.id);
-      navigate(`/discover/${session.id}`, {
-        state: { leaveToken: started.leave_token },
+      const { session, invite } = await createPairedSwipeSession();
+
+      navigate(`/discover/together/${session.id}`, {
+        state: { invite },
       });
-    } catch {
-      setError("Unable to start a swipe session.");
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setIsCreatingSession(false);
+    }
+  };
+
+  const handleJoin = () => {
+    const code = extractInviteCode(codeInput);
+
+    if (code) {
+      navigate(`/join/${code}`);
     }
   };
 
@@ -132,8 +112,6 @@ export default function DiscoverScreen() {
 
       setImportResult(result);
       setPendingFiles([]);
-
-      await refreshLibraryStats();
     } catch (error) {
       if (typeof error === "object" && error !== null && "error" in error) {
         const backendError = error as { error?: { message?: string } };
@@ -156,21 +134,29 @@ export default function DiscoverScreen() {
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (isImporting) return;
+
     addFiles(Array.from(event.target.files ?? []));
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (!isImporting) setIsDragging(true);
+
+    if (!isImporting) {
+      setIsDragging(true);
+    }
   };
 
   const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (!isImporting) setIsDragging(false);
+
+    if (!isImporting) {
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+
     if (isImporting) return;
 
     setIsDragging(false);
@@ -180,6 +166,7 @@ export default function DiscoverScreen() {
   const formatFileSize = (size: number) => {
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   };
 
@@ -196,56 +183,47 @@ export default function DiscoverScreen() {
           </Link>
 
           <AppHeader
-            title="Discover movies for you"
-            description="Find movies based on your taste and improve your recommendations with your Letterboxd history."
+            title="Discover together"
+            description="Swipe through movies picked for both of you and see what you both want to watch."
           />
 
-          {isLoadingLibraryStats ? (
-            <div className="mt-5 -mb-5 border border-border bg-surface p-4">
-              <div className="h-3 w-52 animate-pulse bg-border" />
-              <div className="mt-3 h-4 w-72 animate-pulse bg-border" />
-              <div className="mt-2 h-4 w-64 animate-pulse bg-border" />
+          <div>
+            <h2 className="text-lg font-semibold">Got an invite?</h2>
+
+            <p className="mt-1 text-sm text-text-muted">
+              Paste the code or the link your friend sent you.
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <input
+                value={codeInput}
+                onChange={(event) => setCodeInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    handleJoin();
+                  }
+                }}
+                placeholder="Invite code or link"
+                aria-label="Invite code or link"
+                className="min-w-0 flex-1 border border-border bg-surface px-3 py-2.5 text-sm text-text outline-none placeholder:text-text-muted focus:border-primary"
+              />
+
+              <button
+                type="button"
+                disabled={!extractInviteCode(codeInput) || isCreatingSession || isImporting}
+                onClick={handleJoin}
+                className="flex cursor-pointer items-center gap-2 border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-secondary transition hover:border-primary hover:text-primary disabled:cursor-auto disabled:opacity-40"
+              >
+                Join
+                <ArrowRight size={15} />
+              </button>
             </div>
-          ) : hasLibraryData === false ? (
-            <div className="mt-6 -mb-5 border border-border bg-surface p-4">
-              <p className="text-sm font-medium text-text-secondary">
-                Improve your recommendations
-              </p>
+          </div>
 
-              <p className="mt-1 text-xs leading-relaxed text-text-muted">
-                You can start discovering movies now, but your recommendations
-                may be less personalized without your Letterboxd history. Import
-                it to help us learn your taste.
-              </p>
-            </div>
-          ) : (
-            libraryStats &&
-            libraryStats.rated_total > 0 && (
-              <div className="mt-5 -mb-5 border border-border bg-surface p-4">
-                <p className="text-sm font-medium text-text-secondary">
-                  Movies used for your recommendations
-                </p>
-
-                <p className="mt-1 text-2xl font-semibold text-text">
-                  {libraryStats.rated_with_embedding}
-                  <span className="ml-2 text-sm font-normal text-text-muted">
-                    of {libraryStats.rated_total} rated
-                  </span>
-                </p>
-
-                  <p className="mt-2 text-xs leading-relaxed text-text-muted">
-                    Not every movie you import can be used right away. Some may
-                    not be recognized, and others are processed gradually, so
-                    this number may grow over time.
-                  </p>
-              </div>
-            )
-          )}
-
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
             <button
               type="button"
-              onClick={handleCreateSession}
+              onClick={() => void handleCreateSession()}
               disabled={isCreatingSession || isImporting}
               className={`group flex min-h-44 cursor-pointer flex-col border border-border bg-surface p-6 text-left disabled:cursor-auto disabled:opacity-60 disabled:border-border disabled:bg-surface ${
                 !isImporting
@@ -255,7 +233,7 @@ export default function DiscoverScreen() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex h-12 w-12 items-center justify-center">
-                  <Compass
+                  <Users
                     size={36}
                     strokeWidth={1.5}
                     className={`text-primary ${
@@ -278,17 +256,16 @@ export default function DiscoverScreen() {
               </div>
 
               <h2 className="mt-5 text-lg font-semibold">
-                Create Swipe Session
+                Create Paired Session
               </h2>
 
               <p className="mt-2 text-sm leading-relaxed text-text-muted">
-                Start discovering movies based on your taste.
+                Create a session and invite a friend to swipe through movies
+                picked for both of you.
               </p>
 
               <p className="mt-auto pt-5 text-sm font-medium text-primary">
-                {isCreatingSession
-                  ? "Starting session..."
-                  : "Start discovering"}
+                {isCreatingSession ? "Creating session..." : "Create session"}
               </p>
             </button>
 
@@ -315,20 +292,13 @@ export default function DiscoverScreen() {
               </h2>
 
               <p className="mt-2 text-sm leading-relaxed text-text-muted">
-                Improve your recommendations using your Letterboxd history.
+                Import your Letterboxd history so we can pick movies that fit
+                both of your tastes.
                 <span className="mt-1 block text-xs text-text-muted/70">
-                  First import can take up to several minutes, depending on size.
+                  First import can take up to several minutes, depending on
+                  size.
                 </span>
               </p>
-
-              <Link
-                to="/instructions"
-                className="mt-4 inline-flex cursor-pointer items-center gap-2 border border-border bg-surface-hover px-4 py-2
-                          text-xs font-medium text-text transition hover:border-primary hover:text-primary"
-              >
-                Don't know how?
-                <ArrowRight size={14} strokeWidth={1.8} />
-              </Link>
 
               {pendingFiles.length > 0 && (
                 <div className="mt-5 space-y-2">
@@ -374,7 +344,9 @@ export default function DiscoverScreen() {
 
               <div
                 onClick={() => {
-                  if (!isImporting) fileInputRef.current?.click();
+                  if (!isImporting) {
+                    fileInputRef.current?.click();
+                  }
                 }}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}

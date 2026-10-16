@@ -7,12 +7,15 @@ import pytest
 from django.utils import timezone
 
 from apps.common.enums import SessionStatus
-from apps.swipe_sessions.exceptions import (
+from apps.common.exceptions import (
+    InvalidSessionStateError,
     NotSessionMemberError,
-    SwipeSessionFinishedError,
-    SwipeSessionNotFoundError,
+    SessionFinishedError,
+    SessionNotFoundError,
 )
+from apps.swipe_sessions.models import SwipeSession
 from apps.swipe_sessions.services.session import (
+    close_stale_swipe_sessions,
     create_swipe_session,
     end_swipe_session,
     ensure_session_active,
@@ -39,7 +42,7 @@ class TestGetUserSwipeSession:
 
     @pytest.mark.django_db
     def test_raises_when_session_does_not_exist(self, user):
-        with pytest.raises(SwipeSessionNotFoundError):
+        with pytest.raises(SessionNotFoundError):
             get_user_swipe_session(
                 session_id=999999,
                 user=user,
@@ -131,7 +134,7 @@ class TestStartSwipeSession:
         swipe_session.save(update_fields=["status"])
 
         with pytest.raises(
-            ValueError,
+            InvalidSessionStateError,
             match="Swipe session has already started or finished.",
         ):
             start_swipe_session(
@@ -214,7 +217,7 @@ class TestEndSwipeSession:
         swipe_session.save(update_fields=["status"])
 
         with pytest.raises(
-            ValueError,
+            InvalidSessionStateError,
             match="Swipe session has not started yet.",
         ):
             end_swipe_session(
@@ -269,7 +272,7 @@ class TestEnsureSessionActive:
         swipe_session.status = SessionStatus.FINISHED
         swipe_session.save(update_fields=["status"])
 
-        with pytest.raises(SwipeSessionFinishedError):
+        with pytest.raises(SessionFinishedError):
             ensure_session_active(swipe_session)
 
         swipe_session.refresh_from_db()
@@ -281,6 +284,7 @@ class TestEnsureSessionActive:
         self,
         user,
         swipe_session,
+        django_capture_on_commit_callbacks,
     ):
         swipe_session.users.add(user)
 
@@ -288,26 +292,25 @@ class TestEnsureSessionActive:
         swipe_session.last_seen_at = timezone.now() - timedelta(minutes=3)
         swipe_session.save(update_fields=["status", "last_seen_at"])
 
-        summary = MagicMock()
-
         with patch(
-            "apps.swipe_sessions.services.session.export_watchlist_csv",
-            return_value=summary,
-        ) as export_watchlist:
-            with pytest.raises(SwipeSessionFinishedError):
-                ensure_session_active(swipe_session)
+            "apps.swipe_sessions.services.session.notify_session"
+        ) as notify:
+            with django_capture_on_commit_callbacks(execute=True):
+                with pytest.raises(SessionFinishedError):
+                    ensure_session_active(swipe_session)
 
         swipe_session.refresh_from_db()
 
         assert swipe_session.status == SessionStatus.FINISHED
 
-        export_watchlist.assert_called_once_with(
-            user=user,
-            session=swipe_session,
+        notify.assert_called_once_with(
+            swipe_session.pk,
+            event="session.updated",
+            reason="ended",
         )
 
     @pytest.mark.django_db
-    def test_finishes_stale_waiting_session_using_created_at(
+    def test_deletes_stale_waiting_session_using_created_at(
         self,
         user,
         swipe_session,
@@ -320,21 +323,52 @@ class TestEnsureSessionActive:
         swipe_session.save(
             update_fields=["status", "last_seen_at", "created_at"]
         )
+        session_id = swipe_session.pk
 
-        summary = MagicMock()
+        with pytest.raises(SessionFinishedError):
+            ensure_session_active(swipe_session)
+
+        assert not SwipeSession.objects.filter(pk=session_id).exists()
+
+
+class TestCloseStaleSwipeSessions:
+    @pytest.mark.django_db
+    def test_deletes_stale_waiting_and_finishes_stale_active(
+        self,
+        user,
+        django_capture_on_commit_callbacks,
+    ):
+        stale_waiting = create_swipe_session(user, "solo")
+        stale_active = create_swipe_session(user, "solo")
+        fresh = create_swipe_session(user, "solo")
+
+        old = timezone.now() - timedelta(minutes=3)
+        SwipeSession.objects.filter(pk=stale_waiting.pk).update(last_seen_at=old)
+        SwipeSession.objects.filter(pk=stale_active.pk).update(
+            status=SessionStatus.ACTIVE,
+            last_seen_at=old,
+        )
+        SwipeSession.objects.filter(pk=fresh.pk).update(
+            last_seen_at=timezone.now()
+        )
 
         with patch(
-            "apps.swipe_sessions.services.session.export_watchlist_csv",
-            return_value=summary,
-        ) as export_watchlist:
-            with pytest.raises(SwipeSessionFinishedError):
-                ensure_session_active(swipe_session)
+            "apps.swipe_sessions.services.session.notify_session"
+        ) as notify:
+            with django_capture_on_commit_callbacks(execute=True):
+                closed = close_stale_swipe_sessions()
 
-        swipe_session.refresh_from_db()
+        assert closed == 2
+        assert not SwipeSession.objects.filter(pk=stale_waiting.pk).exists()
 
-        assert swipe_session.status == SessionStatus.FINISHED
+        stale_active.refresh_from_db()
+        fresh.refresh_from_db()
 
-        export_watchlist.assert_called_once_with(
-            user=user,
-            session=swipe_session,
+        assert stale_active.status == SessionStatus.FINISHED
+        assert fresh.status == SessionStatus.WAITING
+
+        notify.assert_called_once_with(
+            stale_active.pk,
+            event="session.updated",
+            reason="ended",
         )

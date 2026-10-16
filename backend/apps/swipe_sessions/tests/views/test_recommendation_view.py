@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from apps.swipe_sessions.views import SwipeSessionRecommendationView
+from apps.common.exceptions import SessionNotFoundError, NotSessionMemberError
 
 
 @pytest.mark.django_db
@@ -71,11 +72,9 @@ class TestSwipeSessionRecommendationView:
         authenticated_get,
         swipe_session,
     ):
-        from apps.swipe_sessions.exceptions import SwipeSessionNotFoundError
-
         with patch(
             "apps.swipe_sessions.views.get_next_recommendation_for_session",
-            side_effect=SwipeSessionNotFoundError,
+            side_effect=SessionNotFoundError,
         ):
             request = authenticated_get()
 
@@ -91,8 +90,6 @@ class TestSwipeSessionRecommendationView:
         authenticated_get,
         swipe_session,
     ):
-        from apps.swipe_sessions.exceptions import NotSessionMemberError
-
         with patch(
             "apps.swipe_sessions.views.get_next_recommendation_for_session",
             side_effect=NotSessionMemberError,

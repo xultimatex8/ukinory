@@ -58,7 +58,7 @@ export default function ComparisonScreen() {
     const code = extractInviteCode(codeInput);
 
     if (code) {
-      navigate(`/comparison/join/${code}`);
+      navigate(`/join/${code}`);
     }
   };
 

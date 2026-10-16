@@ -6,6 +6,7 @@ import {
   removeRecommendationFromWatchlist,
   type JointRecommendation,
 } from "../services/comparisons";
+import { downloadBlob } from "../utils/download";
 import { getErrorMessage } from "../utils/errors";
 
 export function useRecommendationWatchlist(
@@ -68,12 +69,7 @@ export function useRecommendationWatchlist(
 
     try {
       const blob = await exportRecommendationsWatchlist(roomId);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "ukinory_comparison_watchlist.csv";
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, "ukinory_comparison_watchlist.csv");
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

@@ -3,11 +3,8 @@ from unittest.mock import patch
 import pytest
 
 from apps.common.enums import SwipeAction
-from apps.swipe_sessions.exceptions import (
-    CandidateNotFoundError,
-    NotSessionMemberError,
-    SwipeSessionNotFoundError,
-)
+from apps.swipe_sessions.exceptions import CandidateNotFoundError
+from apps.common.exceptions import NotSessionMemberError, SessionNotFoundError
 from apps.swipe_sessions.views import SwipeSessionSwipeView
 
 
@@ -26,6 +23,7 @@ class TestSwipeSessionSwipeView:
             {
                 "id": "swipe-id",
                 "action": SwipeAction.WATCHLIST,
+                "match": None,
             },
         )()
 
@@ -67,7 +65,7 @@ class TestSwipeSessionSwipeView:
     ):
         with patch(
             "apps.swipe_sessions.views.get_user_swipe_session",
-            side_effect=SwipeSessionNotFoundError,
+            side_effect=SessionNotFoundError,
         ):
             request = authenticated_post(
                 data={

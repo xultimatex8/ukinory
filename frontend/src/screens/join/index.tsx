@@ -2,25 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import ErrorScreen from "../../../components/ErrorScreen";
-import { createGuest } from "../../../services/auth";
-import { getErrorMessage } from "../../../utils/errors";
-import { acceptInvite } from "../../../services/invites";
+import ErrorScreen from "../../components/ErrorScreen";
+import { createGuest } from "../../services/auth";
+import { acceptInvite, inviteTargetPath } from "../../services/invites";
+import { getErrorMessage } from "../../utils/errors";
+import { hasSession, setTokens } from "../../utils/tokens";
 
 async function ensureSession(): Promise<void> {
-  if (
-    localStorage.getItem("access_token") &&
-    localStorage.getItem("refresh_token")
-  ) {
-    return;
-  }
+  if (hasSession()) return;
 
   const { access, refresh } = await createGuest();
-  localStorage.setItem("access_token", access);
-  localStorage.setItem("refresh_token", refresh);
+  setTokens(access, refresh);
 }
 
-export default function JoinComparisonScreen() {
+export default function JoinInviteScreen() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +29,7 @@ export default function JoinComparisonScreen() {
       try {
         await ensureSession();
         const accepted = await acceptInvite(code);
-        navigate(`/comparison/room/${accepted.target.id}`, { replace: true });
+        navigate(inviteTargetPath(accepted), { replace: true });
       } catch (err) {
         setError(getErrorMessage(err));
       }
@@ -51,7 +46,7 @@ export default function JoinComparisonScreen() {
     <main className="min-h-screen bg-background text-text">
       <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
         <Loader2 size={28} className="animate-spin text-primary" />
-        <h1 className="mt-4 text-lg font-semibold">Joining the room…</h1>
+        <h1 className="mt-4 text-lg font-semibold">Joining…</h1>
         <p className="mt-2 text-sm text-text-muted">
           You'll be taken there in a moment.
         </p>

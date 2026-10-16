@@ -31,15 +31,15 @@ class TestRoomDetailView:
         "apps.comparisons.views.build_room_state"
     )
     @patch(
-        "apps.comparisons.views.touch_room"
+        "apps.comparisons.views.heartbeat_room"
     )
     @patch(
         "apps.comparisons.views.get_user_room"
     )
-    def test_returns_room_state_and_touches_room(
+    def test_returns_room_state_and_sends_heartbeat(
         self,
         mock_get_user_room,
-        mock_touch_room,
+        mock_heartbeat_room,
         mock_build_room_state,
         api_client,
         user,
@@ -76,5 +76,5 @@ class TestRoomDetailView:
             room_id=UUID("00000000-0000-0000-0000-000000000001"),
             user=user,
         )
-        mock_touch_room.assert_called_once_with(room.pk)
+        mock_heartbeat_room.assert_called_once_with(room)
         mock_build_room_state.assert_called_once_with(room, user)

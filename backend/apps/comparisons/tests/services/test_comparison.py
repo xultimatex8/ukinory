@@ -7,11 +7,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
-from apps.comparisons.exceptions import (
-    ComparisonNotFoundError,
-    InsufficientDataError,
-    NotComparisonMemberError,
-)
+from apps.comparisons.exceptions import ComparisonNotFoundError, InsufficientDataError
 from apps.comparisons.services.comparison import (
     FIT_VERSION,
     _get_comparison,
@@ -20,6 +16,7 @@ from apps.comparisons.services.comparison import (
 from apps.comparisons.services.metrics import METRICS_VERSION
 from apps.comparisons.services.snapshot import UserLibrary
 from apps.recommendations.services.joint_profile import DEFAULT_POOL_SIZE
+from apps.common.exceptions import NotSessionMemberError
 
 
 class ComparisonResultServiceTests(TestCase):
@@ -32,7 +29,6 @@ class ComparisonResultServiceTests(TestCase):
         comparison.metrics_json = {}
         comparison.inputs_hash = ""
 
-        # ComparisonResult works with real datetime values.
         generated_at = timezone.now()
         comparison.created_at = generated_at
         comparison.updated_at = generated_at
@@ -96,7 +92,7 @@ class ComparisonResultServiceTests(TestCase):
         ) as objects:
             objects.prefetch_related.return_value.get.return_value = comparison
 
-            with self.assertRaises(NotComparisonMemberError):
+            with self.assertRaises(NotSessionMemberError):
                 _get_comparison(
                     user,
                     "comparison-1",

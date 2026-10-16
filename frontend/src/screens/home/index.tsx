@@ -23,7 +23,7 @@ const features = [
     description: "Find movies that match the tastes of you and someone else.",
     action: "Discover together",
     icon: Users,
-    to: ""
+    to: "/discover/together"
   },
   {
     title: "Compare",

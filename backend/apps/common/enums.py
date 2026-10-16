@@ -37,8 +37,8 @@ class ImportJobStatus(models.TextChoices):
 
 
 class InviteType(models.TextChoices):
-    COMPARISON = "comparison"
-    PAIRED_SWIPE = "paired_swipe"
+    COMPARISON = "COMPARISON", "Comparison"
+    PAIRED_SWIPE = "PAIRED_SWIPE", "Paired swipe"
 
 
 class InviteStatus(models.TextChoices):
