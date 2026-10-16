@@ -4,8 +4,8 @@ set -e
 
 echo "Generating pytest coverage report..."
 
-docker compose exec -T backend pytest 
-    --cov=. 
+docker compose exec -T backend pytest \
+    --cov=. \
     --cov-report=xml:/app/coverage.xml
 
 echo "Adjusting coverage report paths for SonarQube..."
@@ -35,6 +35,11 @@ PYTHON
 
 echo "Running SonarScanner..."
 
-docker compose run --rm sonarscanner
+docker compose run --rm sonarscanner \
+    "-Dsonar.working.directory=/usr/src/.scannerwork"
 
-echo "Analysis completed."
+echo "Updating README with SonarQube metrics..."
+
+docker compose run --rm --no-deps -e SONAR_TOKEN sonarqube-tools python scripts/update_sonar_readme.py
+
+echo "Analysis completed and README metrics updated locally."

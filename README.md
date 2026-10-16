@@ -36,6 +36,20 @@ recommendations together in real time.
 - **Paired swipe.** Two people swipe the same recommendations live; when both add a movie to their watchlist, it's a match.
 - **Rating prediction.** Machine learning models predict how you'd rate unwatched movies and improve with your swipes.
 
+## Code Quality
+
+<!-- SONAR-METRICS:START -->
+| Metric | Value |
+|---|---:|
+| Coverage | N/A |
+| Bugs | N/A |
+| Vulnerabilities | N/A |
+| Code smells | N/A |
+| Duplicated lines | N/A |
+| Lines of code | N/A |
+| Quality Gate | N/A |
+<!-- SONAR-METRICS:END -->
+
 ## How it works
 
 ```mermaid

@@ -31,10 +31,18 @@ $coverage.Save($coveragePath)
 
 Write-Host "Running SonarScanner..."
 
-docker compose run --rm sonarscanner
+docker compose run --rm sonarscanner "-Dsonar.working.directory=/usr/src/.scannerwork"
 
 if ($LASTEXITCODE -ne 0) {
     throw "SonarQube analysis failed."
 }
 
-Write-Host "Analysis completed."
+Write-Host "Updating README with SonarQube metrics..."
+
+docker compose run --rm --no-deps -e SONAR_TOKEN sonarqube-tools python scripts/update_sonar_readme.py
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to update README with SonarQube metrics."
+}
+
+Write-Host "Analysis completed and README metrics updated locally."
