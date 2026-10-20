@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Star } from "lucide-react";
+import type { MouseEvent } from "react";
 import type { MovieRecommendation } from "../services/swipeSessions";
 import type { StreamingCountry } from "./StreamingProviders";
 
@@ -15,6 +16,7 @@ export default function MovieInfoModal({
   onClose,
 }: MovieInfoModalProps) {
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const defaultCountry =
     streamingCountries.find((country) => country.code === "ES") ??
@@ -25,17 +27,38 @@ export default function MovieInfoModal({
       (country) => country.code === selectedCountry,
     ) ?? defaultCountry;
 
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    dialog.showModal();
+
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, []);
+
+  const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
+    if (event.target === event.currentTarget) onClose();
+  };
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6"
-      onClick={onClose}
+    <dialog
+      ref={dialogRef}
+      onClick={handleBackdropClick}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      aria-labelledby="movie-info-title"
+      className="fixed inset-0 m-0 flex h-full w-full max-h-none max-w-none items-center justify-center border-0 bg-black/70 px-4 py-6 text-inherit backdrop:bg-transparent"
     >
-      <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border border-border bg-surface"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border border-border bg-surface">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
+          <h2
+            id="movie-info-title"
+            className="text-sm font-semibold uppercase tracking-wider text-text-muted"
+          >
             Movie information
           </h2>
 
@@ -164,6 +187,6 @@ export default function MovieInfoModal({
           </a>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

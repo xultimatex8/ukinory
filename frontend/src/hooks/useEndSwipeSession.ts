@@ -43,7 +43,7 @@ export function useEndSwipeSession({
           downloadBlob(csvBlob, "ukinory_watchlist.csv");
         }
 
-        navigate("/");
+        void navigate("/");
       } catch (err) {
         setEndSessionError(getErrorMessage(err));
       } finally {

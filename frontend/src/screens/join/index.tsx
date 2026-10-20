@@ -29,7 +29,7 @@ export default function JoinInviteScreen() {
       try {
         await ensureSession();
         const accepted = await acceptInvite(code);
-        navigate(inviteTargetPath(accepted), { replace: true });
+        void navigate(inviteTargetPath(accepted), { replace: true });
       } catch (err) {
         setError(getErrorMessage(err));
       }

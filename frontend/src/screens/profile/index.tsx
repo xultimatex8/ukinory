@@ -71,7 +71,7 @@ export default function ProfileScreen() {
     try {
       await signOut();
     } finally {
-      navigate("/");
+      void navigate("/");
     }
   };
 
@@ -119,7 +119,7 @@ export default function ProfileScreen() {
       localStorage.removeItem("access_token");
       localStorage.removeItem("refresh_token");
 
-      navigate("/auth", { replace: true });
+      void navigate("/auth", { replace: true });
     } catch (error) {
       if (error instanceof ApiError) {
         setDeleteError(error.detail);

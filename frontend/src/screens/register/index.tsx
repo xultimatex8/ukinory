@@ -71,7 +71,7 @@ export default function RegisterScreen() {
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
 
-      navigate(destination, { replace: true });
+      void navigate(destination, { replace: true });
     } catch (error) {
       if (typeof error === "object" && error !== null) {
         const backendErrors = (
@@ -134,7 +134,7 @@ export default function RegisterScreen() {
 
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={() => void navigate(-1)}
           className="mt-6 flex w-fit cursor-pointer items-center gap-2
                      text-sm text-text-muted transition hover:text-text"
         >
