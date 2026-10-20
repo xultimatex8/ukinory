@@ -25,7 +25,7 @@ export default function AuthScreen() {
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
 
-      navigate(destination, { replace: true });
+      void navigate(destination, { replace: true });
     } catch (error) {
       if (error instanceof ApiError) {
         setGuestError(error.detail);

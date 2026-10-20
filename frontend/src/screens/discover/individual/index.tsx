@@ -68,7 +68,7 @@ export default function DiscoverScreen() {
     try {
       const session = await createIndividualSwipeSession();
       await startSwipeSession(session.id);
-      navigate(`/discover/${session.id}`);
+      void navigate(`/discover/${session.id}`);
     } catch {
       setError("Unable to start a swipe session.");
     } finally {
@@ -153,17 +153,17 @@ export default function DiscoverScreen() {
     addFiles(Array.from(event.target.files ?? []));
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
     if (!isImporting) setIsDragging(true);
   };
 
-  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
     if (!isImporting) setIsDragging(false);
   };
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
     if (isImporting) return;
 
@@ -366,14 +366,16 @@ export default function DiscoverScreen() {
                 </div>
               )}
 
-              <div
+              <button
+                type="button"
                 onClick={() => {
                   if (!isImporting) fileInputRef.current?.click();
                 }}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`mt-5 flex min-h-28 flex-col items-center justify-center border border-dashed px-4 py-5 text-center transition ${
+                disabled={isImporting}
+                className={`mt-5 flex min-h-28 w-full flex-col items-center justify-center border border-dashed px-4 py-5 text-center transition ${
                   isImporting
                     ? "cursor-auto border-border opacity-50"
                     : isDragging
@@ -404,7 +406,7 @@ export default function DiscoverScreen() {
                   onChange={handleFileChange}
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {pendingFiles.length > 0 && (
                 <button

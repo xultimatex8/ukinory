@@ -82,7 +82,7 @@ export default function EditProfileScreen() {
         ]);
 
         if (currentUser.is_guest) {
-          navigate("/profile", { replace: true });
+          void navigate("/profile", { replace: true });
           return;
         }
 

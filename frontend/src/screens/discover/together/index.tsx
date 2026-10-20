@@ -44,7 +44,7 @@ export default function TogetherScreen() {
     try {
       const { session, invite } = await createPairedSwipeSession();
 
-      navigate(`/discover/together/${session.id}`, {
+      void navigate(`/discover/together/${session.id}`, {
         state: { invite },
       });
     } catch (err) {
@@ -58,7 +58,7 @@ export default function TogetherScreen() {
     const code = extractInviteCode(codeInput);
 
     if (code) {
-      navigate(`/join/${code}`);
+      void navigate(`/join/${code}`);
     }
   };
 
@@ -138,7 +138,7 @@ export default function TogetherScreen() {
     addFiles(Array.from(event.target.files ?? []));
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
     if (!isImporting) {
@@ -146,7 +146,7 @@ export default function TogetherScreen() {
     }
   };
 
-  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
     if (!isImporting) {
@@ -154,7 +154,7 @@ export default function TogetherScreen() {
     }
   };
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
     if (isImporting) return;
@@ -342,7 +342,8 @@ export default function TogetherScreen() {
                 </div>
               )}
 
-              <div
+              <button
+                type="button"
                 onClick={() => {
                   if (!isImporting) {
                     fileInputRef.current?.click();
@@ -351,7 +352,8 @@ export default function TogetherScreen() {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`mt-5 flex min-h-28 flex-col items-center justify-center border border-dashed px-4 py-5 text-center transition ${
+                disabled={isImporting}
+                className={`mt-5 flex min-h-28 w-full flex-col items-center justify-center border border-dashed px-4 py-5 text-center transition ${
                   isImporting
                     ? "cursor-auto border-border opacity-50"
                     : isDragging
@@ -382,7 +384,7 @@ export default function TogetherScreen() {
                   onChange={handleFileChange}
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {pendingFiles.length > 0 && (
                 <button
