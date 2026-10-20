@@ -71,3 +71,48 @@ class TestCurrentLegalDocumentsView:
         response = self.view(request)
 
         assert response.status_code == 200
+
+    def test_returns_terms_before_privacy(self):
+        now = timezone.now()
+        LegalDocument.objects.create(
+            type="PRIVACY", version="1.0", content="Privacy",
+            effective_at=now - timedelta(days=1),
+        )
+        LegalDocument.objects.create(
+            type="TERMS", version="1.0", content="Terms",
+            effective_at=now - timedelta(days=1),
+        )
+
+        response = self.view(self.factory.get(self.url))
+
+        assert [d["type"] for d in response.data] == ["TERMS", "PRIVACY"]
+
+    def test_returns_empty_list_without_documents(self):
+        response = self.view(self.factory.get(self.url))
+
+        assert response.status_code == 200
+        assert response.data == []
+
+    def test_serializes_identifying_fields(self):
+        LegalDocument.objects.create(
+            type="TERMS", version="1.0", content="Terms",
+            effective_at=timezone.now() - timedelta(days=1),
+        )
+
+        response = self.view(self.factory.get(self.url))
+
+        assert {"id", "type", "version"} <= set(response.data[0])
+
+    def test_ignores_invalid_credentials(self):
+        request = self.factory.get(
+            self.url, HTTP_AUTHORIZATION="Bearer invalid-token"
+        )
+
+        response = self.view(request)
+
+        assert response.status_code == 200
+
+    def test_rejects_unsupported_methods(self):
+        response = self.view(self.factory.post(self.url, {}))
+
+        assert response.status_code == 405

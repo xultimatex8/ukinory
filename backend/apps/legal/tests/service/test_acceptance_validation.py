@@ -11,6 +11,22 @@ from apps.legal.services.acceptance_validation import (
 )
 
 from ..factories import make_document
+from types import SimpleNamespace
+
+
+@pytest.fixture
+def published_documents(db):
+    return SimpleNamespace(
+        terms_v1=make_document(LegalDocumentType.TERMS, "1", days_ago=30),
+        terms_v2=make_document(LegalDocumentType.TERMS, "2", days_ago=5),
+        privacy_v1=make_document(LegalDocumentType.PRIVACY, "1", days_ago=30),
+    )
+
+
+@pytest.fixture
+def current_documents(published_documents):
+    return [published_documents.terms_v2, published_documents.privacy_v1]
+
 
 pytestmark = pytest.mark.django_db
 
@@ -78,6 +94,62 @@ def test_validate_acceptance_rejects_a_scheduled_future_version(published_docume
 
 def test_validate_acceptance_raises_unavailable_when_a_type_has_no_effective_version(published_documents):
     published_documents.privacy_v1.delete()
+
+    with pytest.raises(LegalDocumentsUnavailableError):
+        validate_acceptance([published_documents.terms_v2])
+
+
+def test_get_current_documents_returns_empty_list_without_documents():
+    assert get_current_documents() == []
+
+
+@pytest.mark.usefixtures("published_documents")
+def test_get_current_documents_returns_nothing_before_the_first_publication():
+    at = timezone.now() - timedelta(days=3650)
+
+    assert get_current_documents(at) == []
+
+
+def test_validate_acceptance_rejects_extra_stale_documents(published_documents):
+    submitted = [
+        published_documents.terms_v1,
+        published_documents.terms_v2,
+        published_documents.privacy_v1,
+    ]
+
+    with pytest.raises(LegalAcceptanceError):
+        validate_acceptance(submitted)
+
+
+def test_validate_acceptance_ignores_duplicated_documents(published_documents):
+    submitted = [
+        published_documents.terms_v2,
+        published_documents.terms_v2,
+        published_documents.privacy_v1,
+    ]
+
+    assert {d.type for d in validate_acceptance(submitted)} == {"TERMS", "PRIVACY"}
+
+
+def test_validate_acceptance_accepts_any_iterable(published_documents):
+    validate_acceptance((published_documents.terms_v2, published_documents.privacy_v1))
+
+
+def test_validate_acceptance_lists_every_missing_type_sorted():
+    with pytest.raises(LegalDocumentsUnavailableError, match="PRIVACY, TERMS"):
+        validate_acceptance([])
+
+
+def test_validate_acceptance_names_only_the_missing_type(published_documents):
+    published_documents.privacy_v1.delete()
+
+    with pytest.raises(LegalDocumentsUnavailableError, match="for: PRIVACY$"):
+        validate_acceptance([published_documents.terms_v2])
+
+
+def test_validate_acceptance_treats_future_only_type_as_unavailable(published_documents):
+    published_documents.privacy_v1.delete()
+    make_document(LegalDocumentType.PRIVACY, "9", days_ago=-3)
 
     with pytest.raises(LegalDocumentsUnavailableError):
         validate_acceptance([published_documents.terms_v2])

@@ -6,6 +6,18 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.legal.models import LegalDocument, LegalDocumentType
+from types import SimpleNamespace
+from apps.legal.tests.factories import make_document
+
+
+@pytest.fixture
+def published_documents(db):
+    return SimpleNamespace(
+        terms_v1=make_document(LegalDocumentType.TERMS, "1", days_ago=30),
+        terms_v2=make_document(LegalDocumentType.TERMS, "2", days_ago=5),
+        privacy_v1=make_document(LegalDocumentType.PRIVACY, "1", days_ago=30),
+    )
+
 
 
 @pytest.mark.django_db
@@ -62,3 +74,39 @@ class TestLegalDocumentDetailView:
         )
 
         assert response.status_code == 404
+
+    def test_returns_superseded_versions_that_are_already_effective(
+        self, published_documents
+    ):
+        old = published_documents.terms_v1
+
+        response = APIClient().get(
+            reverse("document-detail", kwargs={"pk": str(old.pk)})
+        )
+
+        assert response.status_code == 200
+        assert response.data["id"] == str(old.pk)
+        assert response.data["version"] == "1"
+
+    def test_ignores_invalid_credentials(self, published_documents):
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer invalid-token")
+
+        response = client.get(
+            reverse(
+                "document-detail",
+                kwargs={"pk": str(published_documents.terms_v2.pk)},
+            )
+        )
+
+        assert response.status_code == 200
+
+    def test_rejects_unsupported_methods(self, published_documents):
+        response = APIClient().post(
+            reverse(
+                "document-detail",
+                kwargs={"pk": str(published_documents.terms_v2.pk)},
+            )
+        )
+
+        assert response.status_code == 405
