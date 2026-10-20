@@ -13,6 +13,7 @@ from apps.movies.exceptions import (
     WikidataNotFoundError,
     WikidataUnavailableError,
 )
+from apps.movies.services import wikidata_client as wikidata_client_module
 from apps.movies.services.wikidata_client import (
     MAX_ENTITIES_PER_REQUEST,
     WIKIDATA_API_URL,
@@ -494,3 +495,267 @@ class TestFindQidByTmdbId:
 
         _, kwargs = client.session.get.call_args
         assert '"438631"' in kwargs["params"]["query"]
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    recorded: list[float] = []
+    monkeypatch.setattr(time, "sleep", recorded.append)
+    return recorded
+
+
+@pytest.fixture
+def no_pacing(monkeypatch):
+    monkeypatch.setattr(wikidata_client_module, "wait_for_pacing", lambda key, interval: None)
+
+
+def tmdb_binding(tmdb_id: int, qid: str) -> dict:
+    return {
+        "tmdb_id": {"value": str(tmdb_id)},
+        "item": {"value": f"http://www.wikidata.org/entity/{qid}"},
+    }
+
+
+class TestFindQidsByTmdbIds:
+    def test_maps_every_tmdb_id_to_its_qid(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(
+            200, bindings_payload(tmdb_binding(438631, "Q1"), tmdb_binding(11, "Q2"))
+        )
+
+        assert client.find_qids_by_tmdb_ids([438631, 11]) == {438631: "Q1", 11: "Q2"}
+
+    def test_the_query_lists_the_ids_as_values(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(200, bindings_payload())
+
+        client.find_qids_by_tmdb_ids([5, 6])
+
+        query = client.session.get.call_args.kwargs["params"]["query"]
+        assert 'VALUES ?tmdb_id { "5" "6" }' in query
+        assert "wdt:P4947" in query
+
+    def test_ids_are_looked_up_in_chunks(self):
+        client = make_client()
+        client.session.get.side_effect = [
+            FakeResponse(200, bindings_payload(tmdb_binding(1, "Q1"), tmdb_binding(2, "Q2"))),
+            FakeResponse(200, bindings_payload(tmdb_binding(3, "Q3"), tmdb_binding(4, "Q4"))),
+            FakeResponse(200, bindings_payload(tmdb_binding(5, "Q5"))),
+        ]
+
+        result = client.find_qids_by_tmdb_ids([1, 2, 3, 4, 5], chunk_size=2)
+
+        assert client.session.get.call_count == 3
+        assert result == {1: "Q1", 2: "Q2", 3: "Q3", 4: "Q4", 5: "Q5"}
+
+    def test_the_default_chunk_size_is_300(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(200, bindings_payload())
+
+        client.find_qids_by_tmdb_ids(list(range(650)))
+
+        assert client.session.get.call_count == 3
+
+    def test_empty_input_makes_no_request(self):
+        client = make_client()
+
+        assert client.find_qids_by_tmdb_ids([]) == {}
+        client.session.get.assert_not_called()
+
+    def test_ids_wikidata_does_not_know_are_absent(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(
+            200, bindings_payload(tmdb_binding(1, "Q1"))
+        )
+
+        assert client.find_qids_by_tmdb_ids([1, 2]) == {1: "Q1"}
+
+    def test_a_chunk_that_is_unavailable_is_skipped_and_the_rest_are_resolved(self, caplog):
+        client = make_client()
+        client.session.get.side_effect = [
+            requests.ReadTimeout("slow"),
+            FakeResponse(200, bindings_payload(tmdb_binding(3, "Q3"))),
+        ]
+
+        with caplog.at_level("WARNING"):
+            result = client.find_qids_by_tmdb_ids([1, 2, 3], chunk_size=2)
+
+        assert result == {3: "Q3"}
+        assert "SPARQL batch QID lookup failed for a chunk of 2 id(s)" in caplog.text
+
+    def test_other_wikidata_errors_are_not_swallowed(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(400, text="Malformed query")
+
+        with pytest.raises(WikidataError):
+            client.find_qids_by_tmdb_ids([1])
+
+
+class TestFindQidByTmdbIdQuery:
+    def test_asks_for_a_single_result(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(200, bindings_payload())
+
+        client.find_qid_by_tmdb_id(1)
+
+        assert "LIMIT 1" in client.session.get.call_args.kwargs["params"]["query"]
+
+    def test_uses_the_tmdb_movie_id_property(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(200, bindings_payload())
+
+        client.find_qid_by_tmdb_id(1)
+
+        assert "wdt:P4947" in client.session.get.call_args.kwargs["params"]["query"]
+
+
+class TestRequestDetails:
+    def test_the_configured_timeout_is_sent(self):
+        client = make_client(timeout=7)
+        client.session.get.return_value = FakeResponse(200, bindings_payload())
+
+        client.sparql("SELECT ?item WHERE { }")
+
+        assert client.session.get.call_args.kwargs["timeout"] == 7
+
+    def test_every_client_gets_its_own_session(self):
+        assert WikidataClient().session is not WikidataClient().session
+
+    def test_the_time_of_the_last_request_is_recorded(self):
+        client = make_client()
+        client.session.get.return_value = FakeResponse(200, bindings_payload())
+
+        assert client._last_request_at is None
+        client.sparql("SELECT ?item WHERE { }")
+
+        assert client._last_request_at is not None
+
+
+class TestRetryAfterParsing:
+    @pytest.mark.parametrize(
+        ("header", "expected"),
+        [(None, 0.25), ("abc", 0.25), ("", 0.25), ("-3", 0.0), ("2.5", 2.5), ("0", 0.0), ("120", 120.0)],
+    )
+    def test_retry_after_header(self, header, expected):
+        headers = {} if header is None else {"Retry-After": header}
+
+        assert WikidataClient._retry_after_seconds(FakeResponse(429, headers=headers)) == expected
+
+
+class TestBackoff:
+    @pytest.mark.parametrize(
+        ("attempt", "expected"),
+        [(1, 0.5), (2, 1.0), (3, 2.0), (4, 4.0), (5, 8.0), (6, 8.0), (12, 8.0)],
+    )
+    def test_backoff_is_capped(self, sleeps, attempt, expected):
+        WikidataClient._sleep_backoff(attempt)
+
+        assert sleeps == [expected]
+
+    def test_connection_errors_back_off_exponentially(self, sleeps, no_pacing):
+        client = make_client(max_retries=3)
+        client.session.get.side_effect = requests.ConnectionError("boom")
+
+        with pytest.raises(WikidataUnavailableError):
+            client.sparql("SELECT ?item WHERE { }")
+
+        assert sleeps == [0.5, 1.0, 2.0]
+
+    def test_server_errors_back_off_exponentially(self, sleeps, no_pacing):
+        client = make_client(max_retries=2)
+        client.session.get.return_value = FakeResponse(500)
+
+        with pytest.raises(WikidataUnavailableError):
+            client.sparql("SELECT ?item WHERE { }")
+
+        assert sleeps == [0.5, 1.0]
+
+    def test_every_attempt_is_paced(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            wikidata_client_module, "wait_for_pacing", lambda key, interval: calls.append(key)
+        )
+        client = make_client(max_retries=2)
+        client.session.get.side_effect = [FakeResponse(500), FakeResponse(500), FakeResponse(200, bindings_payload())]
+
+        client.sparql("SELECT ?item WHERE { }")
+
+        assert calls == [WIKIDATA_PACING_KEY] * 3
+
+
+class TestRetryAfterLimits:
+    def test_a_retry_after_at_the_limit_is_honoured(self, sleeps, no_pacing):
+        client = make_client(max_retries=2)
+        client.session.get.side_effect = [
+            FakeResponse(429, headers={"Retry-After": "120"}),
+            FakeResponse(200, bindings_payload()),
+        ]
+
+        client.sparql("SELECT ?item WHERE { }")
+
+        assert sleeps == [120.0]
+
+    def test_a_retry_after_over_the_limit_aborts(self, sleeps, no_pacing):
+        client = make_client(max_retries=2)
+        client.session.get.return_value = FakeResponse(429, headers={"Retry-After": "120.5"})
+
+        with pytest.raises(WikidataUnavailableError, match="Retry-After=120.5"):
+            client.sparql("SELECT ?item WHERE { }")
+
+        assert sleeps == []
+
+    def test_a_missing_retry_after_waits_the_default_and_retries(self, sleeps, no_pacing):
+        client = make_client(max_retries=2)
+        client.session.get.side_effect = [FakeResponse(429), FakeResponse(200, bindings_payload())]
+
+        client.sparql("SELECT ?item WHERE { }")
+
+        assert sleeps == [0.25]
+
+    def test_rate_limit_is_attempted_once_more_than_the_retries(self, sleeps, no_pacing):
+        client = make_client(max_retries=2)
+        client.session.get.return_value = FakeResponse(429, headers={"Retry-After": "1"})
+
+        with pytest.raises(WikidataUnavailableError):
+            client.sparql("SELECT ?item WHERE { }")
+
+        assert client.session.get.call_count == 3
+
+
+class TestErrorMessages:
+    def test_not_found_names_the_url_and_is_not_retried(self, sleeps, no_pacing):
+        client = make_client(max_retries=3)
+        client.session.get.return_value = FakeResponse(404)
+
+        with pytest.raises(WikidataNotFoundError, match="query.wikidata.org"):
+            client.sparql("SELECT ?item WHERE { }")
+
+        assert client.session.get.call_count == 1
+        assert sleeps == []
+
+    def test_client_errors_are_not_retried_and_truncate_the_body(self, no_pacing):
+        client = make_client(max_retries=3)
+        client.session.get.return_value = FakeResponse(400, text="y" * 500)
+
+        with pytest.raises(WikidataError) as info:
+            client.sparql("SELECT ?item WHERE { }")
+
+        assert client.session.get.call_count == 1
+        assert "y" * 200 in str(info.value)
+        assert "y" * 201 not in str(info.value)
+
+    def test_connection_failures_report_the_attempts(self, no_pacing):
+        client = make_client(max_retries=1)
+        client.session.get.side_effect = requests.ConnectionError("boom")
+
+        with pytest.raises(WikidataUnavailableError, match=r"failed after 2 attempt\(s\)") as info:
+            client.sparql("SELECT ?item WHERE { }")
+
+        assert isinstance(info.value.__cause__, requests.ConnectionError)
+
+    def test_server_errors_report_the_status(self, no_pacing):
+        client = make_client(max_retries=0)
+        client.session.get.return_value = FakeResponse(503)
+
+        with pytest.raises(WikidataUnavailableError, match="returned 503"):
+            client.sparql("SELECT ?item WHERE { }")
