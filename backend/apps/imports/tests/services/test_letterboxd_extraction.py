@@ -1,6 +1,7 @@
 import csv
 import io
 import zipfile
+from unittest.mock import patch
 
 import pytest
 
@@ -9,10 +10,12 @@ from apps.imports.services.letterboxd_extraction import (
     ExtractionResult,
     LetterboxdImportError,
     _basename_lower,
+    _check_required,
     _decode,
     _match_canonical,
     _parse_csv_text,
     _resolve_include_and_required,
+    _split_upload,
     _validate_columns,
     extract_letterboxd_csvs,
 )
@@ -747,3 +750,151 @@ def test_standalone_non_utf8_binary_is_decoded_by_latin1_fallback():
     )
 
     assert result.csvs["ratings.csv"][0]["Name"] == "Movie"
+
+
+RATINGS_HEADER = ["Name", "Year", "Rating"]
+
+
+def ratings_csv(name="Alien", year="1979", rating="4.5", **kwargs):
+    return csv_bytes(
+        RATINGS_HEADER,
+        [{"Name": name, "Year": year, "Rating": rating}],
+        **kwargs,
+    )
+
+
+def test_parse_csv_text_wraps_csv_errors():
+    text = "Name,Year\n" + "x" * 200_000 + ",1979\n"
+
+    with pytest.raises(LetterboxdImportError, match="Could not parse 'ratings.csv' as CSV"):
+        _parse_csv_text(text, "ratings.csv")
+
+
+def test_parse_csv_text_wraps_csv_errors_raised_when_creating_the_reader():
+    with patch("csv.DictReader", side_effect=csv.Error("boom")):
+        with pytest.raises(LetterboxdImportError, match="as CSV: boom"):
+            _parse_csv_text("Name,Year\n", "ratings.csv")
+
+
+def test_split_upload_returns_tuple_unchanged():
+    file_obj = io.BytesIO(b"")
+
+    assert _split_upload((file_obj, "ratings.csv")) == (file_obj, "ratings.csv")
+
+
+def test_split_upload_reads_name_attribute_from_bare_file():
+    file_obj = NamedBytesIO(b"", name="ratings.csv")
+
+    assert _split_upload(file_obj) == (file_obj, "ratings.csv")
+
+
+def test_split_upload_uses_none_when_bare_file_has_no_name():
+    file_obj = io.BytesIO(b"")
+
+    assert _split_upload(file_obj) == (file_obj, None)
+
+
+def test_check_required_accepts_present_files():
+    result = ExtractionResult(csvs={"ratings.csv": []}, missing=[])
+
+    _check_required(result, {"ratings.csv"})
+
+
+def test_check_required_accepts_empty_requirement():
+    _check_required(ExtractionResult(csvs={}, missing=[]), set())
+
+
+def test_check_required_lists_every_missing_file_sorted():
+    result = ExtractionResult(csvs={}, missing=[])
+
+    with pytest.raises(
+        LetterboxdImportError,
+        match=r"required CSV\(s\): ratings.csv, watchlist.csv",
+    ):
+        _check_required(result, {"watchlist.csv", "ratings.csv"})
+
+
+def test_standalone_matches_filename_with_folder_prefix():
+    result = extract_letterboxd_csvs(
+        (io.BytesIO(ratings_csv()), "export/Ratings.CSV"),
+        include={"ratings.csv"},
+    )
+
+    assert result.csvs["ratings.csv"][0]["Name"] == "Alien"
+
+
+def test_standalone_list_reports_the_unexpected_file_by_name():
+    uploads = [
+        (io.BytesIO(ratings_csv()), "ratings.csv"),
+        (io.BytesIO(b"a,b\n1,2\n"), "junk.csv"),
+    ]
+
+    with pytest.raises(LetterboxdImportError, match="'junk.csv' is not one of the expected CSVs"):
+        extract_letterboxd_csvs(uploads, include={"ratings.csv", "watchlist.csv"})
+
+
+def test_zip_with_damaged_member_is_rejected():
+    content = ratings_csv()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("ratings.csv", content)
+    raw = bytearray(buffer.getvalue())
+    raw[raw.find(content) + 5] ^= 0xFF
+
+    with pytest.raises(LetterboxdImportError, match="damaged.*corrupt file: ratings.csv"):
+        extract_letterboxd_csvs(
+            (io.BytesIO(bytes(raw)), "export.zip"), include={"ratings.csv"}
+        )
+
+
+def test_zip_ignores_directory_entries():
+    archive = zip_bytes({"export/": b"", "export/ratings.csv": ratings_csv()})
+
+    result = extract_letterboxd_csvs(
+        (io.BytesIO(archive), "export.zip"), include={"ratings.csv"}
+    )
+
+    assert set(result.csvs) == {"ratings.csv"}
+
+
+def test_zip_supports_utf8_bom():
+    archive = zip_bytes({"ratings.csv": ratings_csv(bom=True)})
+
+    result = extract_letterboxd_csvs(
+        (io.BytesIO(archive), "export.zip"), include={"ratings.csv"}
+    )
+
+    assert set(result.csvs["ratings.csv"][0]) == {"Name", "Year", "Rating"}
+
+
+def test_zip_supports_latin1():
+    archive = zip_bytes(
+        {"ratings.csv": ratings_csv(name="Amélie", year="2001", encoding="latin-1")}
+    )
+
+    result = extract_letterboxd_csvs(
+        (io.BytesIO(archive), "export.zip"), include={"ratings.csv"}
+    )
+
+    assert result.csvs["ratings.csv"][0]["Name"] == "Amélie"
+
+
+def test_zip_member_without_header_row_is_rejected():
+    archive = zip_bytes({"ratings.csv": b""})
+
+    with pytest.raises(LetterboxdImportError, match="empty or has no header row"):
+        extract_letterboxd_csvs(
+            (io.BytesIO(archive), "export.zip"), include={"ratings.csv"}
+        )
+
+
+def test_zip_with_required_file_present_succeeds():
+    archive = zip_bytes({"ratings.csv": ratings_csv()})
+
+    result = extract_letterboxd_csvs(
+        (io.BytesIO(archive), "export.zip"),
+        include={"ratings.csv"},
+        required={"ratings.csv"},
+    )
+
+    assert result.missing == []

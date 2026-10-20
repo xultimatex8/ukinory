@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from datetime import date
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,7 @@ from apps.imports.constants import (
 )
 from apps.imports.dtos.extraction_result import ExtractionResult
 from apps.imports.services.letterboxd_persistence import (
+    _MatchOutcome,
     _collect_film_keys,
     _film_key,
     _match_films,
@@ -20,6 +22,7 @@ from apps.imports.services.letterboxd_persistence import (
     _parse_date,
     _parse_rating,
     _parse_year,
+    _resolve_one,
     persist_letterboxd_records,
     persist_ratings,
     persist_watchlist,
@@ -472,30 +475,30 @@ def stub_movie_storage():
 
 @pytest.mark.django_db
 class TestPersistRatings:
-    def test_creates_rating(self, registered_user):
+    def test_creates_rating(self, user):
         csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
 
-        count = persist_ratings(registered_user, csvs, movie_matches={})
+        count = persist_ratings(user, csvs, movie_matches={})
 
         assert count == 1
         assert Rating.objects.count() == 1
 
-        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        rating = Rating.objects.get(user=user, title="Dune", release_year=2021)
         assert rating.rating == 4.5
         assert rating.watched_date is None
         assert rating.liked is False
         assert rating.movie is None
 
-    def test_links_matched_movie(self, registered_user):
+    def test_links_matched_movie(self, user):
         movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
         csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
 
-        persist_ratings(registered_user, csvs, movie_matches={("Dune", 2021): movie})
+        persist_ratings(user, csvs, movie_matches={("Dune", 2021): movie})
 
-        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        rating = Rating.objects.get(user=user, title="Dune", release_year=2021)
         assert rating.movie_id == movie.id
 
-    def test_creates_combined_rating(self, registered_user):
+    def test_creates_combined_rating(self, user):
         csvs = {
             WATCHED_CSV: [{"Name": "Dune", "Year": "2021"}],
             RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
@@ -510,29 +513,29 @@ class TestPersistRatings:
             LIKED_CSV: [{"Name": "Dune", "Year": "2021"}],
         }
 
-        count = persist_ratings(registered_user, csvs, movie_matches={})
+        count = persist_ratings(user, csvs, movie_matches={})
 
         assert count == 1
-        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        rating = Rating.objects.get(user=user, title="Dune", release_year=2021)
         assert rating.rating == 5.0
         assert rating.watched_date == date(2025, 6, 20)
         assert rating.liked is True
 
-    def test_updates_existing_rating(self, registered_user):
+    def test_updates_existing_rating(self, user):
         csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
-        persist_ratings(registered_user, csvs, movie_matches={})
+        persist_ratings(user, csvs, movie_matches={})
 
         csvs[RATINGS_CSV][0]["Rating"] = "5"
-        count = persist_ratings(registered_user, csvs, movie_matches={})
+        count = persist_ratings(user, csvs, movie_matches={})
 
         assert count == 1
         assert Rating.objects.filter(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         ).count() == 1
-        rating = Rating.objects.get(user=registered_user, title="Dune", release_year=2021)
+        rating = Rating.objects.get(user=user, title="Dune", release_year=2021)
         assert rating.rating == 5.0
 
-    def test_persists_multiple_films(self, registered_user):
+    def test_persists_multiple_films(self, user):
         csvs = {
             WATCHED_CSV: [
                 {"Name": "Dune", "Year": "2021"},
@@ -544,93 +547,93 @@ class TestPersistRatings:
             ],
         }
 
-        count = persist_ratings(registered_user, csvs, movie_matches={})
+        count = persist_ratings(user, csvs, movie_matches={})
 
         assert count == 2
         assert Rating.objects.count() == 2
 
-    def test_does_not_duplicate_same_film(self, registered_user):
+    def test_does_not_duplicate_same_film(self, user):
         csvs = {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
 
-        persist_ratings(registered_user, csvs, movie_matches={})
-        persist_ratings(registered_user, csvs, movie_matches={})
+        persist_ratings(user, csvs, movie_matches={})
+        persist_ratings(user, csvs, movie_matches={})
 
         assert Rating.objects.filter(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         ).count() == 1
 
 
 @pytest.mark.django_db
 class TestPersistWatchlist:
-    def test_creates_entry(self, registered_user):
+    def test_creates_entry(self, user):
         rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
 
-        count = persist_watchlist(registered_user, rows, movie_matches={})
+        count = persist_watchlist(user, rows, movie_matches={})
 
         assert count == 1
         assert WatchlistEntry.objects.count() == 1
         entry = WatchlistEntry.objects.get(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         )
         assert entry.added_date == date(2025, 1, 15)
         assert entry.source == WatchlistSource.IMPORTED
         assert entry.movie is None
 
-    def test_links_matched_movie(self, registered_user):
+    def test_links_matched_movie(self, user):
         movie = Movie.objects.create(tmdb_id=1, title="Dune", release_year=2021)
         rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
 
-        persist_watchlist(registered_user, rows, movie_matches={("Dune", 2021): movie})
+        persist_watchlist(user, rows, movie_matches={("Dune", 2021): movie})
 
         entry = WatchlistEntry.objects.get(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         )
         assert entry.movie_id == movie.id
 
-    def test_updates_existing_entry(self, registered_user):
+    def test_updates_existing_entry(self, user):
         rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
-        persist_watchlist(registered_user, rows, movie_matches={})
+        persist_watchlist(user, rows, movie_matches={})
 
         rows[0]["Date"] = "2025-02-20"
-        count = persist_watchlist(registered_user, rows, movie_matches={})
+        count = persist_watchlist(user, rows, movie_matches={})
 
         assert count == 1
         entry = WatchlistEntry.objects.get(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         )
         assert entry.added_date == date(2025, 2, 20)
 
-    def test_does_not_duplicate_same_film(self, registered_user):
+    def test_does_not_duplicate_same_film(self, user):
         rows = [{"Name": "Dune", "Year": "2021", "Date": "2025-01-15"}]
 
-        persist_watchlist(registered_user, rows, movie_matches={})
-        persist_watchlist(registered_user, rows, movie_matches={})
+        persist_watchlist(user, rows, movie_matches={})
+        persist_watchlist(user, rows, movie_matches={})
 
         assert WatchlistEntry.objects.filter(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         ).count() == 1
 
-    def test_skips_invalid_rows(self, registered_user):
+    def test_skips_invalid_rows(self, user):
         rows = [
             {"Name": "", "Year": "2021"},
             {"Name": "Dune", "Year": "invalid"},
             {"Name": "Alien", "Year": "1979", "Date": "2025-01-15"},
         ]
 
-        count = persist_watchlist(registered_user, rows, movie_matches={})
+        count = persist_watchlist(user, rows, movie_matches={})
 
         assert count == 1
         assert WatchlistEntry.objects.count() == 1
         assert WatchlistEntry.objects.filter(title="Alien", release_year=1979).exists()
 
-    def test_with_invalid_date(self, registered_user):
+    def test_with_invalid_date(self, user):
         rows = [{"Name": "Dune", "Year": "2021", "Date": "invalid"}]
 
-        count = persist_watchlist(registered_user, rows, movie_matches={})
+        count = persist_watchlist(user, rows, movie_matches={})
 
         assert count == 1
         entry = WatchlistEntry.objects.get(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         )
         assert entry.added_date is None
 
@@ -638,7 +641,7 @@ class TestPersistWatchlist:
 @pytest.mark.django_db
 @pytest.mark.usefixtures("stub_movie_storage")
 class TestPersistLetterboxdRecords:
-    def test_with_watchlist(self, registered_user, no_tmdb_matches):
+    def test_with_watchlist(self, user, no_tmdb_matches):
         result = ExtractionResult(
             csvs={
                 RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}],
@@ -648,32 +651,32 @@ class TestPersistLetterboxdRecords:
             }
         )
 
-        persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+        persisted, movie_summary = persist_letterboxd_records(user, result)
 
         assert persisted == {"ratings": 1, "watchlist": 1}
         assert Rating.objects.filter(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         ).exists()
         assert WatchlistEntry.objects.filter(
-            user=registered_user, title="Alien", release_year=1979
+            user=user, title="Alien", release_year=1979
         ).exists()
         assert movie_summary.matched == 0
         assert set(movie_summary.unmatched) == {"Dune (2021)", "Alien (1979)"}
 
-    def test_without_watchlist(self, registered_user, no_tmdb_matches):
+    def test_without_watchlist(self, user, no_tmdb_matches):
         result = ExtractionResult(
             csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
         )
 
-        persisted, _ = persist_letterboxd_records(registered_user, result)
+        persisted, _ = persist_letterboxd_records(user, result)
 
         assert persisted == {"ratings": 1}
         assert WatchlistEntry.objects.count() == 0
 
-    def test_with_empty_result(self, registered_user):
+    def test_with_empty_result(self, user):
         result = ExtractionResult(csvs={})
 
-        persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+        persisted, movie_summary = persist_letterboxd_records(user, result)
 
         assert persisted == {"ratings": 0}
         assert Rating.objects.count() == 0
@@ -681,7 +684,7 @@ class TestPersistLetterboxdRecords:
         assert movie_summary.matched == 0
         assert movie_summary.unmatched == []
 
-    def test_constructs_and_uses_a_tmdb_client_for_matching(self, registered_user):
+    def test_constructs_and_uses_a_tmdb_client_for_matching(self, user):
         Movie.objects.create(tmdb_id=1, title="Dune (import spelling)", release_year=2021)
         result = ExtractionResult(
             csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
@@ -695,12 +698,12 @@ class TestPersistLetterboxdRecords:
             PATCH_TARGET.format("match_movie"),
             return_value=fake_match(tmdb_id=1),
         ) as mock_match_movie:
-            persist_letterboxd_records(registered_user, result)
+            persist_letterboxd_records(user, result)
 
         mock_match_movie.assert_called_once_with(fake_client, "Dune", 2021)
 
     def test_same_film_across_ratings_and_watchlist_is_matched_once(
-        self, registered_user
+        self, user
     ):
         movie = Movie.objects.create(
             tmdb_id=1,
@@ -720,7 +723,7 @@ class TestPersistLetterboxdRecords:
             return_value=movie,
         ) as mock_find_cached_movie:
             persisted, movie_summary = persist_letterboxd_records(
-                registered_user,
+                user,
                 result,
             )
 
@@ -737,21 +740,21 @@ class TestPersistLetterboxdRecords:
         assert movie_summary.tmdb_error is None
 
         rating = Rating.objects.get(
-            user=registered_user,
+            user=user,
             title="Dune",
             release_year=2021,
         )
         assert rating.movie_id == movie.id
 
         watchlist_entry = WatchlistEntry.objects.get(
-            user=registered_user,
+            user=user,
             title="Dune",
             release_year=2021,
         )
         assert watchlist_entry.movie_id == movie.id
 
     def test_a_systemic_tmdb_failure_does_not_block_csv_persistence(
-        self, registered_user
+        self, user
     ):
         result = ExtractionResult(
             csvs={RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "4.5"}]}
@@ -761,16 +764,16 @@ class TestPersistLetterboxdRecords:
             PATCH_TARGET.format("match_movie"),
             side_effect=TMDbUnavailableError("TMDb is down"),
         ):
-            persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+            persisted, movie_summary = persist_letterboxd_records(user, result)
 
         assert persisted == {"ratings": 1}
         assert Rating.objects.filter(
-            user=registered_user, title="Dune", release_year=2021
+            user=user, title="Dune", release_year=2021
         ).exists()
         assert movie_summary.tmdb_error == "TMDb is down"
 
     def test_films_needing_wikidata_are_resolved_in_one_batched_call(
-        self, registered_user
+        self, user
     ):
         movie_dune = Movie.objects.create(
             tmdb_id=111, title="Dune", release_year=2021
@@ -811,7 +814,7 @@ class TestPersistLetterboxdRecords:
         ) as mock_fetch_and_store, patch(
             PATCH_TARGET.format("DEFAULT_MAX_HISTORY_MOVIES"), 1
         ):
-            persisted, movie_summary = persist_letterboxd_records(registered_user, result)
+            persisted, movie_summary = persist_letterboxd_records(user, result)
 
         assert mock_fetch_and_store.call_count == 2
         mock_fetch_and_store.assert_any_call({111})
@@ -820,7 +823,7 @@ class TestPersistLetterboxdRecords:
         assert persisted == {"ratings": 1, "watchlist": 1}
 
     def test_only_the_top_rated_films_are_embedded_synchronously(
-        self, registered_user
+        self, user
     ):
         result = ExtractionResult(
             csvs={
@@ -847,7 +850,7 @@ class TestPersistLetterboxdRecords:
                 stored={}, already_stored=0, without_metadata=0
             ),
         ) as mock_fetch:
-            persist_letterboxd_records(registered_user, result)
+            persist_letterboxd_records(user, result)
 
         mock_fetch.assert_any_call({438631})
         mock_fetch.assert_any_call({348}, defer_embeddings=True)
@@ -867,3 +870,484 @@ def test_needs_embedding_is_true_without_vector_or_batch():
     movie.embedding_batch_id = None
 
     assert _needs_embedding(movie) is True
+
+
+def stored_summary(stored=None):
+    return MovieCacheSummary(
+        stored=stored or {}, already_stored=0, without_metadata=0
+    )
+
+
+def test_merge_rating_sources_blank_rating_row_does_not_create_entry():
+    entries = _merge_rating_sources(
+        {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": ""}]}
+    )
+
+    assert entries == {}
+
+
+def test_merge_rating_sources_diary_rating_overrides_ratings_csv():
+    entries = _merge_rating_sources(
+        {
+            RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "3.0"}],
+            DIARY_CSV: [
+                {
+                    "Name": "Dune",
+                    "Year": "2021",
+                    "Rating": "4.5",
+                    "Watched Date": "2024-01-01",
+                }
+            ],
+        }
+    )
+
+    assert entries[("Dune", 2021)].rating == 4.5
+
+
+def test_merge_rating_sources_dated_diary_row_wins_over_undated_one():
+    entries = _merge_rating_sources(
+        {
+            DIARY_CSV: [
+                {"Name": "Dune", "Year": "2021", "Rating": "2.0", "Watched Date": ""},
+                {
+                    "Name": "Dune",
+                    "Year": "2021",
+                    "Rating": "4.0",
+                    "Watched Date": "2024-01-01",
+                },
+            ]
+        }
+    )
+
+    entry = entries[("Dune", 2021)]
+    assert entry.rating == 4.0
+    assert entry.watched_date == date(2024, 1, 1)
+
+
+def test_merge_rating_sources_diary_with_invalid_date_keeps_rating_without_date():
+    entries = _merge_rating_sources(
+        {
+            DIARY_CSV: [
+                {
+                    "Name": "Dune",
+                    "Year": "2021",
+                    "Rating": "3.5",
+                    "Watched Date": "not-a-date",
+                }
+            ]
+        }
+    )
+
+    entry = entries[("Dune", 2021)]
+    assert entry.rating == 3.5
+    assert entry.watched_date is None
+
+
+def test_merge_rating_sources_strips_title_whitespace():
+    entries = _merge_rating_sources(
+        {WATCHED_CSV: [{"Name": "  Dune  ", "Year": "2021"}]}
+    )
+
+    assert set(entries) == {("Dune", 2021)}
+
+
+class TestResolveOne:
+    def test_cache_hit_by_title_and_year(self):
+        movie = make_movie()
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=movie
+        ), patch(PATCH_TARGET.format("match_movie")) as mock_match_movie:
+            outcome = _resolve_one(MagicMock(), ("Dune", 2021))
+
+        assert outcome == _MatchOutcome(key=("Dune", 2021), cached_movie=movie)
+        mock_match_movie.assert_not_called()
+
+    def test_unknown_film_is_flagged_as_not_found(self):
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            side_effect=MovieMatchNotFound("Dune", 2021),
+        ):
+            outcome = _resolve_one(MagicMock(), ("Dune", 2021))
+
+        assert outcome.not_found is True
+        assert outcome.cached_movie is None
+        assert outcome.pending_tmdb_id is None
+        assert outcome.tmdb_error is None
+
+    def test_tmdb_failure_is_reported_as_error_message(self):
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            side_effect=TMDbUnavailableError("TMDb is down"),
+        ):
+            outcome = _resolve_one(MagicMock(), ("Dune", 2021))
+
+        assert outcome.tmdb_error == "TMDb is down"
+        assert outcome.not_found is False
+
+    def test_match_is_resolved_to_cached_movie_by_tmdb_id(self):
+        movie = make_movie()
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            return_value=fake_match(tmdb_id=438631),
+        ), patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"),
+            return_value=movie,
+        ) as mock_by_id:
+            outcome = _resolve_one(MagicMock(), ("Dune", 2021))
+
+        mock_by_id.assert_called_once_with(438631)
+        assert outcome.cached_movie is movie
+        assert outcome.pending_tmdb_id is None
+
+    def test_uncached_match_is_returned_as_pending_tmdb_id(self):
+        client = MagicMock()
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=None
+        ), patch(
+            PATCH_TARGET.format("match_movie"),
+            return_value=fake_match(tmdb_id=438631),
+        ) as mock_match_movie, patch(
+            PATCH_TARGET.format("find_cached_movie_by_tmdb_id"),
+            return_value=None,
+        ):
+            outcome = _resolve_one(client, ("Dune", 2021))
+
+        mock_match_movie.assert_called_once_with(client, "Dune", 2021)
+        assert outcome.pending_tmdb_id == 438631
+        assert outcome.cached_movie is None
+
+
+class TestMatchFilmsPriority:
+    def _no_cache(self):
+        stack = ExitStack()
+        stack.enter_context(
+            patch(PATCH_TARGET.format("find_cached_movie"), return_value=None)
+        )
+        stack.enter_context(
+            patch(
+                PATCH_TARGET.format("find_cached_movie_by_tmdb_id"),
+                return_value=None,
+            )
+        )
+        return stack
+
+    def test_priority_film_is_stored_without_deferring_embeddings(self):
+        movie = make_movie()
+
+        with self._no_cache(), patch(
+            PATCH_TARGET.format("match_movie"),
+            return_value=fake_match(tmdb_id=438631),
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=stored_summary({438631: movie}),
+        ) as mock_fetch:
+            matches, summary = _match_films(
+                MagicMock(), {("Dune", 2021)}, {("Dune", 2021)}
+            )
+
+        mock_fetch.assert_called_once_with({438631})
+        assert matches[("Dune", 2021)] is movie
+        assert summary.matched == 1
+
+    def test_priority_and_regular_films_are_fetched_in_separate_calls(self):
+        tmdb_ids = {"Dune": 438631, "Alien": 348}
+
+        with self._no_cache(), patch(
+            PATCH_TARGET.format("match_movie"),
+            side_effect=lambda _c, title, _y: fake_match(tmdb_id=tmdb_ids[title]),
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=stored_summary(),
+        ) as mock_fetch:
+            _match_films(
+                MagicMock(),
+                {("Dune", 2021), ("Alien", 1979)},
+                {("Dune", 2021)},
+            )
+
+        assert mock_fetch.call_count == 2
+        mock_fetch.assert_any_call({438631})
+        mock_fetch.assert_any_call({348}, defer_embeddings=True)
+
+    def test_cached_priority_film_without_embedding_is_sent_for_embedding(self):
+        movie = make_movie()
+        movie.tmdb_id = 438631
+        movie.embedding = None
+        movie.embedding_batch_id = None
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=movie
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=stored_summary(),
+        ) as mock_fetch:
+            matches, summary = _match_films(
+                MagicMock(), {("Dune", 2021)}, {("Dune", 2021)}
+            )
+
+        mock_fetch.assert_called_once_with({438631})
+        assert matches[("Dune", 2021)] is movie
+        assert summary.matched == 1
+
+    def test_cached_priority_film_with_embedding_is_not_fetched_again(self):
+        movie = make_movie()
+        movie.tmdb_id = 438631
+        movie.embedding = [0.1, 0.2]
+        movie.embedding_batch_id = None
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=movie
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ) as mock_fetch:
+            _match_films(MagicMock(), {("Dune", 2021)}, {("Dune", 2021)})
+
+        mock_fetch.assert_not_called()
+
+    def test_cached_regular_film_without_embedding_is_not_fetched(self):
+        movie = make_movie()
+        movie.tmdb_id = 438631
+        movie.embedding = None
+        movie.embedding_batch_id = None
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), return_value=movie
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ) as mock_fetch:
+            _match_films(MagicMock(), {("Dune", 2021)}, set())
+
+        mock_fetch.assert_not_called()
+
+    def test_films_before_a_systemic_failure_keep_their_match(self):
+        alien = make_movie(title="Alien", release_year=1979)
+
+        def cached(title, _year):
+            return alien if title == "Alien" else None
+
+        def match(_client, title, _year):
+            if title == "Dune":
+                raise TMDbUnavailableError("TMDb is down")
+            return fake_match(tmdb_id=1995)
+
+        with patch(
+            PATCH_TARGET.format("find_cached_movie"), side_effect=cached
+        ), patch(
+            PATCH_TARGET.format("match_movie"), side_effect=match
+        ), patch(
+            PATCH_TARGET.format("fetch_and_store_movies")
+        ):
+            matches, summary = _match_films(
+                MagicMock(),
+                {("Alien", 1979), ("Dune", 2021), ("Heat", 1995)},
+                set(),
+            )
+
+        assert matches == {("Alien", 1979): alien}
+        assert summary.matched == 1
+        assert summary.unmatched == ["Dune (2021)", "Heat (1995)"]
+        assert summary.tmdb_error == "TMDb is down"
+
+
+@pytest.mark.django_db
+class TestPersistRatingsDetails:
+    def test_stores_watched_date_liked_flag_and_rating(self, user):
+        csvs = {
+            DIARY_CSV: [
+                {
+                    "Name": "Dune",
+                    "Year": "2021",
+                    "Rating": "4.0",
+                    "Watched Date": "2024-03-01",
+                }
+            ],
+            LIKED_CSV: [{"Name": "Dune", "Year": "2021"}],
+        }
+
+        persist_ratings(user, csvs, {})
+
+        rating = Rating.objects.get(user=user, title="Dune")
+        assert rating.rating == 4.0
+        assert rating.watched_date == date(2024, 3, 1)
+        assert rating.liked is True
+        assert rating.movie is None
+
+    def test_watched_only_film_is_stored_without_rating(self, user):
+        count = persist_ratings(
+            user,
+            {WATCHED_CSV: [{"Name": "Dune", "Year": "2021"}]},
+            {},
+        )
+
+        assert count == 1
+        rating = Rating.objects.get(user=user, title="Dune")
+        assert rating.rating is None
+        assert rating.liked is False
+
+    def test_empty_csvs_create_nothing(self, user):
+        assert persist_ratings(user, {}, {}) == 0
+        assert Rating.objects.count() == 0
+
+    def test_does_not_touch_other_users_ratings(
+        self, user, another_user
+    ):
+        other = another_user
+        Rating.objects.create(
+            user=other, title="Dune", release_year=2021, rating=1.0, liked=False
+        )
+
+        persist_ratings(
+            user,
+            {RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "5.0"}]},
+            {},
+        )
+
+        assert Rating.objects.get(user=other, title="Dune").rating == 1.0
+        assert Rating.objects.get(user=user, title="Dune").rating == 5.0
+
+
+@pytest.mark.django_db
+class TestPersistWatchlistDetails:
+    def test_marks_entries_as_imported_and_stores_added_date(self, user):
+        persist_watchlist(
+            user,
+            [{"Name": "Alien", "Year": "1979", "Date": "2025-01-01"}],
+            {},
+        )
+
+        entry = WatchlistEntry.objects.get(user=user, title="Alien")
+        assert entry.source == WatchlistSource.IMPORTED
+        assert entry.added_date == date(2025, 1, 1)
+        assert entry.movie is None
+
+    def test_empty_rows_create_nothing(self, user):
+        assert persist_watchlist(user, [], {}) == 0
+        assert WatchlistEntry.objects.count() == 0
+
+    def test_last_duplicate_row_wins(self, user):
+        count = persist_watchlist(
+            user,
+            [
+                {"Name": "Alien", "Year": "1979", "Date": "2024-01-01"},
+                {"Name": "Alien", "Year": "1979", "Date": "2025-06-01"},
+            ],
+            {},
+        )
+
+        assert count == 1
+        entry = WatchlistEntry.objects.get(user=user, title="Alien")
+        assert entry.added_date == date(2025, 6, 1)
+
+    def test_does_not_touch_other_users_entries(
+        self, user, another_user
+    ):
+        other = another_user
+        WatchlistEntry.objects.create(
+            user=other,
+            title="Alien",
+            release_year=1979,
+            source=WatchlistSource.IMPORTED,
+        )
+
+        persist_watchlist(
+            user, [{"Name": "Alien", "Year": "1979", "Date": ""}], {}
+        )
+
+        assert WatchlistEntry.objects.filter(title="Alien").count() == 2
+
+
+@pytest.mark.django_db
+class TestPersistLetterboxdRecordsPipeline:
+    def _pipeline(self, tmdb_ids):
+        stack = ExitStack()
+        stack.enter_context(
+            patch(PATCH_TARGET.format("find_cached_movie"), return_value=None)
+        )
+        stack.enter_context(
+            patch(
+                PATCH_TARGET.format("match_movie"),
+                side_effect=lambda _c, title, _y: fake_match(
+                    tmdb_id=tmdb_ids[title]
+                ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                PATCH_TARGET.format("find_cached_movie_by_tmdb_id"),
+                return_value=None,
+            )
+        )
+        return stack
+
+    def test_liked_films_take_priority_over_higher_rated_ones(
+        self, user
+    ):
+        result = ExtractionResult(
+            csvs={
+                RATINGS_CSV: [
+                    {"Name": "Dune", "Year": "2021", "Rating": "5"},
+                    {"Name": "Alien", "Year": "1979", "Rating": "3"},
+                ],
+                LIKED_CSV: [{"Name": "Alien", "Year": "1979"}],
+            }
+        )
+
+        with patch(
+            PATCH_TARGET.format("DEFAULT_MAX_HISTORY_MOVIES"), 1
+        ), self._pipeline({"Dune": 438631, "Alien": 348}), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=stored_summary(),
+        ) as mock_fetch:
+            persist_letterboxd_records(user, result)
+
+        mock_fetch.assert_any_call({348})
+        mock_fetch.assert_any_call({438631}, defer_embeddings=True)
+
+    def test_unrated_films_are_never_priority(self, user):
+        result = ExtractionResult(
+            csvs={
+                RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "5"}],
+                WATCHED_CSV: [{"Name": "Alien", "Year": "1979"}],
+            }
+        )
+
+        with patch(
+            PATCH_TARGET.format("DEFAULT_MAX_HISTORY_MOVIES"), 5
+        ), self._pipeline({"Dune": 438631, "Alien": 348}), patch(
+            PATCH_TARGET.format("fetch_and_store_movies"),
+            return_value=stored_summary(),
+        ) as mock_fetch:
+            persist_letterboxd_records(user, result)
+
+        mock_fetch.assert_any_call({438631})
+        mock_fetch.assert_any_call({348}, defer_embeddings=True)
+
+    def test_ratings_are_rolled_back_when_watchlist_persistence_fails(
+        self, user, no_tmdb_matches
+    ):
+        result = ExtractionResult(
+            csvs={
+                RATINGS_CSV: [{"Name": "Dune", "Year": "2021", "Rating": "5"}],
+                WATCHLIST_CSV: [
+                    {"Name": "Alien", "Year": "1979", "Date": "2025-01-01"}
+                ],
+            }
+        )
+
+        with patch(
+            PATCH_TARGET.format("persist_watchlist"),
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(RuntimeError):
+                persist_letterboxd_records(user, result)
+
+        assert Rating.objects.count() == 0
