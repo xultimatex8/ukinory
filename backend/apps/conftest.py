@@ -61,7 +61,7 @@ def user(db):
     return User.objects.create_user(
         email="test@example.com",
         username="testuser",
-        password="TEST_USER_PASSWORD",
+        password=TEST_USER_PASSWORD,
         is_guest=False,
     )
 
@@ -71,7 +71,7 @@ def another_user(db):
     return User.objects.create_user(
         email="another@example.com",
         username="anotheruser",
-        password="TEST_USER_PASSWORD",
+        password=TEST_USER_PASSWORD,
         is_guest=False,
     )
 
