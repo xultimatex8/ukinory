@@ -6,6 +6,13 @@ import pytest
 
 from apps.library.models import Rating, WatchlistEntry
 from apps.library.services.ratings import rate_movie
+from apps.movies.models import Movie
+
+
+@pytest.fixture
+def movie(db):
+    return Movie.objects.create(tmdb_id=438631, title="Dune", release_year=2021)
+
 
 
 @pytest.mark.django_db
@@ -190,3 +197,80 @@ class TestRateMovie:
             title=movie.title,
             release_year=movie.release_year,
         ).count() == 1
+
+    def test_uses_defaults_when_only_user_and_movie_are_given(self, user, movie):
+        result = rate_movie(user=user, movie=movie)
+
+        assert result.rating is None
+        assert result.liked is False
+        assert result.watched_date is None
+        assert result.movie == movie
+
+    def test_title_and_year_come_from_the_movie(self, user, movie):
+        result = rate_movie(user=user, movie=movie, rating=3.0)
+
+        assert (result.title, result.release_year) == (
+            movie.title,
+            movie.release_year,
+        )
+
+    def test_links_movie_to_an_existing_unlinked_rating(self, user, movie):
+        existing = Rating.objects.create(
+            user=user,
+            title=movie.title,
+            release_year=movie.release_year,
+            movie=None,
+            rating=3.0,
+            liked=False,
+        )
+
+        result = rate_movie(user=user, movie=movie, rating=3.0)
+
+        assert result.pk == existing.pk
+        existing.refresh_from_db()
+        assert existing.movie == movie
+
+    def test_rating_two_different_films_creates_two_ratings(self, user, movie):
+        other = Movie.objects.create(
+            tmdb_id=777002, title="Other Film", release_year=movie.release_year
+        )
+
+        rate_movie(user=user, movie=movie, rating=4.0)
+        rate_movie(user=user, movie=other, rating=2.0)
+
+        assert Rating.objects.filter(user=user).count() == 2
+
+    def test_film_without_release_year_is_updated_not_duplicated(self, user):
+        untitled = Movie.objects.create(
+            tmdb_id=777001, title="Untitled", release_year=None
+        )
+
+        first = rate_movie(user=user, movie=untitled, rating=2.0)
+        second = rate_movie(user=user, movie=untitled, rating=4.0)
+
+        assert first.pk == second.pk
+        assert Rating.objects.filter(user=user).count() == 1
+        assert Rating.objects.get(user=user).rating == 4.0
+
+    def test_only_removes_the_rated_film_from_the_watchlist(self, user, movie):
+        other_year = WatchlistEntry.objects.create(
+            user=user, title=movie.title, release_year=(movie.release_year or 2000) + 1
+        )
+        other_title = WatchlistEntry.objects.create(
+            user=user, title="Something Else", release_year=movie.release_year
+        )
+        target = WatchlistEntry.objects.create(
+            user=user, title=movie.title, release_year=movie.release_year
+        )
+
+        rate_movie(user=user, movie=movie, rating=4.0)
+
+        assert not WatchlistEntry.objects.filter(pk=target.pk).exists()
+        assert WatchlistEntry.objects.filter(pk=other_year.pk).exists()
+        assert WatchlistEntry.objects.filter(pk=other_title.pk).exists()
+
+    def test_rating_without_watchlist_entry_does_not_fail(self, user, movie):
+        result = rate_movie(user=user, movie=movie, rating=4.0)
+
+        assert result.pk is not None
+        assert WatchlistEntry.objects.filter(user=user).count() == 0
