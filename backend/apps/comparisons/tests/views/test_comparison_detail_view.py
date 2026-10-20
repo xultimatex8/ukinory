@@ -175,3 +175,33 @@ class TestComparisonDetailView:
             user=user,
             comparison_id="comparison-id",
         )
+
+    @patch("apps.comparisons.views.attach_participants")
+    @patch("apps.comparisons.views.attach_tmdb_metadata")
+    @patch("apps.comparisons.views.serialize_result")
+    @patch("apps.comparisons.views.get_comparison_result")
+    def test_does_not_serialize_when_result_fails(
+        self,
+        mock_get_result,
+        mock_serialize_result,
+        mock_attach_tmdb_metadata,
+        mock_attach_participants,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_result.side_effect = InsufficientDataError
+
+        response = api_client.get(self.url)
+
+        assert response.status_code == 422
+        mock_serialize_result.assert_not_called()
+        mock_attach_tmdb_metadata.assert_not_called()
+        mock_attach_participants.assert_not_called()
+
+    def test_rejects_unsupported_methods(self, api_client, user):
+        api_client.force_authenticate(user=user)
+
+        response = api_client.post(self.url)
+
+        assert response.status_code == 405
