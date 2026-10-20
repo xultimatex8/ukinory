@@ -5,7 +5,7 @@ import type { Invite, ParticipantState } from "../services/sessions";
 import ConfirmModal from "./ConfirmModal";
 import InviteSharePanel from "./InviteSharePanel";
 import type { LeaveController } from "../hooks/useLeaveSession";
-import LetterboxdImportSection from "./LetterboxdImportSesction";
+import LetterboxdImportSection from "./LetterboxdImportSection";
 import Waiting from "./Waiting";
 
 type LobbyKind = "comparison" | "swipe";
