@@ -1,6 +1,0 @@
-projectKey=ukinory
-serverUrl=http://sonarqube:9000
-serverVersion=26.10.0.133078
-dashboardUrl=http://sonarqube:9000/dashboard?id=ukinory
-ceTaskId=617c5dbe-3a0e-44d6-b2e1-52baa305d4d7
-ceTaskUrl=http://sonarqube:9000/api/ce/task?id=617c5dbe-3a0e-44d6-b2e1-52baa305d4d7

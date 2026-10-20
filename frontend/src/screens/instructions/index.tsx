@@ -77,7 +77,7 @@ export default function InstructionsScreen() {
         <section>
           <button
             type="button"
-            onClick={() => navigate(-1)}
+            onClick={() => void navigate(-1)}
             className="mb-8 flex cursor-pointer items-center gap-2 text-sm
                        font-medium text-text-muted transition hover:text-text"
           >

@@ -18,7 +18,7 @@ export default function ErrorScreen({
 }: ErrorScreenProps) {
   const navigate = useNavigate();
 
-  const handleBack = onBack ?? (() => navigate("/"));
+  const handleBack = onBack ?? (() => void navigate("/"));
 
   return (
     <main className="min-h-screen bg-background text-text">

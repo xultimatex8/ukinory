@@ -54,7 +54,7 @@ export default function LetterboxdImportSection({
     addFiles(Array.from(event.target.files ?? []));
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
     if (!isImporting) {
@@ -62,7 +62,7 @@ export default function LetterboxdImportSection({
     }
   };
 
-  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
     if (!isImporting) {
@@ -70,7 +70,7 @@ export default function LetterboxdImportSection({
     }
   };
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = (event: React.DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
 
     if (isImporting) return;
@@ -144,11 +144,13 @@ export default function LetterboxdImportSection({
         </div>
       )}
 
-      <div
+      <button
+        type="button"
         onClick={openFilePicker}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        disabled={isImporting}
         className={`mt-5 flex min-h-28 flex-col items-center justify-center border border-dashed px-4 py-5 text-center transition ${
           isImporting
             ? "cursor-auto border-border opacity-50"
@@ -176,7 +178,7 @@ export default function LetterboxdImportSection({
           onChange={handleFileChange}
           className="hidden"
         />
-      </div>
+      </button>
 
       {files.length > 0 && (
         <button

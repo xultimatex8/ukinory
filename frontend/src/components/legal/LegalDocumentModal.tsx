@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import type { LegalDocument, LegalDocumentType } from "../../services/legal";
-
+import type { MouseEvent } from "react";
 
 const TITLES: Record<LegalDocumentType, string> = {
   TERMS: "Terms and Conditions",
@@ -62,26 +62,41 @@ export default function LegalDocumentModal({
   onClose,
 }: LegalDocumentModalProps) {
   const [selectedType, setSelectedType] = useState(initialType);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const selected =
     documents.find((document) => document.type === selectedType) ??
     documents[0];
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
+    const dialog = dialogRef.current;
+    if (!dialog) return;
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+    dialog.showModal();
+
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, []);
+
+  const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
+    if (event.target === event.currentTarget) onClose();
+  };
 
   if (!selected) return null;
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-5 backdrop-blur-sm"
-      onClick={onClose}
+    <dialog
+      ref={dialogRef}
+      onClick={handleBackdropClick}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      aria-labelledby="legal-document-title"
+      className="fixed inset-0 m-0 flex h-full w-full max-h-none max-w-none
+                 items-center justify-center border-0 bg-black/70 px-5
+                 text-inherit backdrop:bg-transparent"
     >
       <motion.div
         role="dialog"
@@ -90,7 +105,6 @@ export default function LegalDocumentModal({
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.2 }}
-        onClick={(event) => event.stopPropagation()}
         className="flex max-h-[85vh] w-full max-w-2xl flex-col border border-border bg-surface p-6 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-4">
@@ -163,7 +177,7 @@ export default function LegalDocumentModal({
           </button>
         </div>
       </motion.div>
-    </div>,
+    </dialog>,
     document.body,
   );
 }

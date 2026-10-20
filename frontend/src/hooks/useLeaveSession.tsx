@@ -19,7 +19,7 @@ export function useLeaveSession(
 
     try {
       await leave(sessionId);
-      navigate("/");
+      void navigate("/");
     } catch {
       setIsLeaving(false);
       setLeaveError(`Unable to leave the ${noun}. Please try again.`);
