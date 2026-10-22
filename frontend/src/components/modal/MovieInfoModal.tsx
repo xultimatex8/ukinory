@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Star } from "lucide-react";
 import type { MouseEvent } from "react";
-import type { MovieRecommendation } from "../services/swipeSessions";
-import type { StreamingCountry } from "./StreamingProviders";
+import type { MovieRecommendation } from "../../services/swipeSessions";
+import type { StreamingCountry } from "../StreamingProviders";
 
 interface MovieInfoModalProps {
   movie: MovieRecommendation;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Heart, Loader2, Star, X } from "lucide-react";
-import { rateMovie } from "../services/library";
-import { ApiError } from "../services/api";
+import { ApiError } from "../../services/api";
+import { rateMovie } from "../../services/library";
 
 interface RateMovieModalProps {
   movieId: number;

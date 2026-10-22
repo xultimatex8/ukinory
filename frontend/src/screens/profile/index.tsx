@@ -20,7 +20,7 @@ import {
 } from "../../services/user";
 import { exportWatchlistCsv } from "../../services/library";
 import { ApiError } from "../../services/api";
-import DeleteAccountModal from "../../components/DeleteAccountModal";
+import DeleteAccountModal from "../../components/modal/DeleteAccountModal";
 
 export default function ProfileScreen() {
   const navigate = useNavigate();

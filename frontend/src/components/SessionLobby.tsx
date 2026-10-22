@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Check, Clock, LogOut } from "lucide-react";
 
 import type { Invite, ParticipantState } from "../services/sessions";
-import ConfirmModal from "./ConfirmModal";
+import ConfirmModal from "./modal/ConfirmModal";
 import InviteSharePanel from "./InviteSharePanel";
 import type { LeaveController } from "../hooks/useLeaveSession";
 import LetterboxdImportSection from "./LetterboxdImportSection";

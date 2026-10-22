@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import LegalDocumentModal from "./LegalDocumentModal";
+import LegalDocumentModal from "../modal/LegalDocumentModal";
 import type { LegalDocument, LegalDocumentType } from "../../services/legal";
 
 const linkClass =
