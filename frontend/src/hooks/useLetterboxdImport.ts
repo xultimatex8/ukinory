@@ -10,7 +10,6 @@ import { getErrorMessage } from "../utils/errors";
 export const fileKey = (file: File) =>
   `${file.name}-${file.size}-${file.lastModified}`;
 
-/** State and actions shared by every Letterboxd import UI. */
 export function useLetterboxdImport(
   onImported?: (result: ImportResult) => void,
 ) {
@@ -22,8 +21,6 @@ export function useLetterboxdImport(
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // A file input that still holds its last selection won't fire `change`
-  // when the same file is picked again.
   useEffect(() => {
     if (files.length === 0 && inputRef.current) {
       inputRef.current.value = "";
