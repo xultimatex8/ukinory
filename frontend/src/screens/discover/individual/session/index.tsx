@@ -2,12 +2,9 @@ import { useState } from "react";
 import { LogOut } from "lucide-react";
 import { useParams } from "react-router-dom";
 import AppLogo from "../../../../components/AppLogo";
-import EndSessionModal from "../../../../components/EndSessionModal";
 import ErrorScreen from "../../../../components/ErrorScreen";
-import MovieInfoModal from "../../../../components/MovieInfoModal";
 import MovieInformation from "../../../../components/MovieInformation";
 import PairedSessionOverlay from "../../../../components/PairedSessionOverlay";
-import RateMovieModal from "../../../../components/RateMovieModal";
 import { getStreamingCountries } from "../../../../components/StreamingProviders";
 import SwipeActionBar from "../../../../components/SwipeActionBar";
 import SwipeInstructions from "../../../../components/SwipeInstructions";
@@ -16,6 +13,9 @@ import { useEndSwipeSession } from "../../../../hooks/useEndSwipeSession";
 import { useHeartbeat } from "../../../../hooks/useHeartbeat";
 import type { PairedSessionController } from "../../../../hooks/usePairedSession";
 import { useSwipeDeck } from "../../../../hooks/useSwipeDeck";
+import EndSessionModal from "../../../../components/modal/EndSessionModal";
+import MovieInfoModal from "../../../../components/modal/MovieInfoModal";
+import RateMovieModal from "../../../../components/modal/RateMovieModal";
 
 interface DiscoverSessionScreenProps {
   paired?: PairedSessionController;
@@ -43,7 +43,6 @@ export default function DiscoverSessionScreen({
     handleDownloadCsv,
   } = useEndSwipeSession({ id });
 
-  // Tied to the current candidate, so it closes by itself when the card changes.
   const showInfo = infoCandidateId !== null && infoCandidateId === candidateId;
 
   const handleOpenEndSessionModal = () => {
