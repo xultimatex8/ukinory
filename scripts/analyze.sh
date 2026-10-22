@@ -8,9 +8,24 @@ docker compose exec -T backend pytest \
     --cov=. \
     --cov-report=xml:/app/coverage.xml
 
-echo "Adjusting coverage report paths for SonarQube..."
+echo "Generating frontend coverage report..."
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+(
+    cd "$PROJECT_ROOT/frontend"
+    npm run test:run -- --coverage
+)
+
+FRONTEND_COVERAGE_PATH="$PROJECT_ROOT/frontend/coverage/lcov.info"
+
+if [ ! -f "$FRONTEND_COVERAGE_PATH" ]; then
+    echo "Frontend coverage report not found at '$FRONTEND_COVERAGE_PATH'."
+    exit 1
+fi
+
+echo "Adjusting coverage report paths for SonarQube..."
+
 COVERAGE_PATH="$PROJECT_ROOT/backend/coverage.xml"
 
 if [ ! -f "$COVERAGE_PATH" ]; then
@@ -36,7 +51,8 @@ PYTHON
 echo "Running SonarScanner..."
 
 docker compose run --rm sonarscanner \
-    "-Dsonar.working.directory=/usr/src/.scannerwork"
+    "-Dsonar.working.directory=/usr/src/.scannerwork" \
+    "-Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info"
 
 echo "Updating README with SonarQube metrics..."
 
