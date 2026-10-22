@@ -8,6 +8,44 @@ import pytest
 from apps.common.enums import SwipeAction
 from apps.swipe_sessions.models import Swipe
 from apps.swipe_sessions.services.watchlist_export import export_watchlist_csv
+from apps.movies.models import Movie
+from apps.swipe_sessions.models import SwipeSession
+from apps.common.enums import SessionType
+from apps.swipe_sessions.models import SwipeSessionCandidate
+
+
+@pytest.fixture
+def movie(db):
+    return Movie.objects.create(tmdb_id=438631, title="Dune", release_year=2021)
+
+@pytest.fixture
+def another_movie(db):
+    return Movie.objects.create(tmdb_id=348, title="Alien", release_year=1979)
+
+@pytest.fixture
+def swipe_session(db):
+    return SwipeSession.objects.create(
+        type="solo", session_type=SessionType.SWIPE_SESSION
+    )
+
+@pytest.fixture
+def another_swipe_session(db):
+    return SwipeSession.objects.create(
+        type="solo", session_type=SessionType.SWIPE_SESSION
+    )
+
+@pytest.fixture
+def candidate(swipe_session, movie):
+    return SwipeSessionCandidate.objects.create(
+        session=swipe_session, movie=movie, score=0.9, position=1
+    )
+
+@pytest.fixture
+def another_candidate(swipe_session, another_movie):
+    return SwipeSessionCandidate.objects.create(
+        session=swipe_session, movie=another_movie, score=0.8, position=2
+    )
+
 
 
 @pytest.mark.django_db
@@ -131,3 +169,71 @@ def test_does_not_export_other_users_watchlist_swipes(
     rows = list(csv.reader(io.StringIO(result.csv_content)))
 
     assert rows == [["Title", "Year"]]
+
+
+@pytest.mark.django_db
+def test_a_session_limits_the_export_to_its_own_swipes(
+    user, swipe_session, another_swipe_session, candidate, another_candidate
+):
+    another_candidate.session = another_swipe_session
+    another_candidate.save(update_fields=["session"])
+    Swipe.objects.create(user=user, candidate=candidate, action=SwipeAction.WATCHLIST)
+    Swipe.objects.create(user=user, candidate=another_candidate, action=SwipeAction.WATCHLIST)
+
+    result = export_watchlist_csv(user=user, session=swipe_session)
+
+    rows = list(csv.reader(io.StringIO(result.csv_content)))
+    assert result.rows_written == 1
+    assert rows == [
+        ["Title", "Year"],
+        [candidate.movie.title, str(candidate.movie.release_year)],
+    ]
+
+
+@pytest.mark.django_db
+def test_without_a_session_every_session_is_exported(
+    user, another_swipe_session, candidate, another_candidate
+):
+    another_candidate.session = another_swipe_session
+    another_candidate.save(update_fields=["session"])
+    Swipe.objects.create(user=user, candidate=candidate, action=SwipeAction.WATCHLIST)
+    Swipe.objects.create(user=user, candidate=another_candidate, action=SwipeAction.WATCHLIST)
+
+    assert export_watchlist_csv(user=user).rows_written == 2
+
+
+@pytest.mark.django_db
+def test_a_session_without_watchlist_swipes_gives_an_empty_export(
+    user, swipe_session, candidate
+):
+    Swipe.objects.create(user=user, candidate=candidate, action=SwipeAction.SKIP)
+
+    result = export_watchlist_csv(user=user, session=swipe_session)
+
+    assert result.rows_written == 0
+    assert list(csv.reader(io.StringIO(result.csv_content))) == [["Title", "Year"]]
+
+
+@pytest.mark.django_db
+def test_a_session_export_only_includes_the_users_own_swipes(
+    user, another_user, swipe_session, candidate, another_candidate
+):
+    Swipe.objects.create(user=user, candidate=candidate, action=SwipeAction.WATCHLIST)
+    Swipe.objects.create(user=another_user, candidate=another_candidate, action=SwipeAction.WATCHLIST)
+
+    result = export_watchlist_csv(user=user, session=swipe_session)
+
+    rows = list(csv.reader(io.StringIO(result.csv_content)))
+    assert [row[0] for row in rows[1:]] == [candidate.movie.title]
+
+
+@pytest.mark.django_db
+def test_titles_with_commas_and_quotes_survive_the_csv_round_trip(user, candidate):
+    candidate.movie.title = 'Dune, "Part Two"'
+    candidate.movie.save(update_fields=["title"])
+    Swipe.objects.create(user=user, candidate=candidate, action=SwipeAction.WATCHLIST)
+
+    result = export_watchlist_csv(user=user)
+
+    rows = list(csv.reader(io.StringIO(result.csv_content)))
+    assert rows[1][0] == 'Dune, "Part Two"'
