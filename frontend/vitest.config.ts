@@ -6,6 +6,7 @@ export default defineConfig({
     globals: true,
     clearMocks: true,
     restoreMocks: true,
+    setupFiles: ["./src/test/setup.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
