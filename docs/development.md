@@ -163,10 +163,16 @@ docker compose exec backend pytest
 docker compose exec backend python manage.py check
 ```
 
-The frontend has no test suite yet. CI runs lint and the production build, and you can run both locally:
+The frontend has a test suite, along with linting and the production build. You can run all frontend checks locally:
 
 ```bash
+# Frontend tests
+docker compose exec frontend npm run test:run
+
+# Frontend lint
 docker compose exec frontend npm run lint
+
+# Frontend production build
 docker compose exec frontend npm run build
 ```
 
