@@ -151,7 +151,7 @@ export default function LetterboxdImportSection({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         disabled={isImporting}
-        className={`mt-5 flex min-h-28 flex-col items-center justify-center border border-dashed px-4 py-5 text-center transition ${
+        className={`mt-5 flex w-full min-h-28 flex-col items-center justify-center border border-dashed px-4 py-5 text-center transition ${
           isImporting
             ? "cursor-auto border-border opacity-50"
             : isDragging
