@@ -42,6 +42,7 @@ recommendations together in real time.
 | Metric | Value |
 |---|---:|
 | Coverage | N/A |
+| Tests | N/A |
 | Bugs | N/A |
 | Vulnerabilities | N/A |
 | Code smells | N/A |

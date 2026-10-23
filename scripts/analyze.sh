@@ -6,7 +6,8 @@ echo "Generating pytest coverage report..."
 
 docker compose exec -T backend pytest \
     --cov=. \
-    --cov-report=xml:/app/coverage.xml
+    --cov-report=xml:/app/coverage.xml \
+    --junitxml=/app/junit.xml
 
 echo "Generating frontend coverage report..."
 
@@ -14,7 +15,8 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 (
     cd "$PROJECT_ROOT/frontend"
-    npm run test:run -- --coverage
+    npm run test:run -- --coverage \
+        --reporter=default --reporter=junit --outputFile.junit=junit.xml
 )
 
 FRONTEND_COVERAGE_PATH="$PROJECT_ROOT/frontend/coverage/lcov.info"

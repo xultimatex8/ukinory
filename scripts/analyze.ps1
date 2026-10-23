@@ -1,11 +1,11 @@
-
 $ErrorActionPreference = "Stop"
 
 Write-Host "Generating pytest coverage report..."
 
 docker compose exec -T backend pytest `
     --cov=. `
-    --cov-report=xml:/app/coverage.xml
+    --cov-report=xml:/app/coverage.xml `
+    --junitxml=/app/junit.xml
 
 if ($LASTEXITCODE -ne 0) {
     throw "Tests failed. Aborting analysis."
@@ -17,7 +17,8 @@ Write-Host "Generating frontend coverage report..."
 
 Push-Location (Join-Path $projectRoot "frontend")
 try {
-    npm run test:run -- --coverage
+    npm run test:run -- --coverage `
+        --reporter=default --reporter=junit --outputFile.junit=junit.xml
 
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend tests failed. Aborting analysis."
