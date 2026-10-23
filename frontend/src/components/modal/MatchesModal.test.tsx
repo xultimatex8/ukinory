@@ -98,7 +98,9 @@ describe("MatchesModal", () => {
 
     render(<MatchesModal sessionId="session-1" onClose={vi.fn()} />);
 
-    expect(await screen.findByText(/No matches yet/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Nothing in common\. Yet\./i),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
 
@@ -122,7 +124,7 @@ describe("MatchesModal", () => {
       "https://example.com/fight-club.jpg",
     );
 
-    const link = screen.getByRole("link", { name: "Letterboxd" });
+    const link = screen.getByRole("link", { name: /Letterboxd/i });
 
     expect(link).toHaveAttribute(
       "href",
@@ -155,7 +157,7 @@ describe("MatchesModal", () => {
     expect(screen.getByText("Pulp Fiction")).toBeInTheDocument();
 
     expect(
-      screen.getAllByRole("link", { name: "Letterboxd" }),
+      screen.getAllByRole("link", { name: /Letterboxd/i }),
     ).toHaveLength(2);
   });
 
@@ -177,10 +179,10 @@ describe("MatchesModal", () => {
 
   it("renders a placeholder when the movie has no poster", async () => {
     const match = createMatch({
-        movie: {
+      movie: {
         ...createMatch().movie,
         poster_url: "",
-        },
+      },
     });
 
     mockedGetSessionMatches.mockResolvedValue([match]);
@@ -190,7 +192,7 @@ describe("MatchesModal", () => {
     expect(await screen.findByText("Fight Club")).toBeInTheDocument();
 
     expect(
-        screen.queryByRole("img", { name: "Fight Club poster" }),
+      screen.queryByRole("img", { name: "Fight Club poster" }),
     ).not.toBeInTheDocument();
   });
 
@@ -207,7 +209,9 @@ describe("MatchesModal", () => {
     ).toBeInTheDocument();
 
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
-    expect(screen.queryByText(/No matches yet/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Nothing in common\. Yet\./i),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.queryByRole("dialog")?.querySelector(".animate-spin"),
@@ -227,7 +231,9 @@ describe("MatchesModal", () => {
       <MatchesModal sessionId="session-1" onClose={vi.fn()} />,
     );
 
-    expect(await screen.findByText(/No matches yet/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Nothing in common\. Yet\./i),
+    ).toBeInTheDocument();
 
     rerender(
       <MatchesModal sessionId="session-2" onClose={vi.fn()} />,
@@ -276,7 +282,7 @@ describe("MatchesModal", () => {
 
     render(<MatchesModal sessionId="session-1" onClose={onClose} />);
 
-    screen.getByRole("button", { name: "Close modal" }).click();
+    screen.getByRole("button", { name: "Close matches" }).click();
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });

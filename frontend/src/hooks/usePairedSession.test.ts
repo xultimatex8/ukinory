@@ -542,8 +542,10 @@ describe("usePairedSession", () => {
     expect(result.current.matchCount).toBe(1);
     expect(result.current.toast).toEqual({
       candidateId: "movie-1",
+      tmdbId: undefined,
       title: "Example Movie",
       releaseYear: 2024,
+      posterUrl: null,
     });
   });
 
