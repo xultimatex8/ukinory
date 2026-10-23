@@ -41,14 +41,14 @@ recommendations together in real time.
 <!-- SONAR-METRICS:START -->
 | Metric | Value |
 |---|---:|
-| Coverage | N/A |
-| Tests | N/A |
-| Bugs | N/A |
-| Vulnerabilities | N/A |
-| Code smells | N/A |
-| Duplicated lines | N/A |
-| Lines of code | N/A |
-| Quality Gate | N/A |
+| Coverage | 86.7% |
+| Tests | 2,746 (backend 2,042 · frontend 704) |
+| Bugs | 0 |
+| Vulnerabilities | 0 |
+| Code smells | 0 |
+| Duplicated lines | 6.3% |
+| Lines of code | 17,736 |
+| Quality Gate | OK |
 <!-- SONAR-METRICS:END -->
 
 ## How it works
