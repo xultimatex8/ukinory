@@ -167,3 +167,189 @@ class TestMatchMovieNoYear:
 
         _, kwargs = client.get.call_args
         assert kwargs["params"]["primary_release_year"] == 2021
+
+
+class TestNormalizeTitleDetails:
+    def test_keeps_digits(self):
+        assert _normalize_title("Se7en") == "se7en"
+
+    def test_an_empty_title_normalises_to_an_empty_string(self):
+        assert _normalize_title("") == ""
+
+    def test_only_punctuation_normalises_to_an_empty_string(self):
+        assert _normalize_title("...!?") == ""
+
+
+class TestMatchMovieSearch:
+    def test_searches_the_movie_endpoint_without_adult_content(self):
+        client = make_client({"results": [result(1, "Dune", "2021-10-22")]})
+
+        match_movie(client, "Dune", 2021)
+
+        args, kwargs = client.get.call_args
+        assert args[0] == "/search/movie"
+        assert kwargs["params"]["query"] == "Dune"
+        assert kwargs["params"]["include_adult"] == "false"
+
+    def test_the_fallback_search_drops_the_year(self):
+        client = make_client({"results": []}, {"results": [result(1, "Dune", "2021-10-22")]})
+
+        match_movie(client, "Dune", 2021)
+
+        first, second = client.get.call_args_list
+        assert first.kwargs["params"]["primary_release_year"] == 2021
+        assert "primary_release_year" not in second.kwargs["params"]
+
+    def test_no_fallback_without_a_year(self):
+        client = make_client({"results": []})
+
+        with pytest.raises(MovieMatchNotFound):
+            match_movie(client, "Nothing", None)
+
+        assert client.get.call_count == 1
+
+    def test_no_fallback_when_the_first_search_already_has_results(self):
+        client = make_client({"results": [result(1, "Dune", "1984-12-14")]})
+
+        match = match_movie(client, "Dune", 2021)
+
+        assert client.get.call_count == 1
+        assert match.tmdb_id == 1
+
+    def test_a_payload_without_results_counts_as_empty(self):
+        client = make_client({}, {})
+
+        with pytest.raises(MovieMatchNotFound):
+            match_movie(client, "Dune", 2021)
+
+
+class TestMatchMovieSelection:
+    def test_movies_outside_the_year_tolerance_lose_to_one_inside_it(self):
+        client = make_client(
+            {
+                "results": [
+                    result(1, "Dune", "2019-01-01", 999.0),
+                    result(2, "Dune", "2021-10-22", 1.0),
+                ]
+            }
+        )
+
+        assert match_movie(client, "Dune", 2021).tmdb_id == 2
+
+    def test_when_nothing_is_within_tolerance_the_best_overall_is_used(self):
+        client = make_client({"results": [result(1, "Dune", "1984-12-14", 5.0)]})
+
+        match = match_movie(client, "Dune", 2021)
+
+        assert match.tmdb_id == 1
+        assert match.release_year == 1984
+
+    def test_a_result_without_a_release_date_is_never_within_tolerance(self):
+        client = make_client(
+            {
+                "results": [
+                    result(1, "Dune", None, 999.0),
+                    result(2, "Dune", "2021-10-22", 1.0),
+                ]
+            }
+        )
+
+        assert match_movie(client, "Dune", 2021).tmdb_id == 2
+
+    def test_a_lone_result_without_a_release_date_is_still_matched(self):
+        client = make_client({"results": [result(1, "Dune", None, 3.0)]})
+
+        match = match_movie(client, "Dune", 2021)
+
+        assert match.tmdb_id == 1
+        assert match.release_year is None
+
+    def test_without_a_year_the_exact_title_still_wins(self):
+        client = make_client(
+            {
+                "results": [
+                    result(1, "Dune: Part Two", "2024-02-27", 999.0),
+                    result(2, "Dune", "2021-10-22", 1.0),
+                ]
+            }
+        )
+
+        assert match_movie(client, "Dune", None).tmdb_id == 2
+
+    def test_titles_are_compared_ignoring_case_and_punctuation(self):
+        client = make_client(
+            {
+                "results": [
+                    result(1, "Dune: Part Two", "2024-02-27", 1.0),
+                    result(2, "Dune Part Two Making Of", "2024-03-01", 999.0),
+                ]
+            }
+        )
+
+        assert match_movie(client, "dune part two", 2024).tmdb_id == 1
+
+    def test_missing_popularity_counts_as_zero(self):
+        client = make_client(
+            {
+                "results": [
+                    {"id": 1, "title": "Dune", "release_date": "2021-10-22", "popularity": None},
+                    result(2, "Dune", "2021-10-22", 0.5),
+                ]
+            }
+        )
+
+        match = match_movie(client, "Dune", 2021)
+
+        assert match.tmdb_id == 2
+
+    def test_equal_popularity_keeps_the_first_result(self):
+        client = make_client(
+            {
+                "results": [
+                    result(1, "Dune", "2021-10-22", 10.0),
+                    result(2, "Dune", "2021-10-22", 10.0),
+                ]
+            }
+        )
+
+        assert match_movie(client, "Dune", 2021).tmdb_id == 1
+
+    def test_the_match_carries_tmdb_title_year_and_popularity(self):
+        client = make_client({"results": [result(7, "Dune (2021)", "2021-10-22", 42.5)]})
+
+        match = match_movie(client, "dune", 2021)
+
+        assert (match.tmdb_id, match.title, match.release_year, match.popularity) == (
+            7, "Dune (2021)", 2021, 42.5,
+        )
+
+    def test_the_requested_title_is_used_when_tmdb_has_none(self):
+        client = make_client(
+            {"results": [{"id": 7, "release_date": "2021-10-22", "popularity": 1.0}]}
+        )
+
+        assert match_movie(client, "Dune", 2021).title == "Dune"
+
+    def test_ambiguity_is_logged_with_the_chosen_id(self, caplog):
+        client = make_client(
+            {
+                "results": [
+                    result(1, "Alien", "1979-05-25", 10.0),
+                    result(2, "Alien", "1979-06-22", 20.0),
+                ]
+            }
+        )
+
+        with caplog.at_level("INFO"):
+            match_movie(client, "Alien", 1979)
+
+        assert "Ambiguous TMDb match for 'Alien' (1979)" in caplog.text
+        assert "picked tmdb_id=2" in caplog.text
+
+    def test_a_clear_match_is_not_logged_as_ambiguous(self, caplog):
+        client = make_client({"results": [result(1, "Alien", "1979-05-25", 10.0)]})
+
+        with caplog.at_level("INFO"):
+            match_movie(client, "Alien", 1979)
+
+        assert "Ambiguous" not in caplog.text

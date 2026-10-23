@@ -5,7 +5,11 @@ from rest_framework.test import APIClient
 from unittest.mock import MagicMock, patch
 
 from apps.common.enums import GenerationStatus
+from apps.common.exceptions import NotSessionMemberError
 from apps.comparisons.exceptions import InsufficientDataError
+
+
+ROOM_ID = "00000000-0000-0000-0000-000000000001"
 
 
 @pytest.fixture
@@ -261,3 +265,66 @@ class TestRoomResultView:
         assert response.data == {
             "detail": "Not enough data to compare.",
         }
+
+    @pytest.mark.parametrize(
+        "generation_status",
+        [
+            GenerationStatus.PENDING,
+            GenerationStatus.RUNNING,
+            GenerationStatus.NEEDS_DATA,
+            GenerationStatus.FAILED,
+        ],
+    )
+    @patch("apps.comparisons.views.get_comparison_result")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_returns_409_for_every_status_other_than_ready(
+        self,
+        mock_get_user_room,
+        mock_get_comparison_result,
+        generation_status,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        room = MagicMock()
+        room.comparison.generation_status = generation_status
+        mock_get_user_room.return_value = room
+
+        response = api_client.get(
+            reverse("room-result", kwargs={"room_id": ROOM_ID}),
+        )
+
+        assert response.status_code == 409
+        assert response.data == {
+            "detail": "The comparison is not ready yet.",
+            "generation_status": generation_status,
+        }
+        mock_get_comparison_result.assert_not_called()
+
+    @patch("apps.comparisons.views.get_comparison_result")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_returns_403_when_user_is_not_a_member(
+        self,
+        mock_get_user_room,
+        mock_get_comparison_result,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_user_room.side_effect = NotSessionMemberError
+
+        response = api_client.get(
+            reverse("room-result", kwargs={"room_id": ROOM_ID}),
+        )
+
+        assert response.status_code == 403
+        mock_get_comparison_result.assert_not_called()
+
+    def test_rejects_unsupported_methods(self, api_client, user):
+        api_client.force_authenticate(user=user)
+
+        response = api_client.post(
+            reverse("room-result", kwargs={"room_id": ROOM_ID}),
+        )
+
+        assert response.status_code == 405

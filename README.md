@@ -41,13 +41,14 @@ recommendations together in real time.
 <!-- SONAR-METRICS:START -->
 | Metric | Value |
 |---|---:|
-| Coverage | N/A |
-| Bugs | N/A |
-| Vulnerabilities | N/A |
-| Code smells | N/A |
-| Duplicated lines | N/A |
-| Lines of code | N/A |
-| Quality Gate | N/A |
+| Coverage | 86.7% |
+| Tests | 2,746 (backend 2,042 · frontend 704) |
+| Bugs | 0 |
+| Vulnerabilities | 0 |
+| Code smells | 0 |
+| Duplicated lines | 6.3% |
+| Lines of code | 17,736 |
+| Quality Gate | OK |
 <!-- SONAR-METRICS:END -->
 
 ## How it works
@@ -103,7 +104,7 @@ Everything runs on [GitHub Actions](https://github.com/xultimatex8/ukinory/actio
 
 - **CI** (`ci.yml`, on every pull request and push to `main`) runs three parallel jobs:
   - *Backend*: Django system checks and the `pytest` suite, against real PostgreSQL + pgvector and Redis service containers.
-  - *Frontend*: lint and production build.
+  - *Frontend*: runs the test suite, lint and production build.
   - *Docker Compose*: validates the Compose file, builds the images, starts the stack and waits for the backend health check.
 - **Secrets scan** (`secrets-scan.yml`): Gitleaks on every push and pull request, plus a weekly full run.
 - **CD** (`cd.yml`): publishing a GitHub release deploys the backend to Render and the frontend to Vercel.

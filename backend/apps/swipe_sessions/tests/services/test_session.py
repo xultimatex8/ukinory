@@ -14,7 +14,9 @@ from apps.common.exceptions import (
     SessionNotFoundError,
 )
 from apps.swipe_sessions.models import SwipeSession
+from apps.swipe_sessions.services import session as session_module
 from apps.swipe_sessions.services.session import (
+    _notify_closed,
     close_stale_swipe_sessions,
     create_swipe_session,
     end_swipe_session,
@@ -22,6 +24,18 @@ from apps.swipe_sessions.services.session import (
     get_user_swipe_session,
     start_swipe_session,
 )
+from types import SimpleNamespace
+from apps.common.enums import SessionType, SwipeSessionType
+from apps.common.services.sessions import StaleOutcome
+from apps.swipe_sessions.models import SwipeSessionCandidate
+
+
+@pytest.fixture
+def swipe_session(db):
+    return SwipeSession.objects.create(
+        type="solo", session_type=SessionType.SWIPE_SESSION
+    )
+
 
 
 class TestGetUserSwipeSession:
@@ -372,3 +386,222 @@ class TestCloseStaleSwipeSessions:
             event="session.updated",
             reason="ended",
         )
+
+
+def make_paired_session(*users, status=SessionStatus.ACTIVE):
+    session = SwipeSession.objects.create(
+        type=SwipeSessionType.PAIRED,
+        session_type=SessionType.SWIPE_SESSION,
+        status=status,
+    )
+    session.users.add(*users)
+    return session
+
+
+def add_candidate(session, movie, position=1, score=0.5):
+    return SwipeSessionCandidate.objects.create(
+        session=session, movie=movie, score=score, position=position
+    )
+
+
+MODULE = "apps.swipe_sessions.services.session"
+
+
+@pytest.mark.django_db
+class TestCreateSwipeSessionDetails:
+    def test_the_generic_session_type_is_swipe(self, user):
+        session = create_swipe_session(user, "solo")
+
+        assert session.session_type == SessionType.SWIPE_SESSION
+
+    def test_a_paired_type_is_stored(self, user):
+        session = create_swipe_session(user, SwipeSessionType.PAIRED)
+
+        assert session.type == SwipeSessionType.PAIRED
+
+    def test_the_creator_is_the_only_member(self, user):
+        session = create_swipe_session(user, "solo")
+
+        assert list(session.users.all()) == [user]
+
+
+@pytest.mark.django_db
+class TestStartPairedSession:
+    def test_delegates_to_the_shared_activation_with_the_paired_pool_filler(
+        self, user, another_user
+    ):
+        session = make_paired_session(user, another_user, status=SessionStatus.WAITING)
+
+        with patch(f"{MODULE}.activate_session") as activate:
+            result = start_swipe_session(user, session)
+
+        assert result is activate.return_value
+        args, kwargs = activate.call_args
+        assert args == (SwipeSession, session.pk)
+        assert kwargs["prepare"] is session_module.fill_paired_candidate_pool
+
+    def test_the_session_is_notified_once_it_has_started(self, user, another_user):
+        session = make_paired_session(user, another_user, status=SessionStatus.WAITING)
+
+        with patch(f"{MODULE}.activate_session") as activate, patch(
+            f"{MODULE}.notify_session"
+        ) as notify:
+            start_swipe_session(user, session)
+            activate.call_args.kwargs["notify"](SimpleNamespace(pk=9))
+
+        notify.assert_called_once_with(9, event="session.updated", reason="started")
+
+    def test_the_solo_flow_is_not_used(self, user, another_user):
+        session = make_paired_session(user, another_user, status=SessionStatus.WAITING)
+
+        with patch(f"{MODULE}.activate_session"), patch(
+            f"{MODULE}.fill_candidate_pool"
+        ) as fill_solo:
+            start_swipe_session(user, session)
+
+        fill_solo.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestStartSoloSessionDetails:
+    def test_a_failing_pool_fill_rolls_the_start_back(self, user, swipe_session):
+        with patch(f"{MODULE}.fill_candidate_pool", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                start_swipe_session(user, swipe_session)
+
+        swipe_session.refresh_from_db()
+        assert swipe_session.status == SessionStatus.WAITING
+
+    def test_the_session_is_stamped_as_just_seen(self, user, swipe_session):
+        with patch(f"{MODULE}.fill_candidate_pool"):
+            start_swipe_session(user, swipe_session)
+
+        swipe_session.refresh_from_db()
+        assert timezone.now() - swipe_session.last_seen_at < timedelta(minutes=1)
+
+
+@pytest.mark.django_db
+class TestEndPairedSession:
+    def test_an_active_session_is_finished_and_exported_for_the_ending_user(
+        self, user, another_user, django_capture_on_commit_callbacks
+    ):
+        session = make_paired_session(user, another_user)
+        summary = MagicMock()
+
+        with patch(f"{MODULE}.export_watchlist_csv", return_value=summary) as export, patch(
+            f"{MODULE}.notify_session"
+        ) as notify:
+            with django_capture_on_commit_callbacks(execute=True):
+                result = end_swipe_session(another_user, session)
+
+        session.refresh_from_db()
+        assert result is summary
+        assert session.status == SessionStatus.FINISHED
+        export.assert_called_once()
+        assert export.call_args.kwargs["user"] == another_user
+        assert export.call_args.kwargs["session"].pk == session.pk
+        notify.assert_called_once_with(
+            session.pk, event="session.updated", reason="ended"
+        )
+
+    def test_a_session_that_never_started_can_also_be_ended(self, user, another_user):
+        session = make_paired_session(user, another_user, status=SessionStatus.WAITING)
+
+        with patch(f"{MODULE}.export_watchlist_csv"), patch(f"{MODULE}.notify_session"):
+            end_swipe_session(user, session)
+
+        session.refresh_from_db()
+        assert session.status == SessionStatus.FINISHED
+
+    def test_ending_a_finished_session_only_exports_again(
+        self, user, another_user, django_capture_on_commit_callbacks
+    ):
+        session = make_paired_session(user, another_user, status=SessionStatus.FINISHED)
+        summary = MagicMock()
+
+        with patch(f"{MODULE}.export_watchlist_csv", return_value=summary) as export, patch(
+            f"{MODULE}.notify_session"
+        ) as notify:
+            with django_capture_on_commit_callbacks(execute=True) as callbacks:
+                result = end_swipe_session(user, session)
+
+        assert result is summary
+        assert callbacks == []
+        notify.assert_not_called()
+        assert export.call_args.kwargs["user"] == user
+
+
+@pytest.mark.django_db
+class TestEndSoloSessionDetails:
+    def test_a_session_without_members_is_finished_without_an_export(self, swipe_session):
+        SwipeSession.objects.filter(pk=swipe_session.pk).update(status=SessionStatus.ACTIVE)
+        swipe_session.refresh_from_db()
+
+        with patch(f"{MODULE}.export_watchlist_csv") as export:
+            result = end_swipe_session(None, swipe_session)
+
+        swipe_session.refresh_from_db()
+        assert result is None
+        assert swipe_session.status == SessionStatus.FINISHED
+        export.assert_not_called()
+
+    def test_solo_sessions_do_not_notify_anyone(
+        self, user, swipe_session, django_capture_on_commit_callbacks
+    ):
+        swipe_session.users.add(user)
+        SwipeSession.objects.filter(pk=swipe_session.pk).update(status=SessionStatus.ACTIVE)
+        swipe_session.refresh_from_db()
+
+        with patch(f"{MODULE}.export_watchlist_csv"), patch(
+            f"{MODULE}.notify_session"
+        ) as notify:
+            with django_capture_on_commit_callbacks(execute=True):
+                end_swipe_session(user, swipe_session)
+
+        notify.assert_not_called()
+
+    def test_the_export_is_made_for_a_member_of_the_session(
+        self, user, another_user, swipe_session
+    ):
+        swipe_session.users.add(user, another_user)
+        SwipeSession.objects.filter(pk=swipe_session.pk).update(status=SessionStatus.ACTIVE)
+        swipe_session.refresh_from_db()
+
+        with patch(f"{MODULE}.export_watchlist_csv") as export:
+            end_swipe_session(user, swipe_session)
+
+        assert export.call_args.kwargs["user"] in {user, another_user}
+
+
+class TestNotifyClosed:
+    def test_a_finished_session_is_announced_as_ended(self):
+        with patch(f"{MODULE}.notify_session") as notify:
+            _notify_closed(5, StaleOutcome.FINISHED)
+
+        notify.assert_called_once_with(5, event="session.updated", reason="ended")
+
+    @pytest.mark.parametrize(
+        "outcome", [o for o in StaleOutcome if o is not StaleOutcome.FINISHED]
+    )
+    def test_other_outcomes_are_not_announced(self, outcome):
+        with patch(f"{MODULE}.notify_session") as notify:
+            _notify_closed(5, outcome)
+
+        notify.assert_not_called()
+
+
+class TestStaleSessionWiring:
+    def test_ensure_session_active_reports_closures_through_notify_closed(self):
+        session = SimpleNamespace(pk=1)
+
+        with patch(f"{MODULE}._ensure_session_active") as ensure:
+            ensure_session_active(session)
+
+        ensure.assert_called_once_with(session, on_closed=_notify_closed)
+
+    def test_closing_stale_sessions_reports_closures_through_notify_closed(self):
+        with patch(f"{MODULE}.close_stale_sessions", return_value=3) as close:
+            result = close_stale_swipe_sessions()
+
+        assert result == 3
+        close.assert_called_once_with(SwipeSession, on_closed=_notify_closed)

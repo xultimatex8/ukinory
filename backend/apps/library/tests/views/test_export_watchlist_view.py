@@ -1,7 +1,11 @@
+from datetime import date
+
 import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.library.models import WatchlistEntry
 
 
 @pytest.fixture
@@ -54,3 +58,45 @@ def test_watchlist_export_view_returns_empty_watchlist(api_client, user):
 
     assert response.status_code == 200
     assert content == "Title,Year\r\n"
+
+
+@pytest.mark.django_db
+def test_watchlist_export_view_returns_entries_newest_first(api_client, user):
+    WatchlistEntry.objects.create(
+        user=user, title="Dune", release_year=2021, added_date=date(2024, 1, 1)
+    )
+    WatchlistEntry.objects.create(
+        user=user, title="Alien", release_year=1979, added_date=date(2025, 1, 1)
+    )
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(reverse("watchlist-export"))
+
+    assert response.content.decode("utf-8").splitlines() == [
+        "Title,Year",
+        "Alien,1979",
+        "Dune,2021",
+    ]
+
+
+@pytest.mark.django_db
+def test_watchlist_export_view_only_exports_the_users_entries(
+    api_client, user, another_user
+):
+    WatchlistEntry.objects.create(
+        user=another_user, title="Alien", release_year=1979, added_date=date(2025, 1, 1)
+    )
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(reverse("watchlist-export"))
+
+    assert response.content.decode("utf-8") == "Title,Year\r\n"
+
+
+@pytest.mark.django_db
+def test_watchlist_export_view_rejects_unsupported_methods(api_client, user):
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post(reverse("watchlist-export"))
+
+    assert response.status_code == 405

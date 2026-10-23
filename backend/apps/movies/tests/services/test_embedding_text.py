@@ -109,3 +109,62 @@ class TestBuildEmbeddingText:
         lines = text.split("\n")
 
         assert "" not in lines
+
+    def test_exact_output_with_every_field(self):
+        text = build_embedding_text(fake_metadata())
+
+        assert text == (
+            "Blade Runner\n"
+            "(1982)\n"
+            "1982 science fiction film directed by Ridley Scott\n"
+            "Genres: Neo-noir, Science Fiction\n"
+            "Directed by: Ridley Scott\n"
+            "Original language: English\n"
+            "Runtime: 117 minutes"
+        )
+
+    def test_a_zero_release_year_is_treated_as_missing(self):
+        assert "(" not in build_embedding_text(fake_metadata(release_year=0))
+
+    def test_a_zero_runtime_is_treated_as_missing(self):
+        assert "Runtime" not in build_embedding_text(fake_metadata(runtime=0))
+
+    def test_directors_set_to_none_are_omitted(self):
+        assert "Directed by" not in build_embedding_text(fake_metadata(directors=None))
+
+    def test_missing_genres_key_is_tolerated(self):
+        metadata = fake_metadata()
+        del metadata["genres"]
+
+        assert "Genres" not in build_embedding_text(metadata)
+
+    def test_several_directors_are_joined_with_commas(self):
+        text = build_embedding_text(fake_metadata(directors=["Lana Wachowski", "Lilly Wachowski"]))
+
+        assert "Directed by: Lana Wachowski, Lilly Wachowski" in text
+
+    def test_non_ascii_characters_are_kept(self):
+        text = build_embedding_text(
+            fake_metadata(title="Amélie", directors=["Jean-Pierre Jeunet"], original_language="Français")
+        )
+
+        assert text.startswith("Amélie\n")
+        assert "Original language: Français" in text
+
+    def test_the_input_metadata_is_not_modified(self):
+        metadata = fake_metadata(
+            genres=[{"wikidata_id": "Q1", "name": "Zombie"}, {"wikidata_id": "Q2", "name": "Action"}],
+            directors=["Zack Snyder", "Ang Lee"],
+        )
+        snapshot = {
+            "genres": [dict(g) for g in metadata["genres"]],
+            "directors": list(metadata["directors"]),
+        }
+
+        build_embedding_text(metadata)
+
+        assert metadata["genres"] == snapshot["genres"]
+        assert metadata["directors"] == snapshot["directors"]
+
+    def test_title_is_always_the_first_line(self):
+        assert build_embedding_text(fake_metadata()).split("\n")[0] == "Blade Runner"

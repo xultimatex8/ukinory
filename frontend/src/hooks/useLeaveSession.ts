@@ -1,3 +1,4 @@
+
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -21,14 +22,22 @@ export function useLeaveSession(
       await leave(sessionId);
       void navigate("/");
     } catch {
-      setIsLeaving(false);
       setLeaveError(`Unable to leave the ${noun}. Please try again.`);
+    } finally {
+      setIsLeaving(false);
     }
   }, [sessionId, isLeaving, leave, noun, navigate]);
 
-  const clearLeaveError = useCallback(() => setLeaveError(null), []);
+  const clearLeaveError = useCallback(() => {
+    setLeaveError(null);
+  }, []);
 
-  return { isLeaving, leaveError, handleLeave, clearLeaveError };
+  return {
+    isLeaving,
+    leaveError,
+    handleLeave,
+    clearLeaveError,
+  };
 }
 
 export type LeaveController = ReturnType<typeof useLeaveSession>;

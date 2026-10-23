@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { Heart, Users } from "lucide-react";
 
 import type { PairedSessionController } from "../hooks/usePairedSession";
-import MatchesModal from "./MatchesModal";
+import MatchesModal from "./modal/MatchesModal";
 
 interface PairedSessionOverlayProps {
   sessionId: string;

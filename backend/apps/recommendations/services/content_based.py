@@ -50,7 +50,7 @@ def build_candidate_pool(user, pool_size: Optional[int] = DEFAULT_POOL_SIZE) -> 
 
     return [
         RecommendationCandidate(movie=m, similarity=1 - m.distance)
-        for m in ranked
+        for m in movies
     ]
 
 

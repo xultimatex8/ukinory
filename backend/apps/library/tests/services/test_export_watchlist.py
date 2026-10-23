@@ -1,7 +1,10 @@
+from datetime import date
+
 import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from apps.library.models import WatchlistEntry
 from apps.library.services.export_watchlist import watchlist_to_csv
 
 
@@ -97,3 +100,61 @@ def test_watchlist_to_csv_uses_expected_query():
         "-added_date",
         "title",
     )
+
+
+@pytest.mark.django_db
+def test_watchlist_to_csv_orders_newest_first_then_by_title(user):
+    for title, year, added in [
+        ("Zodiac", 2007, date(2025, 1, 2)),
+        ("Alien", 1979, date(2025, 1, 2)),
+        ("Heat", 1995, date(2025, 3, 1)),
+        ("Dune", 2021, date(2024, 12, 31)),
+    ]:
+        WatchlistEntry.objects.create(
+            user=user, title=title, release_year=year, added_date=added
+        )
+
+    result = watchlist_to_csv(user)
+
+    assert result.splitlines() == [
+        "Title,Year",
+        "Heat,1995",
+        "Alien,1979",
+        "Zodiac,2007",
+        "Dune,2021",
+    ]
+
+
+@pytest.mark.django_db
+def test_watchlist_to_csv_only_includes_the_users_entries(user, another_user):
+    WatchlistEntry.objects.create(
+        user=user, title="Dune", release_year=2021, added_date=date(2025, 1, 1)
+    )
+    WatchlistEntry.objects.create(
+        user=another_user, title="Alien", release_year=1979, added_date=date(2025, 1, 1)
+    )
+
+    assert watchlist_to_csv(user) == "Title,Year\r\nDune,2021\r\n"
+
+
+@pytest.mark.django_db
+def test_watchlist_to_csv_quotes_titles_with_commas_and_quotes(user):
+    WatchlistEntry.objects.create(
+        user=user,
+        title='Dune, "Part Two"',
+        release_year=2024,
+        added_date=date(2025, 1, 1),
+    )
+
+    assert watchlist_to_csv(user) == (
+        'Title,Year\r\n"Dune, ""Part Two""",2024\r\n'
+    )
+
+
+@pytest.mark.django_db
+def test_watchlist_to_csv_keeps_unicode_titles_and_blank_unknown_years(user):
+    WatchlistEntry.objects.create(
+        user=user, title="Amélie", release_year=None, added_date=date(2025, 1, 1)
+    )
+
+    assert watchlist_to_csv(user) == "Title,Year\r\nAmélie,\r\n"

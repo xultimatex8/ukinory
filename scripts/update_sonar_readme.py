@@ -1,8 +1,8 @@
-
 from __future__ import annotations
 
 import base64
 import os
+import xml.etree.ElementTree as ET
 import re
 import time
 from pathlib import Path
@@ -14,6 +14,8 @@ from urllib.request import Request, urlopen
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 README_PATH = PROJECT_ROOT / "README.md"
 REPORT_TASK_PATH = PROJECT_ROOT / ".scannerwork" / "report-task.txt"
+BACKEND_JUNIT_PATH = PROJECT_ROOT / "backend" / "junit.xml"
+FRONTEND_JUNIT_PATH = PROJECT_ROOT / "frontend" / "junit.xml"
 
 SONAR_HOST_URL = os.environ.get("SONAR_HOST_URL", "http://sonarqube:9000",).rstrip("/")
 SONAR_TOKEN = os.environ.get("SONAR_TOKEN")
@@ -24,6 +26,7 @@ END_MARKER = "<!-- SONAR-METRICS:END -->"
 
 METRIC_KEYS = (
     "coverage",
+    "tests",
     "bugs",
     "vulnerabilities",
     "code_smells",
@@ -140,6 +143,40 @@ def fetch_metrics() -> dict[str, str]:
     }
 
 
+def count_tests(junit_path: Path) -> int | None:
+    """Count the test cases in a JUnit XML report (None if missing/invalid)."""
+    if not junit_path.is_file():
+        return None
+
+    try:
+        root = ET.parse(junit_path).getroot()
+    except ET.ParseError:
+        return None
+
+    return sum(1 for _ in root.iter("testcase"))
+
+
+def format_total_tests(metrics: dict[str, str]) -> str:
+    """Total tests (backend + frontend) from the JUnit reports.
+
+    Falls back to SonarQube's own "tests" metric if no report is available.
+    """
+    backend = count_tests(BACKEND_JUNIT_PATH)
+    frontend = count_tests(FRONTEND_JUNIT_PATH)
+
+    if backend is None and frontend is None:
+        return format_metric(metrics, "tests")
+
+    total = (backend or 0) + (frontend or 0)
+    parts = []
+    if backend is not None:
+        parts.append(f"backend {backend:,}")
+    if frontend is not None:
+        parts.append(f"frontend {frontend:,}")
+
+    return f"{total:,} ({' · '.join(parts)})"
+
+
 def format_metric(metrics: dict[str, str], key: str) -> str:
     value = metrics.get(key)
 
@@ -149,7 +186,7 @@ def format_metric(metrics: dict[str, str], key: str) -> str:
     if key in {"coverage", "duplicated_lines_density"}:
         return f"{float(value):.1f}%"
 
-    if key in {"bugs", "vulnerabilities", "code_smells", "ncloc"}:
+    if key in {"tests", "bugs", "vulnerabilities", "code_smells", "ncloc"}:
         return f"{int(float(value)):,}"
 
     return value
@@ -158,6 +195,7 @@ def format_metric(metrics: dict[str, str], key: str) -> str:
 def build_readme_section(metrics: dict[str, str], quality_gate: str) -> str:
     rows = [
         ("Coverage", format_metric(metrics, "coverage")),
+        ("Tests", format_total_tests(metrics)),
         ("Bugs", format_metric(metrics, "bugs")),
         ("Vulnerabilities", format_metric(metrics, "vulnerabilities")),
         ("Code smells", format_metric(metrics, "code_smells")),

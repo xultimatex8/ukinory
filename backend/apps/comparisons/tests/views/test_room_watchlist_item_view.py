@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from unittest.mock import MagicMock, patch
 
 from apps.comparisons.exceptions import RecommendationNotFoundError
-from apps.common.exceptions import SessionNotReadyError
+from apps.common.exceptions import NotSessionMemberError, SessionNotReadyError
 
 ROOM_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -114,6 +114,32 @@ class TestRoomWatchlistItemViewPost:
         mock_add.assert_not_called()
 
 
+    @patch("apps.comparisons.views.add_recommendation_to_watchlist")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_does_not_add_when_movie_is_not_recommended(
+        self,
+        mock_get_user_room,
+        mock_add,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_user_room.return_value = MagicMock()
+        mock_add.side_effect = RecommendationNotFoundError
+
+        response = api_client.post(_url())
+
+        assert response.status_code == 404
+        assert "in_watchlist" not in response.data
+
+    def test_rejects_unsupported_methods(self, api_client, user):
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(_url())
+
+        assert response.status_code == 405
+
+
 @pytest.mark.django_db
 class TestRoomWatchlistItemViewDelete:
     def test_requires_authentication(self, api_client):
@@ -165,3 +191,54 @@ class TestRoomWatchlistItemViewDelete:
 
         assert response.status_code == 404
         assert response.data == {"detail": "Recommendation not found."}
+
+    @patch("apps.comparisons.views.remove_recommendation_from_watchlist")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_returns_409_when_comparison_is_not_ready(
+        self,
+        mock_get_user_room,
+        mock_remove,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_user_room.return_value = MagicMock()
+        mock_remove.side_effect = SessionNotReadyError
+
+        response = api_client.delete(_url())
+
+        assert response.status_code == 409
+
+    @patch("apps.comparisons.views.remove_recommendation_from_watchlist")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_does_not_remove_when_user_is_not_in_room(
+        self,
+        mock_get_user_room,
+        mock_remove,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_user_room.side_effect = NotSessionMemberError
+
+        response = api_client.delete(_url())
+
+        assert response.status_code == 403
+        mock_remove.assert_not_called()
+
+    @patch("apps.comparisons.views.remove_recommendation_from_watchlist")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_returns_empty_body_on_success(
+        self,
+        mock_get_user_room,
+        mock_remove,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_user_room.return_value = MagicMock()
+
+        response = api_client.delete(_url())
+
+        assert response.status_code == 204
+        assert not response.content

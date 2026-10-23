@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from apps.movies.exceptions import TMDbError
+import pytest
+
+from apps.movies.exceptions import TMDbError, WikidataError
 from apps.movies.services.catalog_seeding import (
     CatalogSeedSummary,
     format_seed_summary,
@@ -258,3 +260,198 @@ class TestFormatSeedSummary:
         text = format_seed_summary(summary)
 
         assert "Failed pools (skipped): new_release" in text
+
+
+class TestSeedFromPoolsDetails:
+    @pytest.mark.parametrize("error", [WikidataError("boom"), TMDbError("boom")])
+    def test_an_enrichment_error_skips_the_pool_and_retries_its_ids_later(self, error):
+        with (
+            patch(PATCH_TARGET.format("discover_popular_tmdb_ids"), return_value=[1, 2]),
+            patch(PATCH_TARGET.format("discover_new_release_tmdb_ids"), return_value=[2, 3]),
+            patch(
+                PATCH_TARGET.format("fetch_and_store_movies"),
+                side_effect=[error, _fake_store_result([2, 3])],
+            ) as mock_store,
+        ):
+            summary = seed_movie_catalog_light(MagicMock())
+
+        assert [call.args[0] for call in mock_store.call_args_list] == [{1, 2}, {2, 3}]
+        assert summary.failed_pools == ["popular"]
+        assert summary.pool_sizes == {"popular": 2, "new_release": 2}
+        assert summary.discovered == 2
+        assert summary.stored == 2
+
+    def test_an_empty_pool_does_not_trigger_any_storage(self):
+        patches = _patch_pools(popular=[], new_release=[])
+
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch(PATCH_TARGET.format("fetch_and_store_movies")) as mock_store,
+        ):
+            summary = seed_movie_catalog_light(MagicMock())
+
+        mock_store.assert_not_called()
+        assert summary.pool_sizes == {"popular": 0, "new_release": 0}
+        assert summary.discovered == 0
+        assert summary.failed_pools == []
+
+    def test_already_stored_and_without_metadata_are_summed_over_the_pools(self):
+        patches = _patch_pools(popular=[1, 2], new_release=[3])
+
+        def store(ids, **kwargs):
+            return MovieCacheSummary(
+                stored={i: MagicMock() for i in ids},
+                already_stored=2,
+                without_metadata=1,
+            )
+
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch(PATCH_TARGET.format("fetch_and_store_movies"), side_effect=store),
+        ):
+            summary = seed_movie_catalog_light(MagicMock())
+
+        assert summary.already_stored == 4
+        assert summary.without_metadata == 2
+        assert summary.stored == 3
+
+    def test_every_pool_function_receives_the_given_client(self):
+        client = MagicMock()
+        patches = _patch_pools(popular=[1], new_release=[2], by_decade=[3], by_genre=[4])
+
+        with (
+            patches[0] as popular,
+            patches[1] as new_release,
+            patches[2] as by_decade,
+            patches[3] as by_genre,
+            patch(
+                PATCH_TARGET.format("fetch_and_store_movies"),
+                side_effect=_fake_store_result,
+            ),
+        ):
+            seed_movie_catalog(client)
+
+        for pool in (popular, new_release, by_decade, by_genre):
+            pool.assert_called_once_with(client)
+
+    def test_pool_size_counts_the_raw_ids_but_storage_gets_unique_ones(self):
+        patches = _patch_pools(popular=[1, 1, 2])
+
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch(
+                PATCH_TARGET.format("fetch_and_store_movies"),
+                side_effect=_fake_store_result,
+            ) as mock_store,
+        ):
+            summary = seed_movie_catalog_light(MagicMock())
+
+        assert summary.pool_sizes["popular"] == 3
+        mock_store.assert_called_once_with({1, 2}, defer_embeddings=True)
+
+    def test_full_seed_walks_the_four_pools_in_order_and_always_defers_embeddings(self):
+        patches = _patch_pools(popular=[1], new_release=[2], by_decade=[3], by_genre=[4])
+
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch(
+                PATCH_TARGET.format("fetch_and_store_movies"),
+                side_effect=_fake_store_result,
+            ) as mock_store,
+        ):
+            summary = seed_movie_catalog(MagicMock())
+
+        assert list(summary.pool_sizes) == ["popular", "new_release", "by_decade", "by_genre"]
+        assert [call.args[0] for call in mock_store.call_args_list] == [{1}, {2}, {3}, {4}]
+        assert all(call.kwargs["defer_embeddings"] is True for call in mock_store.call_args_list)
+
+    @pytest.mark.parametrize(
+        ("seed", "label"),
+        [
+            (seed_movie_catalog_light, "light"),
+            (seed_movie_catalog_deep, "deep"),
+            (seed_movie_catalog, "full"),
+        ],
+    )
+    def test_start_and_finish_are_logged(self, seed, label, caplog):
+        patches = _patch_pools()
+
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch(PATCH_TARGET.format("fetch_and_store_movies")),
+            caplog.at_level("INFO"),
+        ):
+            seed(MagicMock())
+
+        assert f"Starting {label} movie catalog seed" in caplog.text
+        assert f"Finished {label} movie catalog seed" in caplog.text
+
+    def test_a_failed_pool_is_reported_in_the_log(self, caplog):
+        with (
+            patch(PATCH_TARGET.format("discover_popular_tmdb_ids"), return_value=[1]),
+            patch(
+                PATCH_TARGET.format("discover_new_release_tmdb_ids"),
+                side_effect=TMDbError("rate limited"),
+            ),
+            patch(
+                PATCH_TARGET.format("fetch_and_store_movies"),
+                side_effect=_fake_store_result,
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            seed_movie_catalog_light(MagicMock())
+
+        assert "Skipping pool 'new_release' after a TMDb error" in caplog.text
+        assert "rate limited" in caplog.text
+
+
+class TestFormatSeedSummaryDetails:
+    def test_exact_text_without_failures(self):
+        summary = CatalogSeedSummary(
+            discovered=10,
+            stored=8,
+            already_stored=1,
+            without_metadata=2,
+            pool_sizes={"popular": 5, "new_release": 5},
+        )
+
+        assert format_seed_summary(summary) == (
+            "Discovered 10 candidate(s) [popular=5, new_release=5]; "
+            "stored 8; already stored 1; 2 had no Wikidata metadata coverage."
+        )
+
+    def test_several_failed_pools_are_listed_in_order(self):
+        summary = CatalogSeedSummary(
+            discovered=0,
+            stored=0,
+            already_stored=0,
+            without_metadata=0,
+            pool_sizes={"by_decade": 0, "by_genre": 0},
+            failed_pools=["by_decade", "by_genre"],
+        )
+
+        assert format_seed_summary(summary).endswith(
+            " Failed pools (skipped): by_decade, by_genre."
+        )
+
+    def test_no_pools_gives_empty_brackets(self):
+        summary = CatalogSeedSummary(
+            discovered=0, stored=0, already_stored=0, without_metadata=0, pool_sizes={}
+        )
+
+        assert "Discovered 0 candidate(s) []" in format_seed_summary(summary)

@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-
-import { getSessionMatches, type SessionMatch } from "../services/swipeSessions";
-import { getErrorMessage } from "../utils/errors";
-import { letterboxdUrl } from "../utils/movie";
+import { type SessionMatch, getSessionMatches } from "../../services/swipeSessions";
+import { getErrorMessage } from "../../utils/errors";
+import { letterboxdUrl } from "../../utils/movie";
 import Modal from "./Modal";
 
 interface MatchesModalProps {
