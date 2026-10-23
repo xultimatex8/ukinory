@@ -109,6 +109,8 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+        env:
+          BACKEND_PROXY_TARGET: http://localhost:8000
 
 
   docker:
