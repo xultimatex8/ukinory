@@ -25,8 +25,9 @@ export default function ComparisonRoomScreen() {
     room,
     result,
     phase,
+    roomClosed,
     error,
-    fatal,
+    fatal: fatalError,
     isGenerating,
     refresh,
     reload,
@@ -34,6 +35,9 @@ export default function ComparisonRoomScreen() {
   } = useComparisonRoom(id);
 
   const leave = useLeaveSession(id, leaveRoom, "room");
+
+  // While leaving, our own refresh may fail (403 / closed): don't flash it.
+  const fatal = leave.isLeaving ? null : fatalError;
 
   const [me, setMe] = useState<User | null>(null);
   const [meChecked, setMeChecked] = useState(false);
@@ -78,7 +82,7 @@ export default function ComparisonRoomScreen() {
   if (fatal === "closed") {
     return (
       <ErrorScreen
-        message="This comparison room is closed."
+        message="This room is closed. Your friend may have left."
         buttonText="Back to home"
       />
     );
@@ -120,6 +124,16 @@ export default function ComparisonRoomScreen() {
 
       {phase === "ready" && result && meChecked && (
         <div>
+          {roomClosed && (
+            <div
+              role="status"
+              className="mb-6 border border-border bg-surface p-4 text-sm text-text-muted"
+            >
+              This room is closed because your friend left. You can still
+              review your results.
+            </div>
+          )}
+
           <h1 className="mb-6 text-2xl font-bold">Your taste comparison</h1>
 
           <ComparisonResultView

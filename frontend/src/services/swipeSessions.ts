@@ -169,6 +169,12 @@ export async function endSwipeSession(
   return response.blob();
 }
 
+export async function leaveSwipeSession(sessionId: string): Promise<void> {
+  await apiFetch(`/api/swipe-sessions/${sessionId}/leave/`, {
+    method: "DELETE",
+  });
+}
+
 export async function getSwipeSession(
   sessionId: string,
 ): Promise<SwipeSession> {

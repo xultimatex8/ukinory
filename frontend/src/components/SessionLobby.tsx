@@ -94,6 +94,16 @@ export default function SessionLobby({
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
 
   const copy = COPY[kind];
+  const noun = copy.invite.noun;
+
+  const leaveDescription =
+    state?.status === "WAITING"
+      ? state.partner_joined
+        ? `You'll leave the ${noun}. You will no longer be able to join again to this ${noun} again.`
+        : `Nobody else is here, so the ${noun} will be deleted.`
+      : state?.status === "FINISHED"
+        ? `This ${noun} is already closed. You'll go back to the home screen.`
+        : `This closes the ${noun} for both of you. You can start a new one at any time.`;
 
   const showStatus =
     state !== null &&
@@ -104,7 +114,7 @@ export default function SessionLobby({
   return (
     <main className="min-h-screen bg-background text-text">
       <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-6 sm:px-6 sm:py-10">
-        {state && state.status !== "FINISHED" && (
+        {state && (state.status !== "FINISHED" || phase === "ready") && (
           <div className="mb-2 flex justify-end">
             <button
               type="button"
@@ -204,7 +214,7 @@ export default function SessionLobby({
       {isLeaveModalOpen && (
         <ConfirmModal
           title="Leave session?"
-          description="This closes the session for both of you. You can start a new one at any time."
+          description={leaveDescription}
           error={leave.leaveError}
           onClose={() => setIsLeaveModalOpen(false)}
           isProcessing={leave.isLeaving}

@@ -1,11 +1,3 @@
-"""Shared lifecycle for every Session subtype (SwipeSession, ComparisonSession...).
-
-Stale policy (single source of truth):
-    * WAITING and stale  -> the session is deleted.
-    * ACTIVE  and stale  -> the session is marked FINISHED.
-Staleness is applied lazily (``ensure_session_active`` / heartbeats) and by a
-periodic job (``close_stale_sessions``). Both go through ``close_stale_session``.
-"""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -36,6 +28,13 @@ class StaleOutcome(Enum):
     NOT_STALE = "not_stale"
     FINISHED = "finished"
     DELETED = "deleted"
+
+
+class LeaveOutcome(Enum):
+    ALREADY_FINISHED = "already_finished"
+    LEFT = "left"
+    DELETED = "deleted"
+    FINISHED = "finished"
 
 
 OnClosed = Callable[[Any, StaleOutcome], None]
@@ -155,3 +154,25 @@ def activate_session(
     if notify is not None:
         transaction.on_commit(lambda: notify(session))
     return session
+
+
+@transaction.atomic
+def leave_session(model, session_id, user) -> LeaveOutcome:
+    session = lock_session(model, session_id)
+
+    if session.status == SessionStatus.FINISHED:
+        return LeaveOutcome.ALREADY_FINISHED
+
+    if not session.users.filter(pk=user.pk).exists():
+        raise NotSessionMemberError
+
+    if session.status == SessionStatus.WAITING:
+        session.users.remove(user)
+        if not session.users.exists():
+            session.delete()
+            return LeaveOutcome.DELETED
+        return LeaveOutcome.LEFT
+
+    session.status = SessionStatus.FINISHED
+    session.save(update_fields=["status"])
+    return LeaveOutcome.FINISHED

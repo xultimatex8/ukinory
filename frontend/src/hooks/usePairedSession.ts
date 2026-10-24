@@ -227,7 +227,10 @@ export function usePairedSession(sessionId: string | undefined) {
       state.you_have_data &&
       state.partner_has_data === true;
 
-    if (!ready) return;
+    if (!ready) {
+      lastStartKeyRef.current = null;
+      return;
+    }
 
     const key = `${state.you_have_data}|${state.partner_has_data}`;
 

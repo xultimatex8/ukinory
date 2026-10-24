@@ -59,7 +59,7 @@ export default function MatchCelebration({
   return (
     <AnimatePresence>
       {match && (
-        <motion.div
+        <motion.button
           key={match.candidateId}
           role="dialog"
           aria-modal="true"
@@ -71,7 +71,7 @@ export default function MatchCelebration({
           transition={{ duration: 0.25 }}
           onClick={onDismiss}
         >
-          <div
+          <button
             className="flex w-full max-w-sm flex-col items-center text-center"
             onClick={(event) => event.stopPropagation()}
           >
@@ -192,7 +192,7 @@ export default function MatchCelebration({
                 See all matches
               </button>
             </motion.div>
-          </div>
+          </button>
 
           <motion.div
             aria-hidden
@@ -202,7 +202,7 @@ export default function MatchCelebration({
             transition={{ duration: AUTO_DISMISS_SECONDS, ease: "linear" }}
             onAnimationComplete={onDismiss}
           />
-        </motion.div>
+        </motion.button>
       )}
     </AnimatePresence>
   );

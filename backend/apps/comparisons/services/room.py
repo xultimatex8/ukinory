@@ -12,15 +12,17 @@ from apps.common.enums import (
     SessionStatus,
     SessionType,
 )
-from apps.common.exceptions import NotSessionMemberError, SessionClosedError
+from apps.common.exceptions import SessionClosedError
 from apps.common.services.session_state import build_participant_state
 from apps.common.services.sessions import (
+    LeaveOutcome,
     StaleOutcome,
     activate_session,
     close_stale_session,
     close_stale_sessions,
     get_user_session,
     is_stale,
+    leave_session,
     touch_session,
 )
 from apps.comparisons.exceptions import InsufficientDataError
@@ -141,29 +143,16 @@ def close_stale_rooms() -> int:
 
 @transaction.atomic
 def leave_room(*, room: ComparisonSession, user) -> None:
-    if room.status == SessionStatus.FINISHED:
-        return
+    outcome = leave_session(ComparisonSession, room.pk, user)
 
-    if not room.users.filter(pk=user.pk).exists():
-        raise NotSessionMemberError
-
-    if room.status == SessionStatus.WAITING:
-        room.users.remove(user)
-        if not room.users.exists():
-            room.delete()
-        return
-
-    comparison = Comparison.objects.filter(session=room).first()
-    room.users.remove(user)
-
-    if (
-        comparison is not None
-        and comparison.generation_status
-        in {GenerationStatus.PENDING, GenerationStatus.NEEDS_DATA}
-    ):
-        comparison.delete()
-        room.status = SessionStatus.WAITING
-    else:
-        room.status = SessionStatus.FINISHED
-
-    room.save(update_fields=["status"])
+    if outcome is LeaveOutcome.FINISHED:
+        Comparison.objects.filter(
+            session_id=room.pk,
+            generation_status__in={
+                GenerationStatus.PENDING,
+                GenerationStatus.NEEDS_DATA,
+            },
+        ).delete()
+        transaction.on_commit(lambda: notify_room(room.pk, reason="ended"))
+    elif outcome is LeaveOutcome.LEFT:
+        transaction.on_commit(lambda: notify_room(room.pk, reason="partner_left"))
