@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, Link as LinkIcon, RefreshCw } from "lucide-react";
 
-import { regenerateInvite, type Invite } from "../services/comparisons";
 import { getErrorMessage } from "../utils/errors";
 
-interface InviteSharePanelProps {
-  roomId: string;
-  initialInvite: Invite | null;
+interface InviteLike {
+  code: string;
+  expires_at: string;
+}
+
+interface InviteSharePanelProps<T extends InviteLike> {
+  initialInvite: T | null;
+  onRegenerate: () => Promise<T>;
+  noun?: string;
+  pageName?: string;
 }
 
 function formatRemaining(ms: number): string {
@@ -16,11 +22,13 @@ function formatRemaining(ms: number): string {
   return `${minutes}:${seconds}`;
 }
 
-export default function InviteSharePanel({
-  roomId,
+export default function InviteSharePanel<T extends InviteLike>({
   initialInvite,
-}: InviteSharePanelProps) {
-  const [invite, setInvite] = useState<Invite | null>(initialInvite);
+  onRegenerate,
+  noun = "room",
+  pageName = "Taste comparison",
+}: InviteSharePanelProps<T>) {
+  const [invite, setInvite] = useState<T | null>(initialInvite);
   const [now, setNow] = useState(() => Date.now());
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -34,7 +42,7 @@ export default function InviteSharePanel({
   const remainingMs = invite ? new Date(invite.expires_at).getTime() - now : 0;
   const isExpired = !invite || remainingMs <= 0;
   const link = invite
-    ? `${window.location.origin}/comparison/join/${invite.code}`
+    ? `${window.location.origin}/join/${invite.code}`
     : "";
 
   const copy = async (kind: "code" | "link", value: string) => {
@@ -52,7 +60,7 @@ export default function InviteSharePanel({
     setIsRefreshing(true);
     setError(null);
     try {
-      setInvite(await regenerateInvite(roomId));
+      setInvite(await onRegenerate());
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -96,7 +104,7 @@ export default function InviteSharePanel({
 
           <p className="mt-4 text-xs leading-relaxed text-text-muted">
             Expires in {formatRemaining(remainingMs)}. Your friend can open the
-            link or type the code on the Taste comparison page — no account
+            link or type the code on the {pageName} page — no account
             needed.
           </p>
         </>
@@ -104,7 +112,7 @@ export default function InviteSharePanel({
         <p className="text-sm leading-relaxed text-text-secondary">
           {invite
             ? "This invite has expired."
-            : "The invite for this room isn't available here anymore."}{" "}
+            : `The invite for this ${noun} isn't available here anymore.`}{" "}
           Generate a new one to keep waiting.
         </p>
       )}

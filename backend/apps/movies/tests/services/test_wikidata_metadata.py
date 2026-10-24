@@ -5,11 +5,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from apps.movies.exceptions import TMDbNotFoundError
+from apps.movies.exceptions import TMDbNotFoundError, TMDbUnavailableError
 from apps.movies.models import Movie
 from apps.movies.services import wikidata_metadata as wikidata_metadata_module
 from apps.movies.services.wikidata_metadata import (
     DEFAULT_BATCH_SIZE,
+    _best_statements,
+    _build_metadata,
+    _item_ids,
+    _minutes,
+    _pick_description,
+    _pick_label,
+    _snak_values,
+    _year_from_time,
     fetch_movies_metadata,
 )
 
@@ -575,3 +583,232 @@ class TestBatching:
 
 def test_default_batch_size_respects_the_wbgetentities_limit():
     assert 1 < DEFAULT_BATCH_SIZE <= 50
+
+
+class TestYearFromTime:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ({"time": "+2021-10-22T00:00:00Z"}, 2021),
+            ({"time": "+1999-00-00T00:00:00Z"}, 1999),
+            ({"time": "-0044-03-15T00:00:00Z"}, -44),
+            ({"time": ""}, None),
+            ({"time": None}, None),
+            ({}, None),
+            ({"time": "garbage"}, None),
+            ("2021", None),
+            (None, None),
+        ],
+    )
+    def test_year_from_a_wikidata_time_value(self, value, expected):
+        assert _year_from_time(value) == expected
+
+
+class TestMinutes:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ({"amount": "+155", "unit": f"http://www.wikidata.org/entity/{MINUTE}"}, 155),
+            ({"amount": "+1.5", "unit": f"http://www.wikidata.org/entity/{HOUR}"}, 90),
+            ({"amount": "+5400", "unit": f"http://www.wikidata.org/entity/{SECOND}"}, 90),
+            ({"amount": "+100", "unit": f"http://www.wikidata.org/entity/{SECOND}"}, 1),
+            ({"amount": "+155", "unit": MINUTE}, 155),
+            ({"amount": "+155", "unit": "http://www.wikidata.org/entity/Q999"}, None),
+            ({"amount": "+155", "unit": None}, None),
+            ({"amount": "+155"}, None),
+            ({"amount": "abc", "unit": MINUTE}, None),
+            ({"unit": MINUTE}, None),
+            ("155", None),
+            (None, None),
+        ],
+    )
+    def test_runtime_in_minutes(self, value, expected):
+        assert _minutes(value) == expected
+
+
+class TestPickLabelAndDescription:
+    def test_english_is_preferred(self):
+        entity = {"labels": {"en": {"value": "Dune"}, "es": {"value": "Duna"}}}
+
+        assert _pick_label(entity) == "Dune"
+
+    def test_spanish_is_the_fallback(self):
+        assert _pick_label({"labels": {"es": {"value": "Duna"}}}) == "Duna"
+
+    def test_an_empty_english_value_falls_back_to_spanish(self):
+        entity = {"labels": {"en": {"value": ""}, "es": {"value": "Duna"}}}
+
+        assert _pick_label(entity) == "Duna"
+
+    @pytest.mark.parametrize("entity", [None, {}, {"labels": None}, {"labels": {}}, {"labels": {"fr": {"value": "Dune"}}}])
+    def test_no_usable_label_gives_an_empty_string(self, entity):
+        assert _pick_label(entity) == ""
+
+    def test_descriptions_follow_the_same_rules(self):
+        entity = {"descriptions": {"es": {"value": "pelicula"}}}
+
+        assert _pick_description(entity) == "pelicula"
+        assert _pick_description({"descriptions": {"en": {"value": "film"}, "es": {"value": "pelicula"}}}) == "film"
+
+    @pytest.mark.parametrize("entity", [None, {}, {"descriptions": None}, {"descriptions": {"fr": {"value": "film"}}}])
+    def test_no_usable_description_gives_an_empty_string(self, entity):
+        assert _pick_description(entity) == ""
+
+
+class TestStatementHelpers:
+    def test_missing_claims_give_no_statements(self):
+        assert _best_statements({}, "P1") == []
+        assert _best_statements({"claims": None}, "P1") == []
+        assert _best_statements({"claims": {"P2": [_item_claim("Q1")]}}, "P1") == []
+
+    def test_preferred_statements_win_over_normal_ones(self):
+        normal, preferred = _item_claim("Q1"), _item_claim("Q2", rank="preferred")
+
+        result = _best_statements({"claims": {"P1": [normal, preferred]}}, "P1")
+
+        assert result == [preferred]
+
+    def test_deprecated_statements_are_dropped(self):
+        normal = _item_claim("Q1")
+        deprecated = _item_claim("Q2", rank="deprecated")
+
+        assert _best_statements({"claims": {"P1": [deprecated, normal]}}, "P1") == [normal]
+
+    def test_statements_without_a_rank_count_as_normal(self):
+        statement = {"mainsnak": {"snaktype": "value", "datavalue": {"value": {"id": "Q1"}}}}
+
+        assert _best_statements({"claims": {"P1": [statement]}}, "P1") == [statement]
+
+    def test_snak_values_skip_novalue_and_incomplete_snaks(self):
+        claims = {
+            "P1": [
+                _novalue_claim(),
+                {"rank": "normal", "mainsnak": {"snaktype": "value"}},
+                {"rank": "normal", "mainsnak": {"snaktype": "value", "datavalue": {"value": None}}},
+                _item_claim("Q5"),
+                {"rank": "normal"},
+            ]
+        }
+
+        assert _snak_values({"claims": claims}, "P1") == [{"id": "Q5"}]
+
+    def test_snak_values_keep_statement_order(self):
+        claims = {"P1": [_item_claim("Q3"), _item_claim("Q1"), _item_claim("Q2")]}
+
+        assert [v["id"] for v in _snak_values({"claims": claims}, "P1")] == ["Q3", "Q1", "Q2"]
+
+    def test_item_ids_ignore_values_that_are_not_items(self):
+        claims = {"P1": [_time_claim("+2021-01-01T00:00:00Z"), _item_claim("Q7")]}
+
+        assert _item_ids({"claims": claims}, "P1") == ["Q7"]
+
+
+class TestBuildMetadata:
+    def test_the_requested_qid_is_used_when_the_entity_has_no_id(self):
+        entity = movie_entity("Q1")
+        del entity["id"]
+
+        assert _build_metadata("Q9", entity, {})["wikidata_id"] == "Q9"
+
+    def test_the_description_falls_back_to_spanish(self):
+        entity = movie_entity("Q1", description=None)
+        entity["descriptions"]["es"] = {"language": "es", "value": "pelicula de 2021"}
+
+        assert _build_metadata("Q1", entity, {})["wikidata_description"] == "pelicula de 2021"
+
+    def test_the_earliest_publication_year_is_used(self):
+        entity = movie_entity(
+            "Q1", claims={"P577": [_time_claim("+2022-05-01T00:00:00Z"), _time_claim("+2021-10-22T00:00:00Z")]}
+        )
+
+        assert _build_metadata("Q1", entity, {})["release_year"] == 2021
+
+    def test_no_publication_date_gives_no_year(self):
+        assert _build_metadata("Q1", movie_entity("Q1"), {})["release_year"] is None
+
+    def test_unlabelled_genres_and_directors_are_dropped(self):
+        entity = movie_entity(
+            "Q1",
+            claims={
+                "P136": [_item_claim("Q10"), _item_claim("Q11")],
+                "P57": [_item_claim("Q20"), _item_claim("Q21")],
+            },
+        )
+        labels = {"Q10": "Drama", "Q20": "Jane Doe"}
+
+        result = _build_metadata("Q1", entity, labels)
+
+        assert result["genres"] == [{"wikidata_id": "Q10", "name": "Drama"}]
+        assert result["directors"] == ["Jane Doe"]
+
+    def test_repeated_genres_appear_once(self):
+        entity = movie_entity("Q1", claims={"P136": [_item_claim("Q10"), _item_claim("Q10")]})
+
+        result = _build_metadata("Q1", entity, {"Q10": "Drama"})
+
+        assert result["genres"] == [{"wikidata_id": "Q10", "name": "Drama"}]
+
+    def test_the_first_language_alphabetically_is_used(self):
+        entity = movie_entity("Q1", claims={"P364": [_item_claim("Q30"), _item_claim("Q31")]})
+
+        result = _build_metadata("Q1", entity, {"Q30": "French", "Q31": "English"})
+
+        assert result["original_language"] == "English"
+
+    def test_without_a_language_the_value_is_an_empty_string(self):
+        assert _build_metadata("Q1", movie_entity("Q1"), {})["original_language"] == ""
+
+
+@pytest.mark.django_db
+class TestQidResolutionDetails:
+    def test_the_external_id_is_stripped_before_validation(self):
+        tmdb = make_tmdb_client({1: "  Q1  "})
+        wikidata = make_wikidata_client({"Q1": movie_entity("Q1", label="One")})
+
+        results = fetch_movies_metadata(wikidata, [1], tmdb_client=tmdb)
+
+        assert results[1]["wikidata_id"] == "Q1"
+
+    def test_a_lowercase_identifier_is_not_a_valid_qid(self):
+        tmdb = make_tmdb_client({1: "q1"})
+        wikidata = make_wikidata_client({"Q1": movie_entity("Q1", label="One")})
+
+        assert fetch_movies_metadata(wikidata, [1], tmdb_client=tmdb) == {}
+
+    def test_an_external_ids_payload_without_a_wikidata_id_is_ignored(self):
+        tmdb = MagicMock()
+        tmdb.get.return_value = {"id": 1}
+        wikidata = make_wikidata_client({})
+
+        assert fetch_movies_metadata(wikidata, [1], tmdb_client=tmdb) == {}
+
+    def test_the_external_ids_endpoint_is_used(self):
+        tmdb = make_tmdb_client({1: "Q1"})
+        wikidata = make_wikidata_client({"Q1": movie_entity("Q1", label="One")})
+
+        fetch_movies_metadata(wikidata, [1], tmdb_client=tmdb)
+
+        tmdb.get.assert_called_once_with("/movie/1/external_ids")
+
+    def test_a_tmdb_outage_is_not_swallowed(self):
+        tmdb = MagicMock()
+        tmdb.get.side_effect = TMDbUnavailableError("down")
+        wikidata = make_wikidata_client({})
+
+        with pytest.raises(TMDbUnavailableError):
+            fetch_movies_metadata(wikidata, [1], tmdb_client=tmdb)
+
+
+@pytest.mark.django_db
+class TestConcurrentChunks:
+    def test_results_from_every_chunk_are_merged(self, monkeypatch):
+        monkeypatch.setattr(wikidata_metadata_module, "_METADATA_WORKERS", 3)
+        ids = [1, 2, 3, 4, 5, 6]
+        tmdb = make_tmdb_client({i: f"Q{i}" for i in ids})
+        wikidata = make_wikidata_client(
+            {f"Q{i}": movie_entity(f"Q{i}", label=f"Movie {i}") for i in ids}
+        )
+
+        results = fetch_movies_metadata(wikidata, ids, batch_size=2, tmdb_client=tmdb)
+
+        assert {i: results[i]["title"] for i in results} == {i: f"Movie {i}" for i in ids}

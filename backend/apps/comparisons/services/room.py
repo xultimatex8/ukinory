@@ -3,74 +3,70 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
-from apps.common.enums import GenerationStatus, InviteStatus, InviteType, SessionStatus, SessionType
-from apps.comparisons.exceptions import (
-    InsufficientDataError,
-    NotRoomMemberError,
-    RoomClosedError,
-    RoomFullError,
-    RoomNotFoundError,
-    RoomNotReadyError,
+from apps.common.enums import (
+    GenerationStatus,
+    InviteType,
+    SessionStatus,
+    SessionType,
 )
-from apps.common.models import Session
+from apps.common.exceptions import SessionClosedError
+from apps.common.services.session_state import build_participant_state
+from apps.common.services.sessions import (
+    LeaveOutcome,
+    StaleOutcome,
+    activate_session,
+    close_stale_session,
+    close_stale_sessions,
+    get_user_session,
+    is_stale,
+    leave_session,
+    touch_session,
+)
+from apps.comparisons.exceptions import InsufficientDataError
 from apps.comparisons.models import Comparison, ComparisonSession
 from apps.comparisons.realtime import notify_room
 from apps.invites.models import Invite
 from apps.invites.services.invite import create_invite
-from apps.library.models import Rating
+from apps.invites.services.session_invites import regenerate_session_invite
 
 logger = logging.getLogger(__name__)
 
-MAX_PARTICIPANTS = 2
-STALE_ROOM_TIMEOUT = timedelta(minutes=2)
 RUNNING_TIMEOUT = timedelta(minutes=2)
 
 
 def get_user_room(*, room_id, user) -> ComparisonSession:
-    try:
-        room = (
-            ComparisonSession.objects.select_related("comparison")
-            .prefetch_related("users")
-            .get(pk=room_id)
-        )
-    except (ComparisonSession.DoesNotExist, ValueError, ValidationError) as exc:
-        raise RoomNotFoundError from exc
-
-    if user.pk not in {u.pk for u in room.users.all()}:
-        raise NotRoomMemberError
-    return room
+    return get_user_session(
+        ComparisonSession,
+        session_id=room_id,
+        user=user,
+        queryset=ComparisonSession.objects.select_related("comparison").prefetch_related("users"),
+    )
 
 
 def _comparison_of(room: ComparisonSession) -> Comparison | None:
     return getattr(room, "comparison", None)
 
 
-def touch_room(room_id) -> None:
-    ComparisonSession.objects.filter(pk=room_id).update(last_seen_at=timezone.now())
+def heartbeat_room(room: ComparisonSession) -> None:
+    if is_stale(room):
+        outcome = close_stale_session(room.pk)
+        if outcome is StaleOutcome.DELETED:
+            raise SessionClosedError
+        if outcome is StaleOutcome.FINISHED:
+            room.status = SessionStatus.FINISHED
+            return
+    touch_session(room.pk)
 
 
 def build_room_state(room: ComparisonSession, user) -> dict:
-    users = list(room.users.all())
     comparison = _comparison_of(room)
-    with_data = set(
-        Rating.objects.filter(user__in=users).values_list("user_id", flat=True).distinct()
-    )
-    partner = next((u for u in users if u.pk != user.pk), None)
-
     return {
-        "id": str(room.pk),
-        "status": room.status,
-        "participants": len(users),
-        "partner_joined": partner is not None,
+        **build_participant_state(room, user),
         "comparison_id": str(comparison.pk) if comparison else None,
         "generation_status": comparison.generation_status if comparison else None,
-        "you_have_data": user.pk in with_data,
-        "partner_has_data": (partner.pk in with_data) if partner else None,
     }
 
 
@@ -85,48 +81,19 @@ def create_room(user) -> tuple[ComparisonSession, Invite]:
     return room, invite
 
 
-@transaction.atomic
 def regenerate_invite(*, user, room: ComparisonSession) -> Invite:
-    if room.status != SessionStatus.WAITING:
-        raise RoomClosedError
-
-    Invite.objects.filter(
-        inviter=user, session_id=room.pk, status=InviteStatus.PENDING
-    ).update(status=InviteStatus.EXPIRED)
-
-    return create_invite(user=user, invite_type=InviteType.COMPARISON, session=room)
+    return regenerate_session_invite(
+        user=user, session=room, invite_type=InviteType.COMPARISON
+    )
 
 
-@transaction.atomic
-def join_room_from_invite(invite: Invite, user) -> ComparisonSession:
-    if invite.session_id is None:
-        raise RoomNotFoundError
-
-    try:
-        Session.objects.select_for_update().get(pk=invite.session_id)
-        room = ComparisonSession.objects.get(pk=invite.session_id)
-    except (Session.DoesNotExist, ComparisonSession.DoesNotExist) as exc:
-        raise RoomNotFoundError from exc
-
-    if room.status == SessionStatus.FINISHED:
-        raise RoomClosedError
-    if room.status != SessionStatus.WAITING or room.users.count() >= MAX_PARTICIPANTS:
-        raise RoomFullError
-
-    room.users.add(user)
-    room.status = SessionStatus.ACTIVE
-    room.last_seen_at = timezone.now()
-    room.save(update_fields=["status", "last_seen_at"])
-
-    Comparison.objects.create(session=room)
-    transaction.on_commit(lambda: notify_room(room.pk, reason="partner_joined"))
-    return room
+def _ensure_comparison(room: ComparisonSession) -> None:
+    Comparison.objects.get_or_create(session=room)
 
 
 def request_generation(*, room: ComparisonSession) -> str:
-    comparison = _comparison_of(room)
-    if room.status != SessionStatus.ACTIVE or comparison is None:
-        raise RoomNotReadyError("Both participants must be in the room first.")
+    activate_session(ComparisonSession, room.pk, prepare=_ensure_comparison)
+    comparison = Comparison.objects.get(session_id=room.pk)
     return run_generation(comparison.pk)
 
 
@@ -171,57 +138,21 @@ def run_generation(comparison_id) -> str:
 
 
 def close_stale_rooms() -> int:
-    cutoff = timezone.now() - STALE_ROOM_TIMEOUT
-
-    stale_rooms = ComparisonSession.objects.filter(
-        status__in=[
-            SessionStatus.WAITING,
-            SessionStatus.ACTIVE,
-        ],
-    ).filter(
-        Q(last_seen_at__lt=cutoff)
-        | Q(last_seen_at__isnull=True, created_at__lt=cutoff)
-    )
-
-    closed = 0
-
-    for room in stale_rooms:
-        if room.status == SessionStatus.WAITING:
-            room.delete()
-        else:
-            room.status = SessionStatus.FINISHED
-            room.save(update_fields=["status"])
-
-        closed += 1
-
-    return closed
+    return close_stale_sessions(ComparisonSession)
 
 
 @transaction.atomic
 def leave_room(*, room: ComparisonSession, user) -> None:
-    if room.status == SessionStatus.FINISHED:
-        return
+    outcome = leave_session(ComparisonSession, room.pk, user)
 
-    if not room.users.filter(pk=user.pk).exists():
-        raise NotRoomMemberError
-
-    if room.status == SessionStatus.WAITING:
-        room.users.remove(user)
-        if not room.users.exists():
-            room.delete()
-        return
-
-    comparison = Comparison.objects.filter(session=room).first()
-    room.users.remove(user)
-
-    if (
-        comparison is not None
-        and comparison.generation_status
-        in {GenerationStatus.PENDING, GenerationStatus.NEEDS_DATA}
-    ):
-        comparison.delete()
-        room.status = SessionStatus.WAITING
-    else:
-        room.status = SessionStatus.FINISHED
-
-    room.save(update_fields=["status"])
+    if outcome is LeaveOutcome.FINISHED:
+        Comparison.objects.filter(
+            session_id=room.pk,
+            generation_status__in={
+                GenerationStatus.PENDING,
+                GenerationStatus.NEEDS_DATA,
+            },
+        ).delete()
+        transaction.on_commit(lambda: notify_room(room.pk, reason="ended"))
+    elif outcome is LeaveOutcome.LEFT:
+        transaction.on_commit(lambda: notify_room(room.pk, reason="partner_left"))

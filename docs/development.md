@@ -6,8 +6,9 @@ How to run Ukinory locally and work on it day to day.
 
 - [Git](https://git-scm.com/downloads)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- **Linux (SonarQube analysis only):** Python 3 must be installed and available as `python3` to run `scripts/analyze.sh`.
 
-> Python, Node.js, PostgreSQL and Redis don't need to be installed locally. They run inside Docker containers.
+> Python, Node.js, PostgreSQL and Redis don't need to be installed locally. They run inside Docker containers. Python 3 is only required on Linux if you want to run the SonarQube analysis script.
 
 ## First-time setup
 
@@ -80,8 +81,8 @@ The backend image is shared by `backend`, `rqworker` and `cron`. Only the comman
 
 Available at:
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8000
+- Frontend: [http://localhost:5173](http://localhost:5173)
+- Backend: [http://localhost:8000](http://localhost:8000)
 
 > **Scheduled jobs run locally too.** The `cron` container installs the `CRONJOBS` from `settings.py`,
 > including the catalog seeding, which calls TMDb, Wikidata and Gemini with your API keys.
@@ -136,6 +137,8 @@ Stop the containers and **delete all PostgreSQL data**:
 docker compose down -v
 ```
 
+> This also deletes the SonarQube data volumes if you have used SonarQube. Your local SonarQube configuration and analysis history will be lost.
+
 ## Jupyter Notebook
 
 Jupyter is available inside the backend container for data analysis and experiments. It's optional.
@@ -160,11 +163,82 @@ docker compose exec backend pytest
 docker compose exec backend python manage.py check
 ```
 
-The frontend has no test suite yet. CI runs lint and the production build, and you can run both locally:
+The frontend has a test suite, along with linting and the production build. You can run all frontend checks locally:
 
 ```bash
+# Frontend tests
+docker compose exec frontend npm run test:run
+
+# Frontend lint
 docker compose exec frontend npm run lint
+
+# Frontend production build
 docker compose exec frontend npm run build
 ```
 
 See [Testing and CI](../README.md#testing-and-ci) for what the pipeline runs and when.
+
+## SonarQube
+
+Ukinory includes SonarQube Community Build for local static code analysis. The `sonarqube` service runs the server, and the `sonarscanner` service runs the analysis.
+
+### 1. Start SonarQube
+
+Start the SonarQube server:
+
+```bash
+docker compose up -d sonarqube
+```
+
+Open [http://localhost:9000](http://localhost:9000).
+
+On the first login, use `admin` as both the username and password, then follow the instructions to change the default password if prompted.
+
+### 2. Generate a SonarQube token
+
+1. Log in to SonarQube.
+2. Go to **My Account → Security**.
+3. Generate a user token and copy it.
+
+Set the `SONAR_TOKEN` environment variable in the same terminal session you will use to run the analysis.
+
+**Windows PowerShell**
+
+```powershell
+$env:SONAR_TOKEN = "your-sonarqube-token"
+```
+
+**Linux / macOS / WSL**
+
+```bash
+export SONAR_TOKEN="your-sonarqube-token"
+```
+
+Replace `your-sonarqube-token` with your generated token. Do not commit the token to the repository.
+
+### 3. Run the analysis
+
+The scripts in `scripts/` run the backend tests, generate a coverage report, adjust its paths for SonarScanner, and submit the analysis to SonarQube.
+
+**Windows — PowerShell**
+
+Run from the repository root:
+
+```powershell
+.\scripts\analyze.ps1
+```
+
+**Linux**
+
+Python 3 must be installed and accessible through the `python3` command. Run from the repository root:
+
+```bash
+chmod +x scripts/analyze.sh
+./scripts/analyze.sh
+```
+
+### 4. View the results
+
+When the analysis finishes, open [http://localhost:9000](http://localhost:9000) and select the Ukinory project to review the results.
+
+The first analysis may take several minutes.

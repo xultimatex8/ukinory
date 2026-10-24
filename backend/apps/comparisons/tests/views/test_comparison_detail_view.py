@@ -1,14 +1,15 @@
 import pytest
 
+from unittest.mock import MagicMock, patch
+
 from django.urls import reverse
 from rest_framework.test import APIClient
-from unittest.mock import MagicMock, patch
 
 from apps.comparisons.exceptions import (
     ComparisonNotFoundError,
     InsufficientDataError,
-    NotComparisonMemberError,
 )
+from apps.common.exceptions import NotSessionMemberError
 
 
 @pytest.fixture
@@ -18,22 +19,19 @@ def api_client():
 
 @pytest.mark.django_db
 class TestComparisonDetailView:
-    def test_requires_authentication(
-        self,
-        api_client,
-    ):
-        response = api_client.get(
-            reverse(
-                "comparison-detail",
-                kwargs={"comparison_id": "comparison-id"},
-            ),
+    @pytest.fixture(autouse=True)
+    def setup_url(self):
+        self.url = reverse(
+            "comparison-detail",
+            kwargs={"comparison_id": "comparison-id"},
         )
+
+    def test_requires_authentication(self, api_client):
+        response = api_client.get(self.url)
 
         assert response.status_code == 401
 
-    @patch(
-        "apps.comparisons.views.get_comparison_result"
-    )
+    @patch("apps.comparisons.views.get_comparison_result")
     def test_returns_404_when_comparison_does_not_exist(
         self,
         mock_get_result,
@@ -43,21 +41,19 @@ class TestComparisonDetailView:
         api_client.force_authenticate(user=user)
         mock_get_result.side_effect = ComparisonNotFoundError
 
-        response = api_client.get(
-            reverse(
-                "comparison-detail",
-                kwargs={"comparison_id": "comparison-id"},
-            ),
-        )
+        response = api_client.get(self.url)
 
         assert response.status_code == 404
         assert response.data == {
             "detail": "Comparison not found.",
         }
 
-    @patch(
-        "apps.comparisons.views.get_comparison_result"
-    )
+        mock_get_result.assert_called_once_with(
+            user=user,
+            comparison_id="comparison-id",
+        )
+
+    @patch("apps.comparisons.views.get_comparison_result")
     def test_returns_403_when_user_is_not_a_member(
         self,
         mock_get_result,
@@ -65,23 +61,20 @@ class TestComparisonDetailView:
         user,
     ):
         api_client.force_authenticate(user=user)
-        mock_get_result.side_effect = NotComparisonMemberError
+        mock_get_result.side_effect = NotSessionMemberError
 
-        response = api_client.get(
-            reverse(
-                "comparison-detail",
-                kwargs={"comparison_id": "comparison-id"},
-            ),
-        )
+        response = api_client.get(self.url)
 
         assert response.status_code == 403
         assert response.data == {
-            "detail": "You are not part of this comparison.",
+            "detail": "You are not a member of this session.",
         }
+        mock_get_result.assert_called_once_with(
+            user=user,
+            comparison_id="comparison-id",
+        )
 
-    @patch(
-        "apps.comparisons.views.get_comparison_result"
-    )
+    @patch("apps.comparisons.views.get_comparison_result")
     def test_returns_422_when_there_is_insufficient_data(
         self,
         mock_get_result,
@@ -93,30 +86,22 @@ class TestComparisonDetailView:
             "Both participants need imported ratings."
         )
 
-        response = api_client.get(
-            reverse(
-                "comparison-detail",
-                kwargs={"comparison_id": "comparison-id"},
-            ),
-        )
+        response = api_client.get(self.url)
 
         assert response.status_code == 422
         assert response.data == {
             "detail": "Both participants need imported ratings.",
         }
 
-    @patch(
-        "apps.comparisons.views.attach_participants"
-    )
-    @patch(
-        "apps.comparisons.views.attach_tmdb_metadata"
-    )
-    @patch(
-        "apps.comparisons.views.serialize_result"
-    )
-    @patch(
-        "apps.comparisons.views.get_comparison_result"
-    )
+        mock_get_result.assert_called_once_with(
+            user=user,
+            comparison_id="comparison-id",
+        )
+
+    @patch("apps.comparisons.views.attach_participants")
+    @patch("apps.comparisons.views.attach_tmdb_metadata")
+    @patch("apps.comparisons.views.serialize_result")
+    @patch("apps.comparisons.views.get_comparison_result")
     def test_returns_serialized_result(
         self,
         mock_get_result,
@@ -129,6 +114,7 @@ class TestComparisonDetailView:
         api_client.force_authenticate(user=user)
 
         result = MagicMock()
+        result.comparison = MagicMock()
         mock_get_result.return_value = result
 
         serialized = {
@@ -138,19 +124,23 @@ class TestComparisonDetailView:
             "recommendations": [],
         }
 
-        mock_serialize_result.return_value = serialized
-        mock_attach_tmdb_metadata.return_value = serialized
-        mock_attach_participants.return_value = serialized
+        with_metadata = {
+            **serialized,
+            "metadata_attached": True,
+        }
+        with_participants = {
+            **with_metadata,
+            "participants_attached": True,
+        }
 
-        response = api_client.get(
-            reverse(
-                "comparison-detail",
-                kwargs={"comparison_id": "comparison-id"},
-            ),
-        )
+        mock_serialize_result.return_value = serialized
+        mock_attach_tmdb_metadata.return_value = with_metadata
+        mock_attach_participants.return_value = with_participants
+
+        response = api_client.get(self.url)
 
         assert response.status_code == 200
-        assert response.data == serialized
+        assert response.data == with_participants
 
         mock_get_result.assert_called_once_with(
             user=user,
@@ -159,14 +149,12 @@ class TestComparisonDetailView:
         mock_serialize_result.assert_called_once_with(result)
         mock_attach_tmdb_metadata.assert_called_once_with(serialized)
         mock_attach_participants.assert_called_once_with(
-            serialized,
+            with_metadata,
             result.comparison,
             user,
         )
 
-    @patch(
-        "apps.comparisons.views.get_comparison_result"
-    )
+    @patch("apps.comparisons.views.get_comparison_result")
     def test_returns_default_message_for_empty_insufficient_data_error(
         self,
         mock_get_result,
@@ -176,14 +164,44 @@ class TestComparisonDetailView:
         api_client.force_authenticate(user=user)
         mock_get_result.side_effect = InsufficientDataError()
 
-        response = api_client.get(
-            reverse(
-                "comparison-detail",
-                kwargs={"comparison_id": "comparison-id"},
-            ),
-        )
+        response = api_client.get(self.url)
 
         assert response.status_code == 422
         assert response.data == {
             "detail": "Not enough data to compare.",
         }
+
+        mock_get_result.assert_called_once_with(
+            user=user,
+            comparison_id="comparison-id",
+        )
+
+    @patch("apps.comparisons.views.attach_participants")
+    @patch("apps.comparisons.views.attach_tmdb_metadata")
+    @patch("apps.comparisons.views.serialize_result")
+    @patch("apps.comparisons.views.get_comparison_result")
+    def test_does_not_serialize_when_result_fails(
+        self,
+        mock_get_result,
+        mock_serialize_result,
+        mock_attach_tmdb_metadata,
+        mock_attach_participants,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_result.side_effect = InsufficientDataError
+
+        response = api_client.get(self.url)
+
+        assert response.status_code == 422
+        mock_serialize_result.assert_not_called()
+        mock_attach_tmdb_metadata.assert_not_called()
+        mock_attach_participants.assert_not_called()
+
+    def test_rejects_unsupported_methods(self, api_client, user):
+        api_client.force_authenticate(user=user)
+
+        response = api_client.post(self.url)
+
+        assert response.status_code == 405

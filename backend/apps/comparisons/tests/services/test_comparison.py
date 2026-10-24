@@ -1,28 +1,43 @@
 from __future__ import annotations
 
+import copy
+import uuid
+from contextlib import ExitStack
+from datetime import date, datetime, timezone as dt_timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
 from django.utils import timezone
 
-from apps.comparisons.exceptions import (
-    ComparisonNotFoundError,
-    InsufficientDataError,
-    NotComparisonMemberError,
-)
+from apps.common.enums import SessionType
+from apps.comparisons.exceptions import ComparisonNotFoundError, InsufficientDataError
+from apps.comparisons.models import Comparison, ComparisonSession
 from apps.comparisons.services.comparison import (
     FIT_VERSION,
     _get_comparison,
+    _json_safe,
+    _serialize_candidates,
+    attach_participants,
+    attach_tmdb_metadata,
     get_comparison_result,
+    list_comparisons,
 )
 from apps.comparisons.services.metrics import METRICS_VERSION
 from apps.comparisons.services.snapshot import UserLibrary
 from apps.recommendations.services.joint_profile import DEFAULT_POOL_SIZE
+from apps.common.exceptions import NotSessionMemberError
+from apps.movies.models import Movie
+import pytest
+
+User = get_user_model()
+MODULE = "apps.comparisons.services.comparison"
 
 
-class ComparisonResultServiceTests(TestCase):
+@pytest.mark.django_db
+class TestComparisonResultService:
     def _comparison(self, users):
         comparison = mock.Mock()
 
@@ -32,7 +47,6 @@ class ComparisonResultServiceTests(TestCase):
         comparison.metrics_json = {}
         comparison.inputs_hash = ""
 
-        # ComparisonResult works with real datetime values.
         generated_at = timezone.now()
         comparison.created_at = generated_at
         comparison.updated_at = generated_at
@@ -50,7 +64,7 @@ class ComparisonResultServiceTests(TestCase):
                 Exception("not found")
             )
 
-            with self.assertRaises(Exception):
+            with pytest.raises(Exception):
                 _get_comparison(
                     mock.Mock(pk="user-1"),
                     "comparison-1",
@@ -64,7 +78,7 @@ class ComparisonResultServiceTests(TestCase):
                 ValidationError("invalid")
             )
 
-            with self.assertRaises(ComparisonNotFoundError):
+            with pytest.raises(ComparisonNotFoundError):
                 _get_comparison(
                     mock.Mock(pk="user-1"),
                     "comparison-1",
@@ -78,7 +92,7 @@ class ComparisonResultServiceTests(TestCase):
                 ValueError("invalid")
             )
 
-            with self.assertRaises(ComparisonNotFoundError):
+            with pytest.raises(ComparisonNotFoundError):
                 _get_comparison(
                     mock.Mock(pk="user-1"),
                     "comparison-1",
@@ -96,7 +110,7 @@ class ComparisonResultServiceTests(TestCase):
         ) as objects:
             objects.prefetch_related.return_value.get.return_value = comparison
 
-            with self.assertRaises(NotComparisonMemberError):
+            with pytest.raises(NotSessionMemberError):
                 _get_comparison(
                     user,
                     "comparison-1",
@@ -119,11 +133,8 @@ class ComparisonResultServiceTests(TestCase):
                 "comparison-1",
             )
 
-        self.assertIs(result, comparison)
-        self.assertEqual(
-            [u.pk for u in users],
-            ["a", "b"],
-        )
+        assert result is comparison
+        assert [u.pk for u in users] == ["a", "b"]
 
     def test_get_comparison_result_requires_exactly_two_users(self):
         user = mock.Mock(pk="user-1")
@@ -141,7 +152,7 @@ class ComparisonResultServiceTests(TestCase):
                 [user, other, third],
             ),
         ):
-            with self.assertRaises(InsufficientDataError):
+            with pytest.raises(InsufficientDataError):
                 get_comparison_result(
                     user=user,
                     comparison_id="comparison-1",
@@ -176,7 +187,7 @@ class ComparisonResultServiceTests(TestCase):
             "apps.comparisons.services.comparison.compute_inputs_hash",
             return_value="hash",
         ):
-            with self.assertRaises(InsufficientDataError):
+            with pytest.raises(InsufficientDataError):
                 get_comparison_result(
                     user=user_a,
                     comparison_id="comparison-1",
@@ -256,19 +267,13 @@ class ComparisonResultServiceTests(TestCase):
                 comparison_id="comparison-1",
             )
 
-        self.assertEqual(
-            comparison.metrics_json,
-            {
-                "version": METRICS_VERSION,
-                "public": {"new": True},
-                "internal": {"internal": True},
-            },
-        )
+        assert comparison.metrics_json == {
+            "version": METRICS_VERSION,
+            "public": {"new": True},
+            "internal": {"internal": True},
+        }
 
-        self.assertEqual(
-            comparison.inputs_hash,
-            "new-hash",
-        )
+        assert comparison.inputs_hash == "new-hash"
 
         mock_profiles.assert_called_once_with(
             [user_a, user_b]
@@ -281,10 +286,7 @@ class ComparisonResultServiceTests(TestCase):
             profiles[1],
         )
 
-        self.assertEqual(
-            result.narrative,
-            "cached",
-        )
+        assert result.narrative == "cached"
 
     def test_get_comparison_result_returns_cached_narrative(self):
         user_a = mock.Mock(pk="user-1")
@@ -351,24 +353,16 @@ class ComparisonResultServiceTests(TestCase):
                 comparison_id="comparison-1",
             )
 
-        self.assertEqual(
-            result.narrative,
-            "Cached summary",
-        )
+        assert result.narrative == "Cached summary"
 
-        self.assertEqual(
-            result.recommendations,
-            [
-                {
-                    "movie_id": 1,
-                    "fit_version": FIT_VERSION,
-                },
-            ],
-        )
+        assert result.recommendations == [
+            {
+                "movie_id": 1,
+                "fit_version": FIT_VERSION,
+            },
+        ]
 
-        self.assertTrue(
-            result.narrative_available
-        )
+        assert result.narrative_available
 
         mock_candidates.assert_not_called()
         mock_client.assert_not_called()
@@ -461,33 +455,25 @@ class ComparisonResultServiceTests(TestCase):
                 comparison_id="comparison-1",
             )
 
-        self.assertEqual(
-            result.narrative,
-            "You both like science fiction.",
-        )
+        assert result.narrative == "You both like science fiction."
 
-        self.assertEqual(
-            result.recommendations,
-            [
-                {
-                    "movie_id": 42,
-                    "title": "Dune",
-                    "release_year": 2021,
-                    "genres": [],
-                    "score": 0.912,
-                    "fit_version": FIT_VERSION,
-                    "per_user": {
-                        "user-1": 0.81,
-                        "user-2": 0.93,
-                    },
-                    "justification": "Strong match for both users.",
-                }
-            ],
-        )
+        assert result.recommendations == [
+            {
+                "movie_id": 42,
+                "title": "Dune",
+                "release_year": 2021,
+                "genres": [],
+                "score": 0.912,
+                "fit_version": FIT_VERSION,
+                "per_user": {
+                    "user-1": 0.81,
+                    "user-2": 0.93,
+                },
+                "justification": "Strong match for both users.",
+            }
+        ]
 
-        self.assertTrue(
-            result.narrative_available
-        )
+        assert result.narrative_available
 
         client.generate.assert_called_once()
         mock_narrative.objects.update_or_create.assert_called_once()
@@ -570,19 +556,11 @@ class ComparisonResultServiceTests(TestCase):
                 comparison_id="comparison-1",
             )
 
-        self.assertEqual(
-            result.narrative,
-            "",
-        )
+        assert result.narrative == ""
 
-        self.assertEqual(
-            result.recommendations[0]["justification"],
-            "",
-        )
+        assert result.recommendations[0]["justification"] == ""
 
-        self.assertFalse(
-            result.narrative_available
-        )
+        assert not result.narrative_available
 
         mock_narrative.objects.update_or_create.assert_not_called()
 
@@ -672,10 +650,7 @@ class ComparisonResultServiceTests(TestCase):
                 comparison_id="comparison-1",
             )
 
-        self.assertEqual(
-            result.narrative,
-            "",
-        )
+        assert result.narrative == ""
 
         mock_profiles.assert_called_once_with(
             [user_a, user_b]
@@ -693,3 +668,493 @@ class ComparisonResultServiceTests(TestCase):
             profiles=profiles,
             limit=DEFAULT_POOL_SIZE,
         )
+
+
+class TestJsonSafe:
+    def test_converts_uuid_date_decimal_and_datetime(self):
+        uid = uuid.uuid4()
+
+        result = _json_safe(
+            {
+                "id": uid,
+                "day": date(2024, 1, 2),
+                "price": Decimal("1.5"),
+                "at": datetime(2024, 1, 2, 3, 4, 5, tzinfo=dt_timezone.utc),
+            }
+        )
+
+        assert result == {
+            "id": str(uid),
+            "day": "2024-01-02",
+            "price": "1.5",
+            "at": "2024-01-02T03:04:05Z",
+        }
+
+    def test_turns_tuples_into_lists_and_handles_nesting(self):
+        assert _json_safe({"a": (1, 2), "b": [{"c": (3,)}]}) == {"a": [1, 2], "b": [{"c": [3]}]}
+
+    def test_leaves_plain_values_untouched(self):
+        value = {"a": 1, "b": "x", "c": None, "d": [1.5, True]}
+
+        assert _json_safe(value) == value
+
+
+@pytest.mark.django_db
+class TestListComparisons:
+    def _comparison(self, *users):
+        room = ComparisonSession.objects.create(
+            session_type=SessionType.COMPARISON_SESSION
+        )
+        room.users.add(*users)
+        return Comparison.objects.create(session=room)
+
+    def test_returns_only_comparisons_of_the_users_sessions(
+        self, user, another_user, other_user
+    ):
+        first = self._comparison(user, another_user)
+        second = self._comparison(another_user, other_user)
+
+        assert {c.pk for c in list_comparisons(user)} == {first.pk}
+        assert {c.pk for c in list_comparisons(other_user)} == {second.pk}
+        assert {c.pk for c in list_comparisons(another_user)} == {first.pk, second.pk}
+
+    def test_returns_nothing_for_user_without_sessions(
+        self, user, another_user, other_user
+    ):
+        self._comparison(user, another_user)
+
+        assert list(list_comparisons(other_user)) == []
+
+    def test_does_not_duplicate_comparisons(self, user, another_user):
+        self._comparison(user, another_user)
+
+        assert len(list(list_comparisons(user))) == 1
+
+
+class TestSerializeCandidates:
+    def _candidate(self, pk=42, title="Dune", score=0.91234, per_user=(0.81234, 0.9)):
+        movie = mock.Mock(pk=pk, title=title, release_year=2021)
+        movie.genres.all.return_value = [
+            SimpleNamespace(name="Sci-Fi"),
+            SimpleNamespace(name="Adventure"),
+        ]
+        return SimpleNamespace(
+            movie=movie, score=score, per_user=list(per_user)
+        )
+
+    def test_serializes_candidate_fields(self):
+        result = _serialize_candidates(
+            [self._candidate()], {1: "Why"}, ["u1", "u2"]
+        )
+
+        assert result == [
+            {
+                "movie_id": 42,
+                "title": "Dune",
+                "release_year": 2021,
+                "genres": ["Sci-Fi", "Adventure"],
+                "score": 0.912,
+                "fit_version": FIT_VERSION,
+                "per_user": {"u1": 0.812, "u2": 0.9},
+                "justification": "Why",
+            }
+        ]
+
+    def test_reasons_are_matched_by_one_based_position(self):
+        result = _serialize_candidates(
+            [self._candidate(pk=1), self._candidate(pk=2)],
+            {2: "second"},
+            ["u1", "u2"],
+        )
+
+        assert result[0]["justification"] == ""
+        assert result[1]["justification"] == "second"
+
+    def test_empty_candidates_return_empty_list(self):
+        assert _serialize_candidates([], {}, ["u1", "u2"]) == []
+
+    def test_output_is_json_safe(self):
+        uid = uuid.uuid4()
+
+        result = _serialize_candidates(
+            [self._candidate(pk=uid)], {}, ["u1", "u2"]
+        )
+
+        assert result[0]["movie_id"] == str(uid)
+
+
+@pytest.mark.django_db
+class TestAttachTmdbMetadata:
+    @pytest.fixture(autouse=True)
+    def _movies(self, db):
+        self.dune = Movie.objects.create(
+            tmdb_id=3001, title="Dune", release_year=2020
+        )
+        self.alien = Movie.objects.create(
+            tmdb_id=3002, title="Alien", release_year=1978
+        )
+        self.heat = Movie.objects.create(
+            tmdb_id=3003, title="Heat", release_year=1994
+        )
+
+    def _payload(self):
+        return {
+            "metrics": {
+                "compatibility_score": 80,
+                "agreements": [
+                    {
+                        "movie_id": str(self.dune.pk),
+                        "title": "Dune",
+                        "release_year": 2020,
+                    }
+                ],
+                "divergences": [
+                    {
+                        "movie_id": str(self.alien.pk),
+                        "title": "Alien",
+                        "release_year": 1978,
+                    }
+                ],
+            },
+            "recommendations": [
+                {
+                    "movie_id": str(self.heat.pk),
+                    "title": "Heat",
+                    "release_year": 1994,
+                    "genres": ["Crime"],
+                }
+            ],
+        }
+
+    def _meta(self, title, year, poster, genres):
+        return {
+            "title": title,
+            "release_year": year,
+            "poster_url": poster,
+            "genres": genres,
+        }
+
+    def _attach(self, payload, metadata):
+        with mock.patch(
+            f"{MODULE}.fetch_card_metadata_bulk", return_value=metadata
+        ) as fetch:
+            result = attach_tmdb_metadata(payload)
+        return result, fetch
+
+    def test_returns_payload_unchanged_without_movie_ids(self):
+        payload = {"metrics": {}, "recommendations": []}
+
+        result, fetch = self._attach(payload, {})
+
+        assert result is payload
+        fetch.assert_not_called()
+
+    def test_ignores_entries_without_movie_id_when_collecting_ids(self):
+        payload = {
+            "metrics": {
+                "agreements": [
+                    {"movie_id": None, "title": "X", "release_year": None}
+                ]
+            }
+        }
+
+        result, fetch = self._attach(payload, {})
+
+        assert result is payload
+        fetch.assert_not_called()
+
+    def test_requests_metadata_for_all_tmdb_ids_at_once(self):
+        _, fetch = self._attach(self._payload(), {})
+
+        fetch.assert_called_once_with({3001, 3002, 3003})
+
+    def test_enriches_agreements_divergences_and_recommendations(self):
+        metadata = {
+            3001: self._meta("Dune (TMDB)", 2021, "http://p/dune.jpg", ["SF"]),
+            3002: self._meta("Alien (TMDB)", 1979, "http://p/alien.jpg", ["H"]),
+            3003: self._meta("Heat (TMDB)", 1995, "http://p/heat.jpg", ["C"]),
+        }
+
+        result, _ = self._attach(self._payload(), metadata)
+
+        agreement = result["metrics"]["agreements"][0]
+        assert agreement["title"] == "Dune (TMDB)"
+        assert agreement["release_year"] == 2021
+        assert agreement["poster_url"] == "http://p/dune.jpg"
+        assert agreement["tmdb_id"] == 3001
+        assert "genres" not in agreement
+
+        divergence = result["metrics"]["divergences"][0]
+        assert divergence["title"] == "Alien (TMDB)"
+        assert divergence["tmdb_id"] == 3002
+
+        recommendation = result["recommendations"][0]
+        assert recommendation["title"] == "Heat (TMDB)"
+        assert recommendation["genres"] == ["C"]
+        assert recommendation["poster_url"] == "http://p/heat.jpg"
+
+    def test_preserves_other_metrics(self):
+        result, _ = self._attach(self._payload(), {})
+
+        assert result["metrics"]["compatibility_score"] == 80
+
+    def test_falls_back_to_local_values_when_metadata_is_blank(self):
+        metadata = {3003: self._meta("", None, "http://p/heat.jpg", [])}
+
+        result, _ = self._attach(self._payload(), metadata)
+
+        recommendation = result["recommendations"][0]
+        assert recommendation["title"] == "Heat"
+        assert recommendation["release_year"] == 1994
+        assert recommendation["genres"] == ["Crime"]
+        assert recommendation["poster_url"] == "http://p/heat.jpg"
+
+    def test_uses_empty_poster_when_tmdb_has_no_metadata(self):
+        result, _ = self._attach(self._payload(), {})
+
+        agreement = result["metrics"]["agreements"][0]
+        assert agreement["poster_url"] == ""
+        assert agreement["tmdb_id"] == 3001
+        assert agreement["title"] == "Dune"
+
+    def test_unknown_or_missing_movie_ids_get_no_tmdb_id(self):
+        payload = self._payload()
+        payload["recommendations"] = [
+            {"movie_id": "00000000-0000-0000-0000-000000000000", "title": "Ghost", "release_year": 2000},
+            {"movie_id": None, "title": "Nameless", "release_year": None},
+        ]
+
+        result, _ = self._attach(payload, {})
+
+        for rec in result["recommendations"]:
+            assert rec["tmdb_id"] is None
+            assert rec["poster_url"] == ""
+
+    def test_does_not_mutate_input_payload(self):
+        payload = self._payload()
+        original = copy.deepcopy(payload)
+
+        self._attach(
+            payload,
+            {3001: self._meta("Other", 1999, "http://p/x.jpg", ["X"])},
+        )
+
+        assert payload == original
+
+    def test_payload_without_recommendations_key_is_supported(self):
+        payload = self._payload()
+        del payload["recommendations"]
+
+        result, _ = self._attach(payload, {})
+
+        assert result["recommendations"] == []
+        assert len(result["metrics"]["agreements"]) == 1
+
+
+class TestAttachParticipants:
+    def test_adds_participants_and_current_user(self):
+        alice = SimpleNamespace(pk=1, username="alice")
+        bob = SimpleNamespace(pk=2, username="bob")
+        comparison = SimpleNamespace(
+            session=SimpleNamespace(users=SimpleNamespace(all=lambda: [alice, bob]))
+        )
+        payload = {"metrics": {"x": 1}}
+
+        result = attach_participants(payload, comparison, bob)
+
+        assert result["participants"] == {"1": "alice", "2": "bob"}
+        assert result["current_user_id"] == "2"
+        assert result["metrics"] == {"x": 1}
+
+    def test_does_not_mutate_input_payload(self):
+        user = SimpleNamespace(pk=1, username="alice")
+        comparison = SimpleNamespace(
+            session=SimpleNamespace(users=SimpleNamespace(all=lambda: [user]))
+        )
+        payload = {"metrics": {}}
+
+        attach_participants(payload, comparison, user)
+
+        assert payload == {"metrics": {}}
+
+
+@pytest.mark.django_db
+class TestGetComparisonResultCaching:
+    """Cache / recompute decisions of get_comparison_result."""
+
+    @pytest.fixture(autouse=True)
+    def _users(self):
+        self.users = [mock.Mock(pk="user-1"), mock.Mock(pk="user-2")]
+
+    def _comparison(self, *, inputs_hash="hash", metrics_json=None):
+        comparison = mock.Mock()
+        comparison.pk = "comparison-1"
+        comparison.inputs_hash = inputs_hash
+        comparison.metrics_json = (
+            {"version": METRICS_VERSION, "public": {}, "internal": {}}
+            if metrics_json is None
+            else metrics_json
+        )
+        return comparison
+
+    def _generated(self):
+        return SimpleNamespace(
+            summary="fresh",
+            reasons={},
+            individual={"user-1": "a", "user-2": "b"},
+        )
+
+    def _cached(self, *, recommendations=None, individual=None):
+        return SimpleNamespace(
+            narrative_summary="cached",
+            recommendations=(
+                [{"movie_id": 1, "fit_version": FIT_VERSION}]
+                if recommendations is None
+                else recommendations
+            ),
+            individual_summaries=(
+                {"user-1": "a", "user-2": "b"}
+                if individual is None
+                else individual
+            ),
+        )
+
+    def _run(self, comparison, *, cached=None, generated=None):
+        libraries = [
+            UserLibrary(user_id=u.pk, films={("dune", 2021): mock.Mock()})
+            for u in self.users
+        ]
+        client = mock.Mock()
+        client.model = "test-model"
+        client.generate.return_value = generated
+
+        patches = {
+            "_get_comparison": {"return_value": (comparison, self.users)},
+            "load_library": {"side_effect": libraries},
+            "compute_inputs_hash": {"return_value": "hash"},
+            "compute_metrics": {
+                "return_value": SimpleNamespace(
+                    public={"score": 1}, internal={"i": 1}
+                )
+            },
+            "user_taste_profiles": {"return_value": ["pa", "pb"]},
+            "find_joint_candidates": {"return_value": []},
+            "calibrate_fits": {"return_value": []},
+            "ComparisonNarrativeClient": {"return_value": client},
+        }
+        with ExitStack() as stack:
+            mocks = {
+                name: stack.enter_context(mock.patch(f"{MODULE}.{name}", **kw))
+                for name, kw in patches.items()
+            }
+            narrative_model = stack.enter_context(
+                mock.patch(f"{MODULE}.ComparisonNarrative")
+            )
+            narrative_model.objects.filter.return_value.first.return_value = (
+                cached
+            )
+            result = get_comparison_result(
+                user=self.users[0], comparison_id="comparison-1"
+            )
+        return result, mocks, narrative_model, client
+
+    def test_does_not_recompute_metrics_when_hash_and_version_match(self):
+        comparison = self._comparison()
+
+        _, mocks, _, _ = self._run(comparison, generated=self._generated())
+
+        mocks["compute_metrics"].assert_not_called()
+        comparison.save.assert_not_called()
+
+    def test_recomputes_metrics_when_version_is_outdated(self):
+        comparison = self._comparison(
+            metrics_json={
+                "version": METRICS_VERSION - 1,
+                "public": {},
+                "internal": {},
+            }
+        )
+
+        _, mocks, _, _ = self._run(comparison, generated=self._generated())
+
+        mocks["compute_metrics"].assert_called_once()
+        comparison.save.assert_called_once_with(
+            update_fields=["metrics_json", "inputs_hash", "generated_at"]
+        )
+        assert comparison.metrics_json["version"] == METRICS_VERSION
+        assert comparison.metrics_json["public"] == {"score": 1}
+
+    def test_recomputes_metrics_when_metrics_json_is_empty(self):
+        comparison = self._comparison()
+        comparison.metrics_json = {}
+
+        _, mocks, _, _ = self._run(comparison, generated=self._generated())
+
+        mocks["compute_metrics"].assert_called_once()
+
+    def test_serves_cache_with_empty_recommendations(self):
+        _, _, _, client = self._run(
+            self._comparison(), cached=self._cached(recommendations=[])
+        )
+
+        client.generate.assert_not_called()
+
+    def test_regenerates_when_cached_fit_version_is_outdated(self):
+        cached = self._cached(
+            recommendations=[{"movie_id": 1, "fit_version": FIT_VERSION - 1}]
+        )
+
+        result, _, _, client = self._run(
+            self._comparison(), cached=cached, generated=self._generated()
+        )
+
+        client.generate.assert_called_once()
+        assert result.narrative == "fresh"
+
+    def test_regenerates_when_cached_has_no_individual_summaries(self):
+        result, _, _, client = self._run(
+            self._comparison(),
+            cached=self._cached(individual={}),
+            generated=self._generated(),
+        )
+
+        client.generate.assert_called_once()
+        assert result.narrative == "fresh"
+
+    def test_persists_generated_narrative_with_model_version(self):
+        comparison = self._comparison()
+
+        _, _, narrative_model, _ = self._run(
+            comparison, generated=self._generated()
+        )
+
+        narrative_model.objects.update_or_create.assert_called_once()
+        kwargs = narrative_model.objects.update_or_create.call_args.kwargs
+        assert kwargs["comparison"] == comparison
+        assert kwargs["inputs_hash"] == "hash"
+        assert kwargs["defaults"] == {
+            "narrative_summary": "fresh",
+            "individual_summaries": {"user-1": "a", "user-2": "b"},
+            "recommendations": [],
+            "model_version": "test-model",
+        }
+
+    def test_deletes_narratives_from_older_inputs_after_generation(self):
+        comparison = self._comparison()
+
+        self._run(comparison, generated=self._generated())
+
+        comparison.narratives.exclude.assert_called_once_with(
+            inputs_hash="hash"
+        )
+        comparison.narratives.exclude.return_value.delete.assert_called_once_with()
+
+    def test_does_not_persist_or_delete_when_generation_fails(self):
+        comparison = self._comparison()
+
+        result, _, narrative_model, _ = self._run(comparison, generated=None)
+
+        narrative_model.objects.update_or_create.assert_not_called()
+        comparison.narratives.exclude.assert_not_called()
+        assert result.narrative == ""
+        assert not result.narrative_available

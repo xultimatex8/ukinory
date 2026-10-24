@@ -1,47 +1,29 @@
-import { useRef, useState } from "react";
 import { Check, Loader2, Upload } from "lucide-react";
 
-import { importExport, type ImportResult } from "../services/imports";
-import { getErrorMessage } from "../utils/errors";
+import { useLetterboxdImport } from "../hooks/useLetterboxdImport";
+import type { ImportJobStatus, ImportResult } from "../services/imports";
 
 interface ImportPanelProps {
   onImported?: (result: ImportResult) => void;
 }
 
-const STATUS_LABELS: Record<string, string> = {
+const STATUS_LABELS: Partial<Record<ImportJobStatus, string>> = {
   pending: "Queued — waiting for a free worker…",
   running: "Processing your export…",
 };
 
 export default function ImportPanel({ onImported }: ImportPanelProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const [files, setFiles] = useState<File[]>([]);
-  const [status, setStatus] = useState<string | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ImportResult | null>(null);
-
-  const handleImport = async () => {
-    if (files.length === 0 || isImporting) return;
-
-    setIsImporting(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const imported = await importExport(files, setStatus);
-      setResult(imported);
-      setFiles([]);
-      if (inputRef.current) inputRef.current.value = "";
-      onImported?.(imported);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setIsImporting(false);
-      setStatus(null);
-    }
-  };
+  const {
+    inputRef,
+    files,
+    status,
+    isImporting,
+    result,
+    error,
+    replaceFiles,
+    openFilePicker,
+    startImport,
+  } = useLetterboxdImport(onImported);
 
   return (
     <div className="border border-border bg-surface p-5">
@@ -57,7 +39,7 @@ export default function ImportPanel({ onImported }: ImportPanelProps) {
         accept=".zip,.csv"
         multiple
         disabled={isImporting}
-        onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+        onChange={(event) => replaceFiles(Array.from(event.target.files ?? []))}
         className="hidden"
       />
 
@@ -65,7 +47,7 @@ export default function ImportPanel({ onImported }: ImportPanelProps) {
         <button
           type="button"
           disabled={isImporting}
-          onClick={() => inputRef.current?.click()}
+          onClick={openFilePicker}
           className="flex cursor-pointer items-center justify-center gap-2 border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-secondary transition hover:border-primary hover:text-primary disabled:cursor-auto disabled:opacity-40"
         >
           <Upload size={15} />
@@ -75,7 +57,7 @@ export default function ImportPanel({ onImported }: ImportPanelProps) {
         <button
           type="button"
           disabled={files.length === 0 || isImporting}
-          onClick={() => void handleImport()}
+          onClick={() => void startImport()}
           className="flex cursor-pointer items-center justify-center gap-2 border border-primary bg-primary px-4 py-2.5 text-sm font-medium text-background transition hover:opacity-90 disabled:cursor-auto disabled:opacity-40"
         >
           {isImporting && <Loader2 size={15} className="animate-spin" />}

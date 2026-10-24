@@ -79,7 +79,6 @@ def _ranked(counter: Counter, n: int) -> list[str]:
 
 
 def _user_profile(lib: UserLibrary, shared_ratings: list[float]) -> dict:
-    """Compact, anonymous-friendly summary of one person's taste."""
     rated = [f for f in lib.films.values() if f.rating is not None]
     top_films = sorted(rated, key=lambda f: (-f.rating, not f.liked, f.title))
     return {

@@ -1,10 +1,14 @@
 import { apiFetch } from "./api";
+import {
+  buildSocketUrl,
+  type Invite,
+  type ParticipantState,
+} from "./sessions";
 
 export interface SwipeSession {
   id: string;
   type: string;
   status: string;
-  leave_token: string | null;
 }
 
 export interface MovieRecommendation {
@@ -26,6 +30,43 @@ export interface RecommendationResponse {
   finished: boolean;
   candidate_id: string | null;
   movie: MovieRecommendation | null;
+}
+
+export interface MatchEvent {
+  candidate_id: string;
+  movie_id: string;
+  tmdb_id: number;
+  title: string;
+  release_year: number | null;
+}
+
+export interface SwipeResult {
+  matched: boolean;
+  match: MatchEvent | null;
+}
+
+export interface PairedSessionState extends ParticipantState {
+  type: string;
+  current_user_id: string;
+  matches_count: number;
+}
+
+export type PairedInvite = Invite;
+
+export interface CreatePairedSessionResponse {
+  session: PairedSessionState;
+  invite: PairedInvite;
+}
+
+export interface SessionMatch {
+  candidate_id: string;
+  matched_at: string | null;
+  movie: {
+    tmdb_id: number;
+    title: string;
+    release_year: number | null;
+    poster_url: string;
+  };
 }
 
 interface JustificationResponse {
@@ -97,8 +138,8 @@ export async function recordSwipe(
   sessionId: string,
   candidateId: string,
   action: "SKIP" | "WATCHLIST",
-): Promise<void> {
-  await apiFetch(
+): Promise<SwipeResult> {
+  const response = await apiFetch(
     `/api/swipe-sessions/${sessionId}/swipe/`,
     {
       method: "POST",
@@ -111,6 +152,8 @@ export async function recordSwipe(
       }),
     },
   );
+
+  return response.json();
 }
 
 export async function endSwipeSession(
@@ -124,6 +167,12 @@ export async function endSwipeSession(
   );
 
   return response.blob();
+}
+
+export async function leaveSwipeSession(sessionId: string): Promise<void> {
+  await apiFetch(`/api/swipe-sessions/${sessionId}/leave/`, {
+    method: "DELETE",
+  });
 }
 
 export async function getSwipeSession(
@@ -144,4 +193,46 @@ export async function sendHeartbeat(sessionId: string): Promise<void> {
   } catch {
     // The next heartbeat will retry.
   }
+}
+
+export async function createPairedSwipeSession(): Promise<CreatePairedSessionResponse> {
+  const response = await apiFetch("/api/swipe-sessions/paired/", {
+    method: "POST",
+  });
+
+  return response.json();
+}
+
+export async function getPairedSessionState(
+  sessionId: string,
+): Promise<PairedSessionState> {
+  const response = await apiFetch(`/api/swipe-sessions/${sessionId}/paired/`, {
+    method: "GET",
+  });
+
+  return response.json();
+}
+
+export async function regeneratePairedInvite(
+  sessionId: string,
+): Promise<PairedInvite> {
+  const response = await apiFetch(`/api/swipe-sessions/${sessionId}/invite/`, {
+    method: "POST",
+  });
+
+  return response.json();
+}
+
+export async function getSessionMatches(
+  sessionId: string,
+): Promise<SessionMatch[]> {
+  const response = await apiFetch(`/api/swipe-sessions/${sessionId}/matches/`, {
+    method: "GET",
+  });
+
+  return response.json();
+}
+
+export function buildSessionSocketUrl(sessionId: string, token: string): string {
+  return buildSocketUrl(`/ws/swipe-sessions/${sessionId}/`, token);
 }

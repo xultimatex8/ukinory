@@ -6,11 +6,8 @@ from django.urls import resolve, reverse
 from rest_framework.test import APIClient
 from unittest.mock import MagicMock, patch
 
-from apps.comparisons.exceptions import RoomNotReadyError
-from apps.comparisons.views import (
-    RoomWatchlistExportView,
-    RoomWatchlistItemView,
-)
+from apps.comparisons.views import RoomWatchlistExportView, RoomWatchlistItemView
+from apps.common.exceptions import NotSessionMemberError, SessionNotReadyError
 
 ROOM_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -108,9 +105,50 @@ class TestRoomWatchlistExportView:
     ):
         api_client.force_authenticate(user=user)
         mock_get_user_room.return_value = MagicMock()
-        mock_export.side_effect = RoomNotReadyError
+        mock_export.side_effect = SessionNotReadyError
 
         response = api_client.get(_url())
 
         assert response.status_code == 409
-        assert response.data == {"detail": "The comparison is not ready yet."}
+
+    @patch("apps.comparisons.views.export_recommendations_csv")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_returns_403_when_user_is_not_a_member(
+        self,
+        mock_get_user_room,
+        mock_export,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_user_room.side_effect = NotSessionMemberError
+
+        response = api_client.get(_url())
+
+        assert response.status_code == 403
+        mock_export.assert_not_called()
+
+    @patch("apps.comparisons.views.export_recommendations_csv")
+    @patch("apps.comparisons.views.get_user_room")
+    def test_empty_export_is_not_sent_as_a_download(
+        self,
+        mock_get_user_room,
+        mock_export,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_get_user_room.return_value = MagicMock()
+        mock_export.return_value = ("Title,Year\r\n", 0)
+
+        response = api_client.get(_url())
+
+        assert response.status_code == 404
+        assert "Content-Disposition" not in response
+
+    def test_rejects_unsupported_methods(self, api_client, user):
+        api_client.force_authenticate(user=user)
+
+        response = api_client.post(_url())
+
+        assert response.status_code == 405

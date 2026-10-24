@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { endSwipeSession } from "../services/swipeSessions";
+import { downloadBlob } from "../utils/download";
 import { getErrorMessage } from "../utils/errors";
 
 interface UseEndSwipeSessionParams {
@@ -14,22 +15,6 @@ interface UseEndSwipeSessionResult {
   clearEndSessionError: () => void;
   handleGoHome: () => void;
   handleDownloadCsv: () => void;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const downloadUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = downloadUrl;
-  link.download = filename;
-
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  setTimeout(() => {
-    URL.revokeObjectURL(downloadUrl);
-  }, 1000);
 }
 
 export function useEndSwipeSession({
@@ -58,7 +43,7 @@ export function useEndSwipeSession({
           downloadBlob(csvBlob, "ukinory_watchlist.csv");
         }
 
-        navigate("/");
+        void navigate("/");
       } catch (err) {
         setEndSessionError(getErrorMessage(err));
       } finally {

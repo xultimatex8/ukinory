@@ -7,11 +7,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
 from apps.comparisons.dtos.comparison_result import ComparisonResult
-from apps.comparisons.exceptions import (
-    ComparisonNotFoundError,
-    InsufficientDataError,
-    NotComparisonMemberError,
-)
+from apps.comparisons.exceptions import ComparisonNotFoundError, InsufficientDataError
 from apps.comparisons.models import Comparison, ComparisonNarrative
 from apps.comparisons.services.metrics import METRICS_VERSION, compute_metrics
 from apps.comparisons.services.narrative import ComparisonNarrativeClient
@@ -25,6 +21,7 @@ from apps.recommendations.services.joint_profile import (
     find_joint_candidates,
     user_taste_profiles,
 )
+from apps.common.exceptions import NotSessionMemberError
 
 RECOMMENDATION_LIMIT = 5
 FIT_VERSION = 1
@@ -50,7 +47,7 @@ def _get_comparison(user, comparison_id) -> tuple[Comparison, list]:
 
     users = sorted(comparison.session.users.all(), key=lambda u: str(u.pk))
     if user.pk not in {u.pk for u in users}:
-        raise NotComparisonMemberError
+        raise NotSessionMemberError
     return comparison, users
 
 

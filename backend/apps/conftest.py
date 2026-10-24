@@ -8,6 +8,8 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+TEST_USER_PASSWORD = "testpass123"
+
 
 @pytest.fixture(autouse=True)
 def locmem_cache(settings):
@@ -59,7 +61,7 @@ def user(db):
     return User.objects.create_user(
         email="test@example.com",
         username="testuser",
-        password="TestPassword123!",
+        password=TEST_USER_PASSWORD,
         is_guest=False,
     )
 
@@ -69,7 +71,7 @@ def another_user(db):
     return User.objects.create_user(
         email="another@example.com",
         username="anotheruser",
-        password="TestPassword123!",
+        password=TEST_USER_PASSWORD,
         is_guest=False,
     )
 
@@ -77,7 +79,8 @@ def another_user(db):
 @pytest.fixture
 def other_user(db):
     return User.objects.create_user(
-        email="bob@example.com", 
-        username="bob", 
-        password="Str0ngP4ssw0rd!"
+        email="bob@example.com",
+        username="bob",
+        password=TEST_USER_PASSWORD,
+        is_guest=False,
     )

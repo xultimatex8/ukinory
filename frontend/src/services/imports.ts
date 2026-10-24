@@ -1,20 +1,20 @@
-import { apiFetch } from "./api";
+import { ApiError, apiFetch } from "./api";
 
 export interface ImportResult {
   missing: string[];
 }
 
-type JobStatus = "pending" | "running" | "succeeded" | "failed";
+export type ImportJobStatus = "pending" | "running" | "succeeded" | "failed";
 
 interface EnqueueResponse {
   job_id: number;
-  status: JobStatus;
+  status: ImportJobStatus;
   status_url: string;
 }
 
 interface JobStatusResponse {
   job_id: number;
-  status: JobStatus;
+  status: ImportJobStatus;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -27,7 +27,7 @@ const MAX_POLL_MS = 15 * 60 * 1000;
 
 export async function importExport(
   files: File[],
-  onStatusChange?: (status: JobStatus) => void,
+  onStatusChange?: (status: ImportJobStatus) => void,
 ): Promise<ImportResult> {
   const formData = new FormData();
 
@@ -44,13 +44,7 @@ export async function importExport(
     body: formData,
   });
 
-  const body = await response.json();
-
-  if (!response.ok) {
-    throw body;
-  }
-
-  const job = body as EnqueueResponse;
+  const job = (await response.json()) as EnqueueResponse;
   onStatusChange?.(job.status);
 
   return pollForResult(job, onStatusChange);
@@ -58,7 +52,7 @@ export async function importExport(
 
 async function pollForResult(
   job: EnqueueResponse,
-  onStatusChange?: (status: JobStatus) => void,
+  onStatusChange?: (status: ImportJobStatus) => void,
 ): Promise<ImportResult> {
   const deadline = Date.now() + MAX_POLL_MS;
 
@@ -66,11 +60,7 @@ async function pollForResult(
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
     const response = await apiFetch(job.status_url);
-    const payload: JobStatusResponse = await response.json();
-
-    if (!response.ok) {
-      throw payload;
-    }
+    const payload = (await response.json()) as JobStatusResponse;
 
     onStatusChange?.(payload.status);
 
@@ -79,18 +69,13 @@ async function pollForResult(
     }
 
     if (payload.status === "failed") {
-      throw {
-        error: { message: payload.error ?? "The import failed.", code: 500 },
-      };
+      throw new ApiError(500, payload.error ?? "The import failed.");
     }
   }
 
-  throw {
-    error: {
-      message:
-        "The import is taking longer than expected. It's still running in " +
-        "the background -- check back in a bit.",
-      code: 504,
-    },
-  };
+  throw new ApiError(
+    504,
+    "The import is taking longer than expected. It's still running in " +
+      "the background -- check back in a bit.",
+  );
 }

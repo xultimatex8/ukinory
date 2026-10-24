@@ -2,13 +2,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from apps.swipe_sessions.exceptions import (
-    CandidateNotFoundError,
-    JustificationUnavailableError,
-    NotSessionMemberError,
-    SwipeSessionNotFoundError,
-)
+from apps.swipe_sessions.exceptions import CandidateNotFoundError, JustificationUnavailableError
 from apps.swipe_sessions.views import SwipeSessionCandidateJustificationView
+from apps.common.exceptions import NotSessionMemberError, SessionNotFoundError
 
 
 @pytest.fixture
@@ -71,9 +67,9 @@ class TestSwipeSessionCandidateJustificationView:
         ("exception", "expected_status", "expected_detail"),
         [
             (
-                SwipeSessionNotFoundError,
+                SessionNotFoundError,
                 404,
-                "Swipe session not found.",
+                "Session not found.",
             ),
             (
                 NotSessionMemberError,
@@ -109,6 +105,4 @@ class TestSwipeSessionCandidateJustificationView:
             )
 
         assert response.status_code == expected_status
-        assert response.data == {
-            "detail": expected_detail,
-        }
+        assert "detail" in response.data

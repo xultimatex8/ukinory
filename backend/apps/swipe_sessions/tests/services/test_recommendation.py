@@ -5,15 +5,57 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from apps.swipe_sessions.exceptions import (
+from apps.common.exceptions import (
     NotSessionMemberError,
-    SwipeSessionNotFoundError,
+    SessionFinishedError,
+    SessionNotFoundError,
+    SessionNotReadyError,
 )
-from apps.swipe_sessions.models import CandidateJustification, Swipe, SwipeSessionCandidate
+from apps.swipe_sessions.exceptions import PairedDataMissingError
+from apps.swipe_sessions.models import CandidateJustification, Swipe, SwipeSession, SwipeSessionCandidate
 from apps.swipe_sessions.services.recommendation import (
+    DEFAULT_POOL_REFILL_THRESHOLD,
+    _get_next_candidate,
+    _get_remaining_candidates,
     get_next_recommendation,
     get_next_recommendation_for_session,
 )
+from apps.common.enums import SessionStatus, SessionType, SwipeSessionType
+from apps.movies.models import Movie
+
+
+@pytest.fixture
+def movie(db):
+    return Movie.objects.create(tmdb_id=438631, title="Dune", release_year=2021)
+
+@pytest.fixture
+def another_movie(db):
+    return Movie.objects.create(tmdb_id=348, title="Alien", release_year=1979)
+
+@pytest.fixture
+def swipe_session(db):
+    return SwipeSession.objects.create(
+        type="solo", session_type=SessionType.SWIPE_SESSION
+    )
+
+@pytest.fixture
+def another_swipe_session(db):
+    return SwipeSession.objects.create(
+        type="solo", session_type=SessionType.SWIPE_SESSION
+    )
+
+@pytest.fixture
+def candidate(swipe_session, movie):
+    return SwipeSessionCandidate.objects.create(
+        session=swipe_session, movie=movie, score=0.9, position=1
+    )
+
+@pytest.fixture
+def another_candidate(swipe_session, another_movie):
+    return SwipeSessionCandidate.objects.create(
+        session=swipe_session, movie=another_movie, score=0.8, position=2
+    )
+
 
 
 class TestGetNextRecommendation:
@@ -364,7 +406,7 @@ class TestGetNextRecommendation:
 class TestGetNextRecommendationForSession:
     @pytest.mark.django_db
     def test_raises_when_session_does_not_exist(self, user):
-        with pytest.raises(SwipeSessionNotFoundError):
+        with pytest.raises(SessionNotFoundError):
             get_next_recommendation_for_session(
                 session_id=999999,
                 user=user,
@@ -407,3 +449,179 @@ class TestGetNextRecommendationForSession:
             session=swipe_session,
             user=user,
         )
+
+
+def make_paired_session(*users, status=SessionStatus.ACTIVE):
+    session = SwipeSession.objects.create(
+        type=SwipeSessionType.PAIRED,
+        session_type=SessionType.SWIPE_SESSION,
+        status=status,
+    )
+    session.users.add(*users)
+    return session
+
+
+def add_candidate(session, movie, position=1, score=0.5):
+    return SwipeSessionCandidate.objects.create(
+        session=session, movie=movie, score=score, position=position
+    )
+
+
+MODULE = "apps.swipe_sessions.services.recommendation"
+
+
+@pytest.mark.django_db
+class TestCandidateQueries:
+    def test_the_next_candidate_ignores_what_other_users_swiped(
+        self, user, another_user, swipe_session, candidate
+    ):
+        Swipe.objects.create(user=another_user, candidate=candidate, action="SKIP")
+
+        assert _get_next_candidate(swipe_session, user) == candidate
+
+    def test_the_next_candidate_is_none_when_everything_was_swiped(
+        self, user, swipe_session, candidate
+    ):
+        Swipe.objects.create(user=user, candidate=candidate, action="SKIP")
+
+        assert _get_next_candidate(swipe_session, user) is None
+
+    def test_remaining_candidates_are_counted_per_user(
+        self, user, another_user, swipe_session, candidate, another_candidate
+    ):
+        Swipe.objects.create(user=user, candidate=candidate, action="SKIP")
+        Swipe.objects.create(user=another_user, candidate=another_candidate, action="SKIP")
+
+        assert _get_remaining_candidates(swipe_session, user) == 1
+        assert _get_remaining_candidates(swipe_session, another_user) == 1
+
+    def test_swipes_in_other_sessions_do_not_reduce_the_remaining_count(
+        self, user, swipe_session, another_swipe_session, candidate, another_movie
+    ):
+        elsewhere = add_candidate(another_swipe_session, another_movie)
+        Swipe.objects.create(user=user, candidate=elsewhere, action="SKIP")
+
+        assert _get_remaining_candidates(swipe_session, user) == 1
+
+
+@pytest.mark.django_db
+class TestPairedRefill:
+    def test_a_paired_session_is_refilled_with_the_threshold(
+        self, user, another_user, movie
+    ):
+        session = make_paired_session(user, another_user)
+        add_candidate(session, movie)
+
+        with patch(f"{MODULE}.fill_paired_candidate_pool") as fill_paired, patch(
+            f"{MODULE}.fill_candidate_pool"
+        ) as fill_solo:
+            get_next_recommendation(session, user)
+
+        fill_paired.assert_called_once_with(
+            session=session, refill_threshold=DEFAULT_POOL_REFILL_THRESHOLD
+        )
+        fill_solo.assert_not_called()
+
+    def test_a_paired_session_with_plenty_of_candidates_is_not_refilled(
+        self, user, another_user, movie
+    ):
+        session = make_paired_session(user, another_user)
+        add_candidate(session, movie)
+
+        with patch(f"{MODULE}.fill_paired_candidate_pool") as fill_paired, patch(
+            f"{MODULE}._get_remaining_candidates",
+            return_value=DEFAULT_POOL_REFILL_THRESHOLD + 1,
+        ):
+            result = get_next_recommendation(session, user)
+
+        assert result is not None
+        fill_paired.assert_not_called()
+
+    def test_a_refill_can_provide_the_next_candidate(
+        self, user, another_user, movie
+    ):
+        session = make_paired_session(user, another_user)
+
+        def refill(**kwargs):
+            add_candidate(session, movie, position=1, score=0.7)
+
+        with patch(f"{MODULE}.fill_paired_candidate_pool", side_effect=refill):
+            candidate, recommendation = get_next_recommendation(session, user)
+
+        assert candidate.movie == movie
+        assert recommendation.similarity == 0.7
+
+    def test_missing_pair_data_is_ignored_while_candidates_remain(
+        self, user, another_user, movie
+    ):
+        session = make_paired_session(user, another_user)
+        add_candidate(session, movie)
+
+        with patch(
+            f"{MODULE}.fill_paired_candidate_pool", side_effect=PairedDataMissingError
+        ):
+            result = get_next_recommendation(session, user)
+
+        assert result is not None
+        assert result[0].movie == movie
+
+    def test_missing_pair_data_is_an_error_when_there_is_nothing_to_show(
+        self, user, another_user
+    ):
+        session = make_paired_session(user, another_user)
+
+        with patch(
+            f"{MODULE}.fill_paired_candidate_pool", side_effect=PairedDataMissingError
+        ):
+            with pytest.raises(PairedDataMissingError):
+                get_next_recommendation(session, user)
+
+
+@pytest.mark.django_db
+class TestRecommendationForPairedSessions:
+    def test_a_paired_session_that_has_not_started_is_not_ready(
+        self, user, another_user
+    ):
+        session = make_paired_session(user, another_user, status=SessionStatus.WAITING)
+
+        with patch(f"{MODULE}.ensure_session_active"), patch(
+            f"{MODULE}.get_next_recommendation"
+        ) as delegate:
+            with pytest.raises(SessionNotReadyError, match="has not started"):
+                get_next_recommendation_for_session(session_id=session.pk, user=user)
+
+        delegate.assert_not_called()
+
+    def test_an_active_paired_session_delegates(self, user, another_user):
+        session = make_paired_session(user, another_user, status=SessionStatus.ACTIVE)
+
+        with patch(f"{MODULE}.ensure_session_active"), patch(
+            f"{MODULE}.get_next_recommendation"
+        ) as delegate:
+            result = get_next_recommendation_for_session(session_id=session.pk, user=user)
+
+        assert result is delegate.return_value
+        delegate.assert_called_once_with(session=session, user=user)
+
+    def test_a_solo_session_may_be_used_before_it_starts(self, user, swipe_session):
+        swipe_session.users.add(user)
+        assert swipe_session.status == SessionStatus.WAITING
+
+        with patch(f"{MODULE}.ensure_session_active"), patch(
+            f"{MODULE}.get_next_recommendation"
+        ) as delegate:
+            get_next_recommendation_for_session(session_id=swipe_session.pk, user=user)
+
+        delegate.assert_called_once()
+
+    def test_a_finished_session_stops_everything(self, user, swipe_session):
+        swipe_session.users.add(user)
+
+        with patch(
+            f"{MODULE}.ensure_session_active", side_effect=SessionFinishedError
+        ) as ensure_active, patch(f"{MODULE}.get_next_recommendation") as delegate:
+            with pytest.raises(SessionFinishedError):
+                get_next_recommendation_for_session(session_id=swipe_session.pk, user=user)
+
+        ensure_active.assert_called_once_with(swipe_session)
+        delegate.assert_not_called()

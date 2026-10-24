@@ -101,3 +101,30 @@ class TestRoomCreateView:
         assert response.data == {
             "detail": "You have too many pending invites.",
         }
+
+    @patch("apps.comparisons.views.InviteSerializer")
+    @patch("apps.comparisons.views.build_room_state")
+    @patch("apps.comparisons.views.create_room")
+    def test_does_not_build_state_when_creation_fails(
+        self,
+        mock_create_room,
+        mock_build_room_state,
+        mock_serializer,
+        api_client,
+        user,
+    ):
+        api_client.force_authenticate(user=user)
+        mock_create_room.side_effect = TooManyPendingInvitesError
+
+        response = api_client.post(reverse("room-create"))
+
+        assert response.status_code == 429
+        mock_build_room_state.assert_not_called()
+        mock_serializer.assert_not_called()
+
+    def test_rejects_unsupported_methods(self, api_client, user):
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(reverse("room-create"))
+
+        assert response.status_code == 405

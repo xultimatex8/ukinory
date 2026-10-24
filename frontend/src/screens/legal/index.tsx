@@ -97,7 +97,7 @@ export default function LegalScreen() {
       }
     };
 
-    loadDocuments();
+    void loadDocuments();
 
     return () => {
       cancelled = true;
@@ -119,7 +119,7 @@ export default function LegalScreen() {
       <div className="mx-auto w-full max-w-4xl px-6 pt-8">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={() => void navigate(-1)}
           className="flex cursor-pointer items-center gap-2 text-sm
                      font-medium text-text-muted transition hover:text-text"
         >
