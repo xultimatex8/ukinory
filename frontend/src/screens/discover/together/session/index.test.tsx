@@ -7,7 +7,7 @@ import PairedSessionScreen from "./index";
 import { useLeaveSession } from "../../../../hooks/useLeaveSession";
 import { usePairedSession } from "../../../../hooks/usePairedSession";
 import {
-  endSwipeSession,
+  leaveSwipeSession,
   regeneratePairedInvite,
 } from "../../../../services/swipeSessions";
 
@@ -118,7 +118,7 @@ vi.mock("../../../../hooks/usePairedSession", () => ({
 }));
 
 vi.mock("../../../../services/swipeSessions", () => ({
-  endSwipeSession: vi.fn(),
+  leaveSwipeSession: vi.fn(),
   regeneratePairedInvite: vi.fn(),
 }));
 
@@ -162,7 +162,7 @@ describe("PairedSessionScreen", () => {
     router.location.state = null;
 
     mockedUseLeaveSession.mockReturnValue({
-      leaving: false,
+      isLeaving: false,
     } as unknown as ReturnType<typeof useLeaveSession>);
   });
 
@@ -178,7 +178,7 @@ describe("PairedSessionScreen", () => {
 
       expect(mockedUseLeaveSession).toHaveBeenCalledWith(
         "session-1",
-        endSwipeSession,
+        leaveSwipeSession,
         "session",
       );
     });
@@ -222,6 +222,45 @@ describe("PairedSessionScreen", () => {
         screen.getByText("You are not a member of this session."),
       ).toBeInTheDocument();
       expect(screen.queryByTestId("discover-session")).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ["not_found", "This swipe session does not exist or is no longer available."],
+      ["forbidden", "You are not a member of this session."],
+      ["closed", "This session is no longer available."],
+    ])("hides the %s error while the user is leaving", (fatal, message) => {
+      mockedUseLeaveSession.mockReturnValue({
+        isLeaving: true,
+      } as unknown as ReturnType<typeof useLeaveSession>);
+
+      setup({ fatal, phase: "waiting" });
+
+      expect(screen.queryByText(message)).not.toBeInTheDocument();
+      expect(screen.queryByTestId("error-screen")).not.toBeInTheDocument();
+      expect(screen.getByTestId("session-lobby")).toBeInTheDocument();
+    });
+
+    it("does not flash a fatal error over the active session while leaving", () => {
+      mockedUseLeaveSession.mockReturnValue({
+        isLeaving: true,
+      } as unknown as ReturnType<typeof useLeaveSession>);
+
+      setup({ fatal: "forbidden", phase: "active", hasBeenActive: true });
+
+      expect(screen.queryByTestId("error-screen")).not.toBeInTheDocument();
+      expect(screen.getByTestId("discover-session")).toBeInTheDocument();
+    });
+
+    it("shows the fatal error again when the user is not leaving", () => {
+      mockedUseLeaveSession.mockReturnValue({
+        isLeaving: false,
+      } as unknown as ReturnType<typeof useLeaveSession>);
+
+      setup({ fatal: "closed" });
+
+      expect(
+        screen.getByText("This session is no longer available."),
+      ).toBeInTheDocument();
     });
   });
 
@@ -276,14 +315,14 @@ describe("PairedSessionScreen", () => {
 
     it("passes the leave controller to the lobby", () => {
       mockedUseLeaveSession.mockReturnValue({
-        leaving: true,
+        isLeaving: true,
       } as unknown as ReturnType<typeof useLeaveSession>);
 
       setup();
 
       expect(screen.getByTestId("session-lobby")).toHaveAttribute(
         "data-leave",
-        JSON.stringify({ leaving: true }),
+        JSON.stringify({ isLeaving: true }),
       );
     });
 

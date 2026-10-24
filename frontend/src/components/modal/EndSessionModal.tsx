@@ -17,10 +17,10 @@ export default function EndSessionModal({
 }: EndSessionModalProps) {
   return (
     <ConfirmModal
-      title="End session?"
+      title="Leave session?"
       description={
         <>
-          You can return home or end the session and download your watchlist as
+          You can return home or leave the session and download your watchlist as
           a CSV file.
         </>
       }

@@ -32,6 +32,7 @@ from apps.swipe_sessions.services.session import (
     end_swipe_session,
     ensure_session_active,
     get_user_swipe_session,
+    leave_swipe_session,
     start_swipe_session,
 )
 from apps.common.services.sessions import touch_session
@@ -158,6 +159,15 @@ class SwipeSessionEndView(APIView):
         )
         response["X-Swipe-Session-Ended"] = "true"
         return response
+
+
+class SwipeSessionLeaveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        session = get_user_swipe_session(session_id=pk, user=request.user)
+        leave_swipe_session(user=request.user, session=session)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class SwipeSessionHeartbeatView(APIView):

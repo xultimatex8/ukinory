@@ -101,6 +101,25 @@ function makeLiveSessionResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
+type LiveOptions = {
+  enabled: boolean;
+  onState: (state: PairedSessionState) => unknown;
+  onMessage: (
+    event: Record<string, unknown>,
+    refresh: () => Promise<void>,
+  ) => void;
+};
+
+const lastLiveOptions = () =>
+  mockedUseLiveSession.mock.calls.at(-1)?.[0] as unknown as LiveOptions;
+
+const flushAsync = async () => {
+  await vi.advanceTimersByTimeAsync(0);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
 describe("usePairedSession", () => {
   let liveSession: ReturnType<typeof makeLiveSessionResult>;
 
@@ -160,22 +179,47 @@ describe("usePairedSession", () => {
     );
   });
 
-  it("disables live session polling when the session has ended", () => {
-    const { rerender } = renderHook(
-      ({ sessionId }: { sessionId: string | undefined }) =>
-        usePairedSession(sessionId),
-      { initialProps: { sessionId: "session-1" } },
-    );
+  it("disables live session polling once an ended event arrives", () => {
+    renderHook(() => usePairedSession("session-1"));
 
-    const options = mockedUseLiveSession.mock.calls.at(-1)?.[0];
+    expect(lastLiveOptions().enabled).toBe(true);
 
-    expect(options?.enabled).toBe(true);
-
-    rerender({ sessionId: "session-2" });
+    act(() => {
+      lastLiveOptions().onMessage(
+        { event: "session.updated", reason: "ended" },
+        vi.fn().mockResolvedValue(undefined),
+      );
+    });
 
     expect(mockedUseLiveSession).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sessionId: "session-2" }),
+      expect.objectContaining({ sessionId: "session-1", enabled: false }),
     );
+  });
+
+  it("disables live session polling once the state reports a finished session", () => {
+    renderHook(() => usePairedSession("session-1"));
+
+    act(() => {
+      lastLiveOptions().onState(makePairedState({ status: "FINISHED" }));
+    });
+
+    expect(lastLiveOptions().enabled).toBe(false);
+  });
+
+  it("keeps live session polling enabled for other session updates", () => {
+    const { result } = renderHook(() => usePairedSession("session-1"));
+    const refresh = vi.fn().mockResolvedValue(undefined);
+
+    act(() => {
+      lastLiveOptions().onMessage(
+        { event: "session.updated", reason: "partner_left" },
+        refresh,
+      );
+    });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(result.current.ended).toBe(false);
+    expect(lastLiveOptions().enabled).toBe(true);
   });
 
   it("bootstraps session matches after the initial timer", async () => {
@@ -542,8 +586,10 @@ describe("usePairedSession", () => {
     expect(result.current.matchCount).toBe(1);
     expect(result.current.toast).toEqual({
       candidateId: "movie-1",
+      tmdbId: undefined,
       title: "Example Movie",
       releaseYear: 2024,
+      posterUrl: null,
     });
   });
 
@@ -941,5 +987,270 @@ describe("usePairedSession", () => {
     });
 
     expect(mockedStartSwipeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the TMDb id of a match event to the toast", () => {
+    const { result } = renderHook(() => usePairedSession("session-1"));
+
+    act(() => {
+      lastLiveOptions().onMessage(
+        {
+          event: "match",
+          candidate_id: "candidate-1",
+          tmdb_id: 550,
+          title: "Fight Club",
+          release_year: 1999,
+        },
+        vi.fn().mockResolvedValue(undefined),
+      );
+    });
+
+    expect(result.current.toast).toEqual({
+      candidateId: "candidate-1",
+      tmdbId: 550,
+      title: "Fight Club",
+      releaseYear: 1999,
+      posterUrl: null,
+    });
+  });
+
+  it("syncs matches right after a match event and again after the poster retry delay", async () => {
+    renderHook(() => usePairedSession("session-1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mockedGetSessionMatches).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      lastLiveOptions().onMessage(
+        {
+          event: "match",
+          candidate_id: "candidate-1",
+          tmdb_id: 550,
+          title: "Fight Club",
+          release_year: 1999,
+        },
+        vi.fn().mockResolvedValue(undefined),
+      );
+    });
+
+    expect(mockedGetSessionMatches).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    expect(mockedGetSessionMatches).toHaveBeenCalledTimes(3);
+  });
+
+  it("fills in the toast poster once the matches endpoint returns it", async () => {
+    mockedGetSessionMatches.mockResolvedValueOnce([]).mockResolvedValue([
+      {
+        ...makeMatchRecord("candidate-1", "Fight Club", 1999),
+        movie: {
+          tmdb_id: 550,
+          title: "Fight Club",
+          release_year: 1999,
+          poster_url: "/poster.jpg",
+        },
+      },
+    ]);
+
+    const { result } = renderHook(() => usePairedSession("session-1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => {
+      lastLiveOptions().onMessage(
+        {
+          event: "match",
+          candidate_id: "candidate-1",
+          tmdb_id: 550,
+          title: "Fight Club",
+          release_year: 1999,
+        },
+        vi.fn().mockResolvedValue(undefined),
+      );
+    });
+
+    expect(result.current.toast?.posterUrl).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.toast?.posterUrl).toBe("/poster.jpg");
+    expect(result.current.matchCount).toBe(1);
+  });
+
+  it("announces matches discovered after the initial bootstrap", async () => {
+    mockedGetSessionMatches
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        makeMatchRecord("candidate-1", "Fight Club", 1999),
+      ]);
+
+    const { result } = renderHook(() => usePairedSession("session-1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await act(async () => {
+      lastLiveOptions().onState(makePairedState({ matches_count: 1 }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.matchCount).toBe(1);
+    expect(result.current.toast?.candidateId).toBe("candidate-1");
+    expect(result.current.toast?.posterUrl).toBeNull();
+  });
+
+  it("does not sync matches from a state update before the bootstrap has finished", () => {
+    renderHook(() => usePairedSession("session-1"));
+
+    act(() => {
+      lastLiveOptions().onState(makePairedState({ matches_count: 5 }));
+    });
+
+    expect(mockedGetSessionMatches).not.toHaveBeenCalled();
+  });
+
+  it("does not sync matches when the state reports no new matches", async () => {
+    renderHook(() => usePairedSession("session-1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => {
+      lastLiveOptions().onState(makePairedState({ matches_count: 0 }));
+    });
+
+    expect(mockedGetSessionMatches).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a session when the live session has a fatal error", async () => {
+    liveSession = makeLiveSessionResult({
+      state: makePairedState(),
+      fatal: "closed",
+    });
+    mockedUseLiveSession.mockReturnValue(
+      liveSession as unknown as ReturnType<typeof useLiveSession>,
+    );
+
+    renderHook(() => usePairedSession("session-1"));
+
+    await act(flushAsync);
+
+    expect(mockedStartSwipeSession).not.toHaveBeenCalled();
+  });
+
+  it("does not expose a start error when the failure is fatal", async () => {
+    const failure = new Error("Session expired");
+    const handleFailure = vi.fn();
+
+    mockedStartSwipeSession.mockRejectedValueOnce(failure);
+    mockedClassifyFatalError.mockReturnValue(
+      "closed" as ReturnType<typeof classifyFatalError>,
+    );
+
+    liveSession = makeLiveSessionResult({
+      state: makePairedState(),
+      handleFailure,
+    });
+    mockedUseLiveSession.mockReturnValue(
+      liveSession as unknown as ReturnType<typeof useLiveSession>,
+    );
+
+    const { result } = renderHook(() => usePairedSession("session-1"));
+
+    await act(flushAsync);
+
+    expect(handleFailure).toHaveBeenCalledWith(failure);
+    expect(result.current.startError).toBeNull();
+  });
+
+  it("starts again after retryStart once a fresh state arrives", async () => {
+    mockedStartSwipeSession
+      .mockRejectedValueOnce(new Error("Start failed"))
+      .mockResolvedValueOnce({} as Awaited<ReturnType<typeof startSwipeSession>>);
+    liveSession.state = makePairedState();
+
+    const { result, rerender } = renderHook(() =>
+      usePairedSession("session-1"),
+    );
+
+    await act(flushAsync);
+
+    expect(mockedStartSwipeSession).toHaveBeenCalledTimes(1);
+    expect(result.current.phase).toBe("failed");
+
+    act(() => {
+      result.current.retryStart();
+    });
+
+    expect(result.current.startError).toBeNull();
+    expect(liveSession.refresh).toHaveBeenCalled();
+
+    liveSession.state = makePairedState();
+    rerender();
+
+    await act(flushAsync);
+
+    expect(mockedStartSwipeSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("can start again after the session stops being ready and becomes ready again", async () => {
+    liveSession.state = makePairedState();
+
+    const { rerender } = renderHook(() => usePairedSession("session-1"));
+
+    await act(flushAsync);
+
+    expect(mockedStartSwipeSession).toHaveBeenCalledTimes(1);
+
+    liveSession.state = makePairedState({ partner_has_data: false });
+    rerender();
+
+    await act(flushAsync);
+
+    expect(mockedStartSwipeSession).toHaveBeenCalledTimes(1);
+
+    liveSession.state = makePairedState();
+    rerender();
+
+    await act(flushAsync);
+
+    expect(mockedStartSwipeSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears the previous start error when a new start attempt begins", async () => {
+    mockedStartSwipeSession
+      .mockRejectedValueOnce(new Error("Start failed"))
+      .mockResolvedValueOnce({} as Awaited<ReturnType<typeof startSwipeSession>>);
+    liveSession.state = makePairedState();
+
+    const { result, rerender } = renderHook(() =>
+      usePairedSession("session-1"),
+    );
+
+    await act(flushAsync);
+
+    expect(result.current.startError).toBe("Unable to start session");
+
+    liveSession.state = makePairedState({ partner_has_data: false });
+    rerender();
+    liveSession.state = makePairedState();
+    rerender();
+
+    await act(flushAsync);
+
+    expect(mockedStartSwipeSession).toHaveBeenCalledTimes(2);
+    expect(result.current.startError).toBeNull();
   });
 });

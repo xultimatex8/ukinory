@@ -41,13 +41,13 @@ recommendations together in real time.
 <!-- SONAR-METRICS:START -->
 | Metric | Value |
 |---|---:|
-| Coverage | 86.7% |
-| Tests | 2,746 (backend 2,042 · frontend 704) |
+| Coverage | 86.5% |
+| Tests | 2,828 (backend 2,083 · frontend 745) |
 | Bugs | 0 |
 | Vulnerabilities | 0 |
 | Code smells | 0 |
-| Duplicated lines | 6.3% |
-| Lines of code | 17,736 |
+| Duplicated lines | 6.2% |
+| Lines of code | 18,185 |
 | Quality Gate | OK |
 <!-- SONAR-METRICS:END -->
 

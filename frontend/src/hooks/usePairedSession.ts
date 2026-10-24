@@ -17,6 +17,8 @@ import {
   type LobbyPhase,
 } from "./useLiveSession";
 
+const MATCH_POSTER_RETRY_MS = 1500;
+
 export type PairedPhase =
   | LobbyPhase
   | "starting"
@@ -28,8 +30,10 @@ export type FatalPairedError = FatalSessionError | null;
 
 export interface MatchToast {
   candidateId: string;
+  tmdbId: number;
   title: string;
   releaseYear: number | null;
+  posterUrl: string | null;
 }
 
 export interface PartnerActivity {
@@ -102,12 +106,26 @@ export function usePairedSession(sessionId: string | undefined) {
         registerMatch(
           {
             candidateId: item.candidate_id,
+            tmdbId: item.movie.tmdb_id,
             title: item.movie.title,
             releaseYear: item.movie.release_year,
+            posterUrl: item.movie.poster_url || null,
           },
           announce,
         ),
       );
+
+      setToast((current) => {
+        if (!current || current.posterUrl) return current;
+
+        const found = list.find(
+          (item) => item.candidate_id === current.candidateId,
+        );
+
+        return found?.movie.poster_url
+          ? { ...current, posterUrl: found.movie.poster_url }
+          : current;
+      });
 
       matchesBootstrappedRef.current = true;
     } catch {
@@ -156,14 +174,19 @@ export function usePairedSession(sessionId: string | undefined) {
         registerMatch(
           {
             candidateId: data.candidate_id,
+            tmdbId: data.tmdb_id,
             title: data.title,
             releaseYear: data.release_year,
+            posterUrl: null,
           },
           true,
         );
+
+        void syncMatches();
+        window.setTimeout(() => void syncMatches(), MATCH_POSTER_RETRY_MS);
       }
     },
-    [registerMatch],
+    [registerMatch, syncMatches],
   );
 
   const {
@@ -204,7 +227,10 @@ export function usePairedSession(sessionId: string | undefined) {
       state.you_have_data &&
       state.partner_has_data === true;
 
-    if (!ready) return;
+    if (!ready) {
+      lastStartKeyRef.current = null;
+      return;
+    }
 
     const key = `${state.you_have_data}|${state.partner_has_data}`;
 

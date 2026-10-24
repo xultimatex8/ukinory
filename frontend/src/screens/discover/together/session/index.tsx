@@ -7,7 +7,7 @@ import Waiting from "../../../../components/Waiting";
 import { useLeaveSession } from "../../../../hooks/useLeaveSession";
 import { usePairedSession } from "../../../../hooks/usePairedSession";
 import {
-  endSwipeSession,
+  leaveSwipeSession,
   regeneratePairedInvite,
   type PairedInvite,
 } from "../../../../services/swipeSessions";
@@ -18,12 +18,15 @@ export default function PairedSessionScreen() {
   const location = useLocation();
 
   const paired = usePairedSession(id);
-  const leave = useLeaveSession(id, endSwipeSession, "session");
+  const leave = useLeaveSession(id, leaveSwipeSession, "session");
+
+  // While leaving, our own refresh may fail (403 / closed): don't flash it.
+  const fatal = leave.isLeaving ? null : paired.fatal;
 
   const initialInvite =
     (location.state as { invite?: PairedInvite } | null)?.invite ?? null;
 
-  if (paired.fatal === "not_found") {
+  if (fatal === "not_found") {
     return (
       <ErrorScreen
         message="This swipe session does not exist or is no longer available."
@@ -32,7 +35,7 @@ export default function PairedSessionScreen() {
     );
   }
 
-  if (paired.fatal === "forbidden") {
+  if (fatal === "forbidden") {
     return (
       <ErrorScreen
         message="You are not a member of this session."
@@ -41,7 +44,7 @@ export default function PairedSessionScreen() {
     );
   }
 
-  if (paired.fatal === "closed") {
+  if (fatal === "closed") {
     return (
       <ErrorScreen
         message="This session is no longer available."

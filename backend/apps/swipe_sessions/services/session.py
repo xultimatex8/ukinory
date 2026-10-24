@@ -6,10 +6,12 @@ from django.utils import timezone
 from apps.common.enums import SessionStatus, SessionType, SwipeSessionType
 from apps.common.exceptions import InvalidSessionStateError
 from apps.common.services.sessions import (
+    LeaveOutcome,
     StaleOutcome,
     activate_session,
     close_stale_sessions,
     get_user_session,
+    leave_session,
     lock_session,
 )
 from apps.common.services.sessions import ensure_session_active as _ensure_session_active
@@ -98,6 +100,8 @@ def end_swipe_session(user, session: SwipeSession) -> SwipeExportSummary:
 
         if session.status == SessionStatus.FINISHED:
             return export_watchlist_csv(user=user, session=session)
+        if session.status == SessionStatus.WAITING:
+            raise InvalidSessionStateError("Swipe session has not started yet.")
 
         return _finish_session(session, export_user=user)
 
@@ -105,3 +109,22 @@ def end_swipe_session(user, session: SwipeSession) -> SwipeExportSummary:
         raise InvalidSessionStateError("Swipe session has not started yet.")
 
     return _finish_session(session)
+
+
+@transaction.atomic
+def leave_swipe_session(*, user, session: SwipeSession) -> LeaveOutcome:
+    outcome = leave_session(SwipeSession, session.pk, user)
+
+    if outcome is LeaveOutcome.LEFT:
+        transaction.on_commit(
+            lambda: notify_session(
+                session.pk, event="session.updated", reason="partner_left"
+            )
+        )
+    elif outcome is LeaveOutcome.FINISHED:
+        transaction.on_commit(
+            lambda: notify_session(
+                session.pk, event="session.updated", reason="ended"
+            )
+        )
+    return outcome

@@ -802,32 +802,42 @@ def _make_room(users, *, status=SessionStatus.WAITING):
 
 @pytest.mark.django_db
 class TestLeaveRoom:
-    def test_finished_room_is_left_untouched(self, user, another_user):
+    def test_finished_room_is_left_untouched(
+        self,
+        user,
+        another_user,
+        mock_notify,
+        django_capture_on_commit_callbacks,
+    ):
         room = _make_room([user, another_user], status=SessionStatus.FINISHED)
 
-        leave_room(room=room, user=user)
+        with django_capture_on_commit_callbacks(execute=True) as callbacks:
+            leave_room(room=room, user=user)
 
         room.refresh_from_db()
         assert room.status == SessionStatus.FINISHED
         assert room.users.filter(pk=user.pk).exists()
+        assert callbacks == []
+        mock_notify.assert_not_called()
 
-    def test_finished_room_does_not_check_membership(self, user, other_user):
+    def test_finished_room_does_not_check_membership(self, user, other_user, mock_notify):
         room = _make_room([user], status=SessionStatus.FINISHED)
 
         leave_room(room=room, user=other_user)
 
         assert ComparisonSession.objects.filter(pk=room.pk).exists()
 
-    def test_non_member_cannot_leave_waiting_room(self, user, other_user):
+    def test_non_member_cannot_leave_waiting_room(self, user, other_user, mock_notify):
         room = _make_room([user])
 
         with pytest.raises(NotSessionMemberError):
             leave_room(room=room, user=other_user)
 
         assert ComparisonSession.objects.filter(pk=room.pk).exists()
+        mock_notify.assert_not_called()
 
     def test_non_member_cannot_leave_active_room(
-        self, user, another_user, other_user
+        self, user, another_user, other_user, mock_notify
     ):
         room = _make_room([user, another_user], status=SessionStatus.ACTIVE)
 
@@ -837,52 +847,97 @@ class TestLeaveRoom:
         room.refresh_from_db()
         assert room.status == SessionStatus.ACTIVE
         assert room.users.count() == 2
+        mock_notify.assert_not_called()
 
-    def test_last_user_leaving_waiting_room_deletes_it(self, user):
+    def test_last_user_leaving_waiting_room_deletes_it_without_notifying(
+        self,
+        user,
+        mock_notify,
+        django_capture_on_commit_callbacks,
+    ):
         room = _make_room([user])
         room_id = room.pk
 
-        leave_room(room=room, user=user)
+        with django_capture_on_commit_callbacks(execute=True):
+            leave_room(room=room, user=user)
 
         assert not ComparisonSession.objects.filter(pk=room_id).exists()
+        mock_notify.assert_not_called()
 
-    def test_waiting_room_with_remaining_user_is_kept(self, user, another_user):
+    def test_waiting_room_with_remaining_user_is_kept(
+        self,
+        user,
+        another_user,
+        mock_notify,
+        django_capture_on_commit_callbacks,
+    ):
         room = _make_room([user, another_user])
 
-        leave_room(room=room, user=user)
+        with django_capture_on_commit_callbacks(execute=True):
+            leave_room(room=room, user=user)
 
         room.refresh_from_db()
         assert room.status == SessionStatus.WAITING
         assert list(room.users.values_list("pk", flat=True)) == [another_user.pk]
 
+    def test_partner_is_notified_when_leaving_a_waiting_room(
+        self,
+        user,
+        another_user,
+        mock_notify,
+        django_capture_on_commit_callbacks,
+    ):
+        room = _make_room([user, another_user])
+
+        with django_capture_on_commit_callbacks(execute=True):
+            leave_room(room=room, user=user)
+
+        mock_notify.assert_called_once_with(room.pk, reason="partner_left")
+
+    def test_notification_is_only_sent_after_the_transaction_commits(
+        self,
+        user,
+        another_user,
+        mock_notify,
+        django_capture_on_commit_callbacks,
+    ):
+        room = _make_room([user, another_user], status=SessionStatus.ACTIVE)
+
+        with django_capture_on_commit_callbacks(execute=False) as callbacks:
+            leave_room(room=room, user=user)
+
+        assert len(callbacks) == 1
+        mock_notify.assert_not_called()
+
+        callbacks[0]()
+
+        mock_notify.assert_called_once_with(room.pk, reason="ended")
+
     @pytest.mark.parametrize(
         "generation_status",
         [GenerationStatus.PENDING, GenerationStatus.NEEDS_DATA],
     )
-    def test_active_room_without_a_usable_comparison_goes_back_to_waiting(
-        self, user, another_user, generation_status
+    def test_active_room_without_a_usable_comparison_is_finished_and_comparison_deleted(
+        self,
+        user,
+        another_user,
+        generation_status,
+        mock_notify,
+        django_capture_on_commit_callbacks,
     ):
         room = _make_room([user, another_user], status=SessionStatus.ACTIVE)
         comparison = Comparison.objects.create(
             session=room, generation_status=generation_status
         )
 
-        leave_room(room=room, user=user)
+        with django_capture_on_commit_callbacks(execute=True):
+            leave_room(room=room, user=user)
 
         room.refresh_from_db()
-        assert room.status == SessionStatus.WAITING
+        assert room.status == SessionStatus.FINISHED
         assert not Comparison.objects.filter(pk=comparison.pk).exists()
-        assert list(room.users.values_list("pk", flat=True)) == [another_user.pk]
-
-    def test_in_memory_room_status_is_updated(self, user, another_user):
-        room = _make_room([user, another_user], status=SessionStatus.ACTIVE)
-        Comparison.objects.create(
-            session=room, generation_status=GenerationStatus.PENDING
-        )
-
-        leave_room(room=room, user=user)
-
-        assert room.status == SessionStatus.WAITING
+        assert room.users.count() == 2
+        mock_notify.assert_called_once_with(room.pk, reason="ended")
 
     @pytest.mark.parametrize(
         "generation_status",
@@ -893,27 +948,60 @@ class TestLeaveRoom:
         ],
     )
     def test_active_room_with_a_generated_or_busy_comparison_is_finished_and_kept(
-        self, user, another_user, generation_status
+        self,
+        user,
+        another_user,
+        generation_status,
+        mock_notify,
+        django_capture_on_commit_callbacks,
     ):
         room = _make_room([user, another_user], status=SessionStatus.ACTIVE)
         comparison = Comparison.objects.create(
             session=room, generation_status=generation_status
         )
 
-        leave_room(room=room, user=user)
+        with django_capture_on_commit_callbacks(execute=True):
+            leave_room(room=room, user=user)
 
         room.refresh_from_db()
         assert room.status == SessionStatus.FINISHED
         assert Comparison.objects.filter(pk=comparison.pk).exists()
+        mock_notify.assert_called_once_with(room.pk, reason="ended")
 
-    def test_active_room_without_comparison_is_finished(self, user, another_user):
+    def test_active_room_without_comparison_is_finished_and_members_are_kept(
+        self,
+        user,
+        another_user,
+        mock_notify,
+        django_capture_on_commit_callbacks,
+    ):
         room = _make_room([user, another_user], status=SessionStatus.ACTIVE)
 
-        leave_room(room=room, user=user)
+        with django_capture_on_commit_callbacks(execute=True):
+            leave_room(room=room, user=user)
 
         room.refresh_from_db()
         assert room.status == SessionStatus.FINISHED
-        assert not room.users.filter(pk=user.pk).exists()
+        assert room.users.filter(pk=user.pk).exists()
+        assert room.users.filter(pk=another_user.pk).exists()
+        mock_notify.assert_called_once_with(room.pk, reason="ended")
+
+    def test_partner_can_still_leave_after_the_room_has_finished(
+        self,
+        user,
+        another_user,
+        mock_notify,
+        django_capture_on_commit_callbacks,
+    ):
+        room = _make_room([user, another_user], status=SessionStatus.ACTIVE)
+
+        with django_capture_on_commit_callbacks(execute=True):
+            leave_room(room=room, user=user)
+            leave_room(room=room, user=another_user)
+
+        room.refresh_from_db()
+        assert room.status == SessionStatus.FINISHED
+        mock_notify.assert_called_once_with(room.pk, reason="ended")
 
 
 @pytest.mark.django_db

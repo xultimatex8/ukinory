@@ -123,6 +123,7 @@ describe("useComparisonRoom", () => {
     expect(result.current.result).toBeNull();
     expect(result.current.phase).toBe("generating");
     expect(result.current.isGenerating).toBe(false);
+    expect(result.current.roomClosed).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.fatal).toBeNull();
   });
@@ -135,13 +136,22 @@ describe("useComparisonRoom", () => {
         sessionId: "room-123",
         fetchState: getRoom,
         socketUrl: buildRoomSocketUrl,
-        enabled: true,
         onState: expect.any(Function),
       }),
     );
   });
 
-  it("disables the live session when a comparison result is loaded", async () => {
+  it("keeps the live session enabled before the result is loaded", () => {
+    renderHook(() => useComparisonRoom("room-123"));
+
+    const options = mockedUseLiveSession.mock.calls[0][0] as {
+      enabled?: boolean;
+    };
+
+    expect(options.enabled).not.toBe(false);
+  });
+
+  it("keeps the live session enabled once a comparison result is loaded", async () => {
     const room = makeRoom({ generation_status: "ready" });
     configureLiveSession({ state: room });
 
@@ -154,9 +164,12 @@ describe("useComparisonRoom", () => {
       expect(result.current.result).toBe(comparisonResult);
     });
 
-    expect(mockedUseLiveSession).toHaveBeenLastCalledWith(
-      expect.objectContaining({ enabled: false }),
-    );
+    const lastOptions = mockedUseLiveSession.mock.lastCall?.[0] as {
+      enabled?: boolean;
+    };
+
+    // Needed so the user notices when their partner leaves the room.
+    expect(lastOptions.enabled).not.toBe(false);
   });
 
   it("uses the lobby phase returned by deriveLobbyPhase", () => {
@@ -455,18 +468,305 @@ describe("useComparisonRoom", () => {
     expect(mockedGetComparisonResult).not.toHaveBeenCalled();
   });
 
-  it("marks a finished room as closed through the onState callback", () => {
+  it("closes a finished room whose comparison is not ready", () => {
     renderHook(() => useComparisonRoom("room-123"));
 
     const options = mockedUseLiveSession.mock.calls[0][0] as {
       onState?: (room: RoomState) => FatalSessionError | undefined;
     };
 
-    expect(options.onState?.(makeRoom({ status: "FINISHED" }))).toBe(
-      "closed",
-    );
+    for (const generation_status of [
+      null,
+      "pending",
+      "running",
+      "needs_data",
+      "failed",
+    ] as RoomState["generation_status"][]) {
+      expect(
+        options.onState?.(makeRoom({ status: "FINISHED", generation_status })),
+      ).toBe("closed");
+    }
+  });
+
+  it("closes a finished room whatever the comparison status", () => {
+    renderHook(() => useComparisonRoom("room-123"));
+
+    const options = mockedUseLiveSession.mock.calls[0][0] as {
+      onState?: (room: RoomState) => FatalSessionError | undefined;
+    };
+
+    for (const generation_status of [
+      null,
+      "pending",
+      "running",
+      "ready",
+      "needs_data",
+      "failed",
+    ] as RoomState["generation_status"][]) {
+      expect(
+        options.onState?.(makeRoom({ status: "FINISHED", generation_status })),
+      ).toBe("closed");
+    }
+  });
+
+  it("does not close rooms that are still waiting or active", () => {
+    renderHook(() => useComparisonRoom("room-123"));
+
+    const options = mockedUseLiveSession.mock.calls[0][0] as {
+      onState?: (room: RoomState) => FatalSessionError | undefined;
+    };
 
     expect(options.onState?.(makeRoom({ status: "WAITING" }))).toBeUndefined();
+    expect(options.onState?.(makeRoom({ status: "ACTIVE" }))).toBeUndefined();
+  });
+
+  describe("roomClosed", () => {
+    it("is false while there is no room yet", () => {
+      configureLiveSession({ state: null });
+
+      const { result } = renderHook(() => useComparisonRoom("room-123"));
+
+      expect(result.current.roomClosed).toBe(false);
+    });
+
+    it.each(["WAITING", "ACTIVE"])("is false for a %s room", (status) => {
+      configureLiveSession({
+        state: makeRoom({ status: status as RoomState["status"] }),
+      });
+
+      const { result } = renderHook(() => useComparisonRoom("room-123"));
+
+      expect(result.current.roomClosed).toBe(false);
+    });
+
+    it("is true for a finished room", () => {
+      configureLiveSession({
+        state: makeRoom({ status: "FINISHED" }),
+      });
+
+      const { result } = renderHook(() => useComparisonRoom("room-123"));
+
+      expect(result.current.roomClosed).toBe(true);
+    });
+
+    it("is true when the partner left after the result was generated", async () => {
+      const comparisonResult = makeResult();
+      mockedGetComparisonResult.mockResolvedValue(comparisonResult);
+
+      configureLiveSession({
+        state: makeRoom({ status: "FINISHED", generation_status: "ready" }),
+      });
+
+      const { result } = renderHook(() => useComparisonRoom("room-123"));
+
+      await waitFor(() => {
+        expect(result.current.result).toBe(comparisonResult);
+      });
+
+      expect(result.current.phase).toBe("ready");
+      expect(result.current.roomClosed).toBe(true);
+    });
+
+    it("turns true when a room that had the result is finished by the partner", async () => {
+      const comparisonResult = makeResult();
+      mockedGetComparisonResult.mockResolvedValue(comparisonResult);
+
+      const live = configureLiveSession({
+        state: makeRoom({ status: "ACTIVE", generation_status: "ready" }),
+      });
+
+      const { result, rerender } = renderHook(() =>
+        useComparisonRoom("room-123"),
+      );
+
+      await waitFor(() => {
+        expect(result.current.result).toBe(comparisonResult);
+      });
+
+      expect(result.current.roomClosed).toBe(false);
+
+      live.state = makeRoom({ status: "FINISHED", generation_status: "ready" });
+      rerender();
+
+      expect(result.current.roomClosed).toBe(true);
+      expect(result.current.phase).toBe("ready");
+    });
+  });
+
+  it("still loads the result of a finished room whose comparison is ready", async () => {
+    const comparisonResult = makeResult();
+    mockedGetComparisonResult.mockResolvedValue(comparisonResult);
+
+    configureLiveSession({
+      state: makeRoom({ status: "FINISHED", generation_status: "ready" }),
+    });
+
+    const { result } = renderHook(() => useComparisonRoom("room-123"));
+
+    await waitFor(() => {
+      expect(result.current.result).toBe(comparisonResult);
+    });
+
+    expect(mockedGetComparisonResult).toHaveBeenCalledWith("room-123");
+    expect(result.current.phase).toBe("ready");
+  });
+
+  it.each([null, "pending", "needs_data"] as RoomState["generation_status"][])(
+    "starts generation when the generation status is %s",
+    async (generation_status) => {
+      configureLiveSession({ state: makeReadyRoom({ generation_status }) });
+
+      renderHook(() => useComparisonRoom("room-123"));
+
+      await waitFor(() => {
+        expect(mockedGenerateComparison).toHaveBeenCalledWith("room-123");
+      });
+    },
+  );
+
+  it("does not start generation while it is already running", () => {
+    configureLiveSession({
+      state: makeReadyRoom({
+        generation_status: "running" as RoomState["generation_status"],
+      }),
+    });
+
+    renderHook(() => useComparisonRoom("room-123"));
+
+    expect(mockedGenerateComparison).not.toHaveBeenCalled();
+  });
+
+  it("starts generation for a room that is already active", async () => {
+    configureLiveSession({ state: makeReadyRoom({ status: "ACTIVE" }) });
+
+    renderHook(() => useComparisonRoom("room-123"));
+
+    await waitFor(() => {
+      expect(mockedGenerateComparison).toHaveBeenCalledWith("room-123");
+    });
+  });
+
+  it("starts generation again when the generation key changes", async () => {
+    const live = configureLiveSession({
+      state: makeReadyRoom({ generation_status: "needs_data" }),
+    });
+
+    const { result, rerender } = renderHook(() =>
+      useComparisonRoom("room-123"),
+    );
+
+    await waitFor(() => {
+      expect(mockedGenerateComparison).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(result.current.isGenerating).toBe(false);
+    });
+
+    live.state = makeReadyRoom({ generation_status: "pending" });
+    rerender();
+
+    await waitFor(() => {
+      expect(mockedGenerateComparison).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("starts generation again once the room becomes ready again after losing readiness", async () => {
+    const live = configureLiveSession({ state: makeReadyRoom() });
+
+    const { result, rerender } = renderHook(() =>
+      useComparisonRoom("room-123"),
+    );
+
+    await waitFor(() => {
+      expect(mockedGenerateComparison).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(result.current.isGenerating).toBe(false);
+    });
+
+    live.state = makeReadyRoom({ partner_has_data: false });
+    rerender();
+
+    expect(mockedGenerateComparison).toHaveBeenCalledTimes(1);
+
+    live.state = makeReadyRoom();
+    rerender();
+
+    await waitFor(() => {
+      expect(mockedGenerateComparison).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("starts generation again when the partner leaves and rejoins with the same data", async () => {
+    const live = configureLiveSession({ state: makeReadyRoom() });
+
+    const { result, rerender } = renderHook(() =>
+      useComparisonRoom("room-123"),
+    );
+
+    await waitFor(() => {
+      expect(mockedGenerateComparison).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(result.current.isGenerating).toBe(false);
+    });
+
+    live.state = makeReadyRoom({
+      partner_joined: false,
+      partner_has_data: null,
+    });
+    rerender();
+
+    expect(mockedGenerateComparison).toHaveBeenCalledTimes(1);
+
+    live.state = makeReadyRoom();
+    rerender();
+
+    await waitFor(() => {
+      expect(mockedGenerateComparison).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("reports isGenerating while a generation request is in flight", async () => {
+    let resolveGeneration!: (room: RoomState) => void;
+
+    mockedGenerateComparison.mockImplementation(
+      () =>
+        new Promise<RoomState>((resolve) => {
+          resolveGeneration = resolve;
+        }),
+    );
+
+    configureLiveSession({ state: makeReadyRoom() });
+
+    const { result } = renderHook(() => useComparisonRoom("room-123"));
+
+    await waitFor(() => {
+      expect(result.current.isGenerating).toBe(true);
+    });
+
+    await act(async () => {
+      resolveGeneration(makeRoom({ generation_status: "ready" }));
+      await Promise.resolve();
+    });
+
+    expect(result.current.isGenerating).toBe(false);
+  });
+
+  it("stops reporting isGenerating after a generation failure", async () => {
+    const handleFailure = vi.fn();
+    mockedGenerateComparison.mockRejectedValue(new Error("Generation failed"));
+
+    configureLiveSession({ state: makeReadyRoom(), handleFailure });
+
+    const { result } = renderHook(() => useComparisonRoom("room-123"));
+
+    await waitFor(() => {
+      expect(handleFailure).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(result.current.isGenerating).toBe(false);
+    });
   });
 
   it("does not generate when retry is called without a room ID", async () => {

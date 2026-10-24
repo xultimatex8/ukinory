@@ -19,11 +19,11 @@ describe("EndSessionModal", () => {
     render(<EndSessionModal {...createProps()} />);
 
     expect(
-      screen.getByRole("heading", { name: "End session?" }),
+      screen.getByRole("heading", { name: "Leave session?" }),
     ).toBeInTheDocument();
 
     expect(
-      screen.getByText(/You can return home or end the session/i),
+      screen.getByText(/You can return home or leave the session/i),
     ).toBeInTheDocument();
 
     expect(

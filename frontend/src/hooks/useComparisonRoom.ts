@@ -33,7 +33,9 @@ function derivePhase(
 }
 
 const closeWhenFinished = (room: RoomState): FatalSessionError | undefined =>
-  room.status === "FINISHED" ? "closed" : undefined;
+  room.status === "FINISHED"
+    ? "closed"
+    : undefined;
 
 export function useComparisonRoom(roomId: string | undefined) {
   const [result, setResult] = useState<ComparisonResult | null>(null);
@@ -55,7 +57,7 @@ export function useComparisonRoom(roomId: string | undefined) {
     sessionId: roomId,
     fetchState: getRoom,
     socketUrl: buildRoomSocketUrl,
-    enabled: !result,
+    // Stays enabled once the result is loaded so a partner leaving is noticed.
     onState: closeWhenFinished,
   });
 
@@ -90,7 +92,10 @@ export function useComparisonRoom(roomId: string | undefined) {
       room.generation_status === "pending" ||
       room.generation_status === "needs_data";
 
-    if (!bothReady || !needsKick) return;
+    if (!bothReady || !needsKick) {
+      if (!bothReady) lastKickKeyRef.current = null;
+      return;
+    }
 
     const key = `${room.generation_status}|${room.you_have_data}|${room.partner_has_data}`;
 
@@ -135,6 +140,7 @@ export function useComparisonRoom(roomId: string | undefined) {
     room,
     result,
     phase: derivePhase(room, result),
+    roomClosed: room?.status === "FINISHED",
     error,
     fatal,
     isGenerating,

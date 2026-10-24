@@ -1,4 +1,3 @@
-
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
@@ -19,6 +18,7 @@ from apps.common.models import Session
 from apps.common.services.sessions import (
     MAX_PARTICIPANTS,
     STALE_TIMEOUT,
+    LeaveOutcome,
     StaleOutcome,
     _cutoff,
     activate_session,
@@ -27,6 +27,7 @@ from apps.common.services.sessions import (
     ensure_session_active,
     get_user_session,
     is_stale,
+    leave_session,
     lock_session,
     stale_sessions,
     touch_session,
@@ -492,3 +493,106 @@ class ActivateSessionTests(SessionLifecycleTests):
         result = activate_session(Session, self.session.pk)
 
         self.assertEqual(result.status, SessionStatus.ACTIVE)
+
+
+class LeaveSessionTests(SessionLifecycleTests):
+    def test_outcomes_have_stable_values(self):
+        self.assertEqual(
+            {outcome.value for outcome in LeaveOutcome},
+            {"already_finished", "left", "deleted", "finished"},
+        )
+
+    def test_raises_when_session_does_not_exist(self):
+        with self.assertRaises(SessionNotFoundError):
+            leave_session(Session, 999999, self.user)
+
+    def test_raises_for_invalid_session_id(self):
+        with self.assertRaises(SessionNotFoundError):
+            leave_session(Session, "invalid", self.user)
+
+    def test_finished_session_returns_already_finished(self):
+        self._make_recent(status=SessionStatus.FINISHED)
+
+        result = leave_session(Session, self.session.pk, self.user)
+
+        self.assertEqual(result, LeaveOutcome.ALREADY_FINISHED)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, SessionStatus.FINISHED)
+        self.assertTrue(self.session.users.filter(pk=self.user.pk).exists())
+
+    def test_finished_session_does_not_check_membership(self):
+        self._make_recent(status=SessionStatus.FINISHED)
+
+        result = leave_session(Session, self.session.pk, self.partner)
+
+        self.assertEqual(result, LeaveOutcome.ALREADY_FINISHED)
+        self.assertTrue(
+            Session.objects.filter(pk=self.session.pk).exists()
+        )
+
+    def test_non_member_cannot_leave_waiting_session(self):
+        self._make_recent(status=SessionStatus.WAITING)
+
+        with self.assertRaises(NotSessionMemberError):
+            leave_session(Session, self.session.pk, self.partner)
+
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, SessionStatus.WAITING)
+        self.assertEqual(self.session.users.count(), 1)
+
+    def test_non_member_cannot_leave_active_session(self):
+        self.session.users.add(self.partner)
+        self._make_recent(status=SessionStatus.ACTIVE)
+        outsider = User.objects.create_user(
+            email="c@example.com",
+            username="c",
+            password="pw",
+        )
+
+        with self.assertRaises(NotSessionMemberError):
+            leave_session(Session, self.session.pk, outsider)
+
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, SessionStatus.ACTIVE)
+        self.assertEqual(self.session.users.count(), 2)
+
+    def test_last_user_leaving_waiting_session_deletes_it(self):
+        self._make_recent(status=SessionStatus.WAITING)
+        session_id = self.session.pk
+
+        result = leave_session(Session, session_id, self.user)
+
+        self.assertEqual(result, LeaveOutcome.DELETED)
+        self.assertFalse(Session.objects.filter(pk=session_id).exists())
+
+    def test_waiting_session_with_remaining_user_is_kept(self):
+        self.session.users.add(self.partner)
+        self._make_recent(status=SessionStatus.WAITING)
+
+        result = leave_session(Session, self.session.pk, self.user)
+
+        self.assertEqual(result, LeaveOutcome.LEFT)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, SessionStatus.WAITING)
+        self.assertEqual(
+            list(self.session.users.values_list("pk", flat=True)),
+            [self.partner.pk],
+        )
+
+    def test_active_session_is_finished_when_a_member_leaves(self):
+        self.session.users.add(self.partner)
+        self._make_recent(status=SessionStatus.ACTIVE)
+
+        result = leave_session(Session, self.session.pk, self.user)
+
+        self.assertEqual(result, LeaveOutcome.FINISHED)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, SessionStatus.FINISHED)
+
+    def test_active_session_keeps_its_members_when_finished(self):
+        self.session.users.add(self.partner)
+        self._make_recent(status=SessionStatus.ACTIVE)
+
+        leave_session(Session, self.session.pk, self.user)
+
+        self.assertEqual(self.session.users.count(), 2)
