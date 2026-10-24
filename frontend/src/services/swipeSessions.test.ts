@@ -1,4 +1,3 @@
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "./api";
 import { buildSocketUrl } from "./sessions";
@@ -12,6 +11,7 @@ import {
   getSessionMatches,
   getSwipeRecommendation,
   getSwipeSession,
+  leaveSwipeSession,
   recordSwipe,
   regeneratePairedInvite,
   sendHeartbeat,
@@ -216,6 +216,36 @@ describe("endSwipeSession", () => {
     mockedApiFetch.mockRejectedValue(error);
 
     await expect(endSwipeSession("session-1")).rejects.toBe(error);
+  });
+});
+
+describe("leaveSwipeSession", () => {
+  it("leaves the session with a DELETE request", async () => {
+    mockedApiFetch.mockResolvedValue({} as Response);
+
+    await expect(leaveSwipeSession("session-1")).resolves.toBeUndefined();
+
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/swipe-sessions/session-1/leave/",
+      { method: "DELETE" },
+    );
+  });
+
+  it("does not try to parse the empty response", async () => {
+    const response = { json: vi.fn(), blob: vi.fn() } as unknown as Response;
+    mockedApiFetch.mockResolvedValue(response);
+
+    await leaveSwipeSession("session-1");
+
+    expect(response.json).not.toHaveBeenCalled();
+    expect(response.blob).not.toHaveBeenCalled();
+  });
+
+  it("propagates API errors so the caller can react", async () => {
+    const error = new Error("Unable to leave session");
+    mockedApiFetch.mockRejectedValue(error);
+
+    await expect(leaveSwipeSession("session-1")).rejects.toBe(error);
   });
 });
 
