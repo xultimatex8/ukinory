@@ -30,10 +30,10 @@ recommendations together in real time.
 - **Swipe discovery.** Tinder-style movie cards with personalized recommendations combining content-based filtering, collaborative filtering and swipe behavior.
 - **Letterboxd-compatible export.** Download the movies you added as a CSV to import back into Letterboxd.
 - **Data rights.** Export all your data as JSON or delete your account at any time.
+- **Paired swipe.** Two people swipe the same recommendations live; when both add a movie to their watchlist, it's a match.
 
 ### Planned Features
 
-- **Paired swipe.** Two people swipe the same recommendations live; when both add a movie to their watchlist, it's a match.
 - **Rating prediction.** Machine learning models predict how you'd rate unwatched movies and improve with your swipes.
 
 ## Code Quality
